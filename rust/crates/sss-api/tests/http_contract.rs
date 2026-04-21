@@ -858,58 +858,61 @@ async fn passive_region_remediation_returns_healthy_monitor_only_when_region_is_
     assert_eq!(body["data"]["evidence"]["recent_failed_run_count"], 0);
     assert_eq!(body["data"]["evidence"]["recent_partial_run_count"], 0);
     assert_eq!(body["data"]["evidence"]["recent_lease_loss_count"], 0);
-    }
+}
 
-    #[tokio::test]
-    async fn passive_region_semantic_timeline_smoke() {
-        let app = build_router(AppState::demo().expect("state"));
-        // Cria uma região para garantir region_id válido
-        let region_response = app
-            .clone()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/v1/passive/regions")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        json!({
-                            "name": "Iberian Peninsula",
-                            "south": 35.0,
-                            "west": -10.0,
-                            "north": 44.0,
-                            "east": 5.0,
-                            "country_code": "ES",
-                            "timezone": "Europe/Madrid"
-                        })
-                        .to_string(),
-                    ))
-                    .expect("request"),
-            )
-            .await
-            .expect("response");
-        assert_eq!(region_response.status(), StatusCode::OK);
-        let region_body = body_json(region_response).await;
-        let region_id = region_body["data"]["region_id"]
-            .as_str()
-            .expect("region_id in creation response");
+#[tokio::test]
+async fn passive_region_semantic_timeline_smoke() {
+    let app = build_router(AppState::demo().expect("state"));
+    // Cria uma região para garantir region_id válido
+    let region_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/passive/regions")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "name": "Iberian Peninsula",
+                        "south": 35.0,
+                        "west": -10.0,
+                        "north": 44.0,
+                        "east": 5.0,
+                        "country_code": "ES",
+                        "timezone": "Europe/Madrid"
+                    })
+                    .to_string(),
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(region_response.status(), StatusCode::OK);
+    let region_body = body_json(region_response).await;
+    let region_id = region_body["data"]["region_id"]
+        .as_str()
+        .expect("region_id in creation response");
 
-        // Consulta a semantic timeline da região
-        let response = app
-            .oneshot(
-                Request::builder()
-                    .uri(format!(
-                        "/v1/passive/regions/{region_id}/semantic-timeline?limit=10"
-                    ))
-                    .body(Body::empty())
-                    .expect("request"),
-            )
-            .await
-            .expect("response");
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = body_json(response).await;
-        assert!(body["data"].is_object() || body["data"].is_array(), "semantic timeline returns object or array");
-        // Não exige entradas, mas garante shape e ausência de erro
-    }
+    // Consulta a semantic timeline da região
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/v1/passive/regions/{region_id}/semantic-timeline?limit=10"
+                ))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_json(response).await;
+    assert!(
+        body["data"].is_object() || body["data"].is_array(),
+        "semantic timeline returns object or array"
+    );
+    // Não exige entradas, mas garante shape e ausência de erro
+}
 
 #[tokio::test]
 async fn passive_region_remediation_returns_not_found_for_unknown_region() {
@@ -2514,9 +2517,7 @@ async fn operator_console_wires_canonical_focus_and_region_runs_actions() {
         .expect("body bytes");
     let html = String::from_utf8(bytes.to_vec()).expect("utf8");
 
-    assert!(
-        html.contains("$(\"canonical-events\").addEventListener(\"click\"")
-    );
+    assert!(html.contains("$(\"canonical-events\").addEventListener(\"click\""));
     assert!(html.contains("handlePassiveRefocusCanonicalButton"));
     assert!(html.contains("openPassiveRegionRuns(regionRunsButton.dataset.regionId"));
     assert!(html.contains("data-canonical-id"));
