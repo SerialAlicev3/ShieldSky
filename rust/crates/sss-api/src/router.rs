@@ -1,4 +1,5 @@
 use axum::{
+    response::IntoResponse,
     routing::{get, post},
     Router,
 };
@@ -29,6 +30,8 @@ use crate::state::AppState;
 
 pub fn build_router(state: AppState) -> Router {
     Router::new()
+        .route("/", get(root))
+        .route("/health", get(health))
         .route("/console", get(operator_console))
         .route("/v1/health", get(health))
         .route("/v1/version", get(version))
@@ -69,6 +72,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/replay/:manifest_hash/execute", get(execute_replay))
         .route("/v1/replay/:manifest_hash", get(get_replay_manifest))
         .with_state(state)
+}
+
+async fn root() -> impl IntoResponse {
+    "ShieldSky API is live. Use /v1/health for health checks."
 }
 
 #[allow(clippy::too_many_lines)]
