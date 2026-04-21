@@ -1,8 +1,6 @@
-# Claw Code
+# ShieldSky
 
 <p align="center">
-  <a href="https://github.com/ultraworkers/claw-code">ultraworkers/claw-code</a>
-  ·
   <a href="./USAGE.md">Usage</a>
   ·
   <a href="./rust/README.md">Rust workspace</a>
@@ -11,92 +9,62 @@
   ·
   <a href="./ROADMAP.md">Roadmap</a>
   ·
-  <a href="https://discord.gg/5TUQKqFWd">UltraWorkers Discord</a>
+  <a href="./PHILOSOPHY.md">Philosophy</a>
 </p>
 
-<p align="center">
-  <a href="https://star-history.com/#ultraworkers/claw-code&Date">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=ultraworkers/claw-code&type=Date&theme=dark" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=ultraworkers/claw-code&type=Date" />
-      <img alt="Star history for ultraworkers/claw-code" src="https://api.star-history.com/svg?repos=ultraworkers/claw-code&type=Date" width="600" />
-    </picture>
-  </a>
-</p>
-
-<p align="center">
-  <img src="assets/claw-hero.jpeg" alt="Claw Code" width="300" />
-</p>
-
-Claw Code is the public Rust implementation of the `claw` CLI agent harness.
-The canonical implementation lives in [`rust/`](./rust), and the current source of truth for this repository is **ultraworkers/claw-code**.
+ShieldSky (SSS — Sky Security System) is a Rust-based passive airspace security platform. It correlates multi-source sensor data — ADS-B, RF, EO/IR, weather, orbital context — to classify aerial threats, assess site exposure, and route automated response actions.
 
 > [!IMPORTANT]
-> Start with [`USAGE.md`](./USAGE.md) for build, auth, CLI, session, and parity-harness workflows. Make `claw doctor` your first health check after building, use [`rust/README.md`](./rust/README.md) for crate-level details, read [`PARITY.md`](./PARITY.md) for the current Rust-port checkpoint, and see [`docs/container.md`](./docs/container.md) for the container-first workflow.
+> Start with [`USAGE.md`](./USAGE.md) for build and runtime workflows. Use [`rust/README.md`](./rust/README.md) for crate-level details, [`PARITY.md`](./PARITY.md) for port status, and [`docs/container.md`](./docs/container.md) for the container-first deployment workflow.
 
-## Current repository shape
+## Repository shape
 
-- **`rust/`** — canonical Rust workspace and the `claw` CLI binary
-- **`USAGE.md`** — task-oriented usage guide for the current product surface
+- **`rust/`** — canonical Rust workspace: passive scanner, skyshield engine, response router, API, CLI
+- **`USAGE.md`** — task-oriented usage guide
 - **`PARITY.md`** — Rust-port parity status and migration notes
-- **`ROADMAP.md`** — active roadmap and cleanup backlog
+- **`ROADMAP.md`** — active roadmap and open work
 - **`PHILOSOPHY.md`** — project intent and system-design framing
-- **`src/` + `tests/`** — companion Python/reference workspace and audit helpers; not the primary runtime surface
+- **`docs/`** — architecture, container deployment, API design docs
+- **`src/` + `tests/`** — companion Python reference workspace and audit helpers
 
 ## Quick start
 
-> [!NOTE]
-> **`cargo install clawcode` will not work** — this package is not published on crates.io. Build from source as shown below.
-
 ```bash
 # 1. Clone and build
-git clone https://github.com/ultraworkers/claw-code
-cd claw-code/rust
+git clone https://github.com/SerialAlicev3/ShieldSky
+cd ShieldSky/rust
 cargo build --workspace
 
-# 2. Set your API key (Anthropic API key — not a Claude subscription)
-export ANTHROPIC_API_KEY="sk-ant-..."
-
-# 3. Verify everything is wired correctly
-./target/debug/claw doctor
-
-# 4. Run a prompt
-./target/debug/claw prompt "say hello"
-```
-
-> [!NOTE]
-> **Windows (PowerShell):** the binary is `claw.exe`, not `claw`. Use `.\target\debug\claw.exe` or run `cargo run -- prompt "say hello"` to skip the path lookup.
-
-> [!NOTE]
-> **Auth:** claw requires an **API key** (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.) — Claude subscription login is not a supported auth path.
-
-Run the workspace test suite:
-
-```bash
-cd rust
+# 2. Run the test suite
 cargo test --workspace
+
+# 3. Start the SSS API (development)
+cargo run -p sss-api
 ```
+
+> [!NOTE]
+> **Windows (PowerShell):** use `cargo run -p sss-api` or `cargo run -p rusty-claude-cli` to avoid path issues with the binary directly.
+
+## Crate map
+
+| Crate | Purpose |
+|---|---|
+| `sss-core` | Domain types, shared primitives |
+| `sss-passive-scanner` | Multi-source ingest pipeline (ADS-B, RF, weather, orbital…) |
+| `sss-skyshield` | Threat classification, track engine, signal fusion |
+| `sss-response` | Policy evaluation and response action routing |
+| `sss-site-registry` | Site and zone asset registry |
+| `sss-api` | HTTP API with Semantic Timeline and dashboard views |
+| `sss-storage` | Persistence layer |
+| `sss-ingest` | External feed ingestion |
+| `telemetry` | Metrics and tracing |
 
 ## Documentation map
 
-- [`USAGE.md`](./USAGE.md) — quick commands, auth, sessions, config, parity harness
-- [`rust/README.md`](./rust/README.md) — crate map, CLI surface, features, workspace layout
-- [`PARITY.md`](./PARITY.md) — parity status for the Rust port
-- [`rust/MOCK_PARITY_HARNESS.md`](./rust/MOCK_PARITY_HARNESS.md) — deterministic mock-service harness details
-- [`ROADMAP.md`](./ROADMAP.md) — active roadmap and open cleanup work
-- [`PHILOSOPHY.md`](./PHILOSOPHY.md) — why the project exists and how it is operated
-
-## Ecosystem
-
-Claw Code is built in the open alongside the broader UltraWorkers toolchain:
-
-- [clawhip](https://github.com/Yeachan-Heo/clawhip)
-- [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent)
-- [oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode)
-- [oh-my-codex](https://github.com/Yeachan-Heo/oh-my-codex)
-- [UltraWorkers Discord](https://discord.gg/5TUQKqFWd)
-
-## Ownership / affiliation disclaimer
-
-- This repository does **not** claim ownership of the original Claude Code source material.
-- This repository is **not affiliated with, endorsed by, or maintained by Anthropic**.
+- [`USAGE.md`](./USAGE.md) — build, run, config
+- [`rust/README.md`](./rust/README.md) — crate map and workspace layout
+- [`PARITY.md`](./PARITY.md) — port parity status
+- [`ROADMAP.md`](./ROADMAP.md) — active roadmap
+- [`PHILOSOPHY.md`](./PHILOSOPHY.md) — design intent
+- [`docs/sss-skyshield-architecture.md`](./docs/sss-skyshield-architecture.md) — full system architecture
+- [`docs/container.md`](./docs/container.md) — container deployment
