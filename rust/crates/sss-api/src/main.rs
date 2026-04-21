@@ -15,7 +15,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .init();
 
-    let bind = env::var("SSS_API_BIND").unwrap_or_else(|_| "127.0.0.1:8088".to_string());
+    let bind = if let Ok(port) = env::var("PORT") {
+        format!("0.0.0.0:{port}")
+    } else {
+        env::var("SSS_API_BIND").unwrap_or_else(|_| "127.0.0.1:8088".to_string())
+    };
     let addr: SocketAddr = bind.parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let local_addr = listener.local_addr()?;

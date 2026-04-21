@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: shieldsky-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: SSS_STORAGE_PATH
+        value: /app/data/sss-api.sqlite
+      # Optional — set these in the Render dashboard, not here
+      # - key: SSS_NASA_API_KEY
+      #   sync: false
+      # - key: SSS_FIRMS_MAP_KEY
+      #   sync: false
+      # - key: SSS_OPENSKY_BEARER_TOKEN
+      #   sync: false
+      # - key: SSS_WEBHOOK_ENDPOINT
+      #   sync: false
