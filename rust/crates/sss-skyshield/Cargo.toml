@@ -1,0 +1,16 @@
+[package]
+name = "sss-skyshield"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json.workspace = true
+sss-core = { path = "../sss-core" }
+sss-site-registry = { path = "../sss-site-registry" }
+uuid = { path = "../uuid" }
+
+[lints]
+workspace = true

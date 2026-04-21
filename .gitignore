@@ -1,0 +1,24 @@
+__pycache__/
+archive/
+.omx/
+.clawd-agents/
+# Claude Code local artifacts
+.claude/settings.local.json
+.claude/sessions/
+
+# Rust build artifacts
+rust/target/
+rust/target-codex-verify/
+
+# Session/internal tool artifacts
+rust/.claw/sessions/
+rust/.omc/
+rust/.sandbox-home/
+rust/.clawd-agents/
+rust/.clawd-todos.json
+
+# Python cache
+*.pyc
+*.pyo
+.env
+

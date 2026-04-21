@@ -1,0 +1,119 @@
+# Semantic Timeline Panel (Frontend Example)
+
+This is a standalone, accessible, and responsive HTML/CSS/JS panel for visualização da Semantic Timeline, pronto para consumir o endpoint `/v1/passive/regions/{region_id}/semantic-timeline`.
+
+## Como usar
+- Substitua `REGION_ID` pelo id da região desejada.
+- Abra o arquivo em um navegador moderno.
+
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Semantic Timeline Panel</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #f7f7fa; margin: 0; padding: 2rem; }
+    .timeline-card { background: #fff; border-radius: 8px; box-shadow: 0 2px 8px #0001; margin-bottom: 2rem; padding: 1.5rem; max-width: 700px; margin-left: auto; margin-right: auto; }
+    .timeline-header { font-size: 1.3rem; margin-bottom: 1rem; }
+    .timeline-meta { color: #666; font-size: 0.95rem; margin-bottom: 1rem; display: flex; gap: 1.5rem; flex-wrap: wrap; }
+    .timeline-list { display: flex; flex-direction: column; gap: 1rem; }
+    .timeline-entry { border-left: 4px solid #bbb; padding-left: 1rem; background: #fafbfc; border-radius: 4px; transition: box-shadow 0.2s; position: relative; }
+    .timeline-entry.critical { border-color: #e53935; background: #fff5f5; }
+    .timeline-entry.high { border-color: #fbc02d; background: #fffbe7; }
+    .timeline-entry.ok { border-color: #43a047; background: #f7fff7; }
+    .timeline-entry:hover { box-shadow: 0 2px 8px #0002; }
+    .timeline-entry-title { font-weight: bold; font-size: 1.1rem; }
+    .timeline-entry-meta { font-size: 0.95rem; color: #444; margin-top: 0.3rem; display: flex; gap: 1.2rem; flex-wrap: wrap; }
+    .pill { display: inline-block; padding: 0.1em 0.7em; border-radius: 1em; font-size: 0.9em; margin-right: 0.5em; }
+    .pill.critical { background: #e53935; color: #fff; }
+    .pill.high { background: #fbc02d; color: #222; }
+    .pill.ok { background: #43a047; color: #fff; }
+    .timeline-entry-details { margin-top: 0.5rem; color: #555; font-size: 0.97rem; }
+    .timeline-entry-dates { margin-top: 0.3rem; color: #888; font-size: 0.92rem; }
+    @media (max-width: 600px) { .timeline-card { padding: 0.7rem; } .timeline-meta, .timeline-entry-meta { flex-direction: column; gap: 0.5rem; } }
+  </style>
+</head>
+<body>
+  <div class="timeline-card" id="timeline-panel">
+    <div class="timeline-header">Semantic Timeline</div>
+    <div class="timeline-meta" id="timeline-meta"></div>
+    <div class="timeline-list" id="timeline-list"></div>
+  </div>
+  <script>
+    const REGION_ID = 'REGION_ID'; // Substitua pelo id real
+    async function fetchTimeline(regionId) {
+      const resp = await fetch(`/v1/passive/regions/${encodeURIComponent(regionId)}/semantic-timeline?limit=10`);
+      if (!resp.ok) throw new Error('Failed to fetch timeline');
+      return await resp.json();
+    }
+    function renderTimelineMeta(timeline) {
+      return `
+        <span><b>Scope:</b> ${timeline.scope}</span>
+        <span><b>ID:</b> ${timeline.scope_id}</span>
+        <span><b>Status:</b> ${timeline.dominant_status ?? 'no_canonical_state'}</span>
+        <span><b>Entries:</b> ${timeline.entries.length}</span>
+      `;
+    }
+    function renderTimelineEntry(entry) {
+      const riskClass = entry.risk_delta.classification === 'critical' ? 'critical' : entry.risk_delta.classification === 'high' ? 'high' : 'ok';
+      return `
+        <div class="timeline-entry ${riskClass}" tabindex="0" aria-label="${entry.event_type} at ${entry.site_name}, status ${entry.status}, risk ${Math.round(entry.risk_score*100)}%">
+          <div class="timeline-entry-title">${entry.event_type} @ ${entry.site_name}</div>
+          <div class="timeline-entry-meta">
+            <span class="pill ${riskClass}">${entry.risk_delta.classification}</span>
+            <span>Status: ${entry.status}</span>
+            <span>Signals: ${entry.support_count}</span>
+            <span>Risk: ${Math.round(entry.risk_score*100)}%</span>
+          </div>
+          <div class="timeline-entry-details">${entry.status_summary || ''}</div>
+          <div class="timeline-entry-details">${entry.risk_delta.explanation || ''}</div>
+          <div class="timeline-entry-dates">First: ${new Date(entry.first_observed_at_unix_seconds*1000).toLocaleString()} | Last: ${new Date(entry.last_observed_at_unix_seconds*1000).toLocaleString()}</div>
+        </div>
+      `;
+    }
+    async function renderTimeline(regionId) {
+      try {
+        const timeline = await fetchTimeline(regionId);
+        document.getElementById('timeline-meta').innerHTML = renderTimelineMeta(timeline);
+        document.getElementById('timeline-list').innerHTML = timeline.entries.length
+          ? timeline.entries.map(renderTimelineEntry).join('')
+          : '<div class="empty">No semantic timeline yet.</div>';
+      } catch (e) {
+        document.getElementById('timeline-list').innerHTML = `<div class="empty">${e.message}</div>`;
+      }
+    }
+    renderTimeline(REGION_ID);
+  </script>
+</body>
+</html>
+
+---
+
+## Documentação do endpoint
+
+### GET /v1/passive/regions/{region_id}/semantic-timeline
+
+- **Descrição:** Retorna a timeline semântica de eventos para uma região.
+- **Parâmetros:**
+  - `region_id` (path): ID da região
+  - `limit` (query, opcional): número máximo de entradas
+- **Resposta:**
+  - `scope`, `scope_id`, `dominant_status`, `entries[]` (array de eventos)
+  - Cada entrada: `event_type`, `site_name`, `status`, `support_count`, `risk_score`, `risk_delta` (com `classification`, `explanation`), `status_summary`, `first_observed_at_unix_seconds`, `last_observed_at_unix_seconds`
+- **Exemplo de uso:**
+  - `GET /v1/passive/regions/iberian-peninsula/semantic-timeline?limit=10`
+
+---
+
+## Feedback de usuários
+
+- Adicione botões de feedback ou links para coleta de sugestões.
+- Exemplo: `<a href="mailto:feedback@suaplateforma.com?subject=Semantic Timeline Feedback">Enviar feedback</a>`
+- Integre analytics para monitorar uso e pontos de abandono.
+
+---
+
+Este painel pode ser expandido conforme feedback dos usuários e necessidades de UX.

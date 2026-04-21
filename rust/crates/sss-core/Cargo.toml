@@ -1,0 +1,13 @@
+[package]
+name = "sss-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+sgp4 = "2.4"
+
+[lints]
+workspace = true

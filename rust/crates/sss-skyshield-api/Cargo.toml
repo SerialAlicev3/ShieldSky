@@ -1,0 +1,28 @@
+[package]
+name = "sss-skyshield-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "sss-skyshield-api"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.7"
+serde = { version = "1", features = ["derive"] }
+serde_json.workspace = true
+sss-response = { path = "../sss-response" }
+sss-site-registry = { path = "../sss-site-registry" }
+sss-skyshield = { path = "../sss-skyshield" }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+uuid = { path = "../uuid" }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,31 @@
+[package]
+name = "sss-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "sss-api"
+path = "src/main.rs"
+
+[dependencies]
+axum = "0.7"
+csv = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json.workspace = true
+sss-core = { path = "../sss-core" }
+sss-ingest = { path = "../sss-ingest" }
+sss-passive-scanner = { path = "../sss-passive-scanner" }
+sss-site-registry = { path = "../sss-site-registry" }
+sss-storage = { path = "../sss-storage" }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[dev-dependencies]
+tower = "0.5"
+
+[lints]
+workspace = true
