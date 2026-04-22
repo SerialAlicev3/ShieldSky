@@ -3195,12 +3195,22 @@ container.addEventListener('mousemove', e => {
   camera.position.y += (0.2 + targetRotX * 0.3 - camera.position.y) * 0.05;
 })();
 
+// --- Console state (filter + time window) ---
+const CONSOLE_STATE = { filter: 'global', window: '72h' };
+function windowAfterUnix() {
+  const secs = { '24h': 86400, '72h': 259200, '7d': 604800, '30d': 2592000 };
+  return Math.floor(Date.now() / 1000) - (secs[CONSOLE_STATE.window] || 259200);
+}
+
 // --- Chip interactions ---
 document.querySelectorAll('.chip-group').forEach(group => {
   group.querySelectorAll('.chip').forEach(chip => {
     chip.addEventListener('click', () => {
       group.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
       chip.classList.add('active');
+      if (chip.dataset.filter) CONSOLE_STATE.filter = chip.dataset.filter;
+      if (chip.dataset.window) CONSOLE_STATE.window = chip.dataset.window;
+      refreshAll();
     });
   });
 });
@@ -3274,7 +3284,7 @@ function pClass(idx) {
 // GET /v1/passive/canonical-events → CanonicalEventsResponse
 async function refreshWhatChanged() {
   try {
-    const data   = await API.get('/v1/passive/canonical-events');
+    const data   = await API.get('/v1/passive/canonical-events?after_unix_seconds=' + windowAfterUnix());
     const events = data.events || [];
     const list   = document.getElementById('what-changed-list');
     const count  = document.getElementById('changes-count');
@@ -3467,7 +3477,9 @@ async function refreshAttentionQueue() {
     const list  = document.getElementById('attention-queue-list');
     const cnt   = document.getElementById('attention-count');
     if (!list) return;
-    const items = data.attention_queue || [];
+    const filterKind = { regional: 'region', site: 'site', incident: 'canonical_event' }[CONSOLE_STATE.filter];
+    let items = data.attention_queue || [];
+    if (filterKind) items = items.filter(i => i.kind === filterKind);
     if (!items.length) {
       list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">Queue is clear.</div>';
       if (cnt) cnt.textContent = '0';
@@ -3526,7 +3538,7 @@ async function refreshRecommendedActions() {
 // CanonicalPassiveEvent: { event_type, severity, priority }
 async function refreshEventComposition() {
   try {
-    const data   = await API.get('/v1/passive/canonical-events');
+    const data   = await API.get('/v1/passive/canonical-events?after_unix_seconds=' + windowAfterUnix());
     const events = data.events || [];
     const list   = document.getElementById('event-composition-list');
     const total  = document.getElementById('event-total');
