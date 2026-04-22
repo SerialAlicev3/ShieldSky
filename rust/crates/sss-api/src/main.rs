@@ -30,7 +30,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("sss-api listening on http://{local_addr}");
     tracing::info!("sss-api storage at {}", storage_path.display());
     let state = configure_state_from_env(AppState::from_storage(storage)?);
-    seed_default_regions(&state);
+    let seeded = seed_default_regions(&state);
+    if seeded {
+        // Regions were just created from scratch (fresh deploy / wiped DB).
+        // Spawn a background discovery run so the console has data within ~60s.
+        tokio::spawn(run_startup_discovery(state.clone()));
+    }
     if let Some(config) = scheduler_config() {
         tracing::info!(
             poll_seconds = config.poll_interval.as_secs(),
@@ -319,17 +324,17 @@ async fn run_passive_region_scheduler(state: AppState, config: PassiveRegionSche
 }
 
 /// Seed the two default Portugal monitoring regions on startup if none exist.
-/// This recovers automatically after Render redeploys wipe the SQLite database.
-fn seed_default_regions(state: &AppState) {
+/// Returns true if regions were created (i.e. DB was fresh / wiped).
+fn seed_default_regions(state: &AppState) -> bool {
     let existing = match state.passive_region_targets(1, false) {
         Ok(targets) => targets,
         Err(error) => {
             tracing::warn!(%error, "failed to query passive regions during startup seed");
-            return;
+            return false;
         }
     };
     if !existing.is_empty() {
-        return;
+        return false;
     }
 
     let defaults: &[PassiveRegionTargetRequest] = &[
@@ -376,6 +381,33 @@ fn seed_default_regions(state: &AppState) {
             Ok(created) => tracing::info!(region_id = %created.region_id, "seeded default passive region"),
             Err(error) => tracing::warn!(%error, name = %region.name, "failed to seed default passive region"),
         }
+    }
+    true
+}
+
+/// After a fresh DB seed, run discovery in the background so the console
+/// has real site data within ~60 seconds of startup.
+async fn run_startup_discovery(state: AppState) {
+    // Small delay so the HTTP server is fully up before we start hitting
+    // external APIs (Overpass, Open-Meteo, etc.).
+    tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+    tracing::info!("running startup discovery for freshly-seeded regions");
+    let request_id = format!("startup-discovery-{}", unix_seconds_now());
+    let request = PassiveRegionRunRequest {
+        region_ids: None,
+        force_discovery: Some(true),
+        dry_run: Some(false),
+        window_hours: Some(24),
+        include_adsb: Some(false),
+        include_weather: Some(true),
+        include_fire_smoke: Some(true),
+    };
+    match state.run_passive_regions(&request_id, &request).await {
+        Ok(response) => tracing::info!(
+            discovered_seeds = response.discovered_seed_count,
+            "startup discovery completed"
+        ),
+        Err(error) => tracing::warn!(%error, "startup discovery failed"),
     }
 }
 
