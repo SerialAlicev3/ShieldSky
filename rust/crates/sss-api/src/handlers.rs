@@ -3732,251 +3732,1607 @@ setInterval(refreshAll, 30000);
 </html>
 "##;
 
-const LANDING_PAGE_HTML: &str = r##"<!doctype html>
+const LANDING_PAGE_HTML: &str = r##"<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>ShieldSky</title>
-    <style>
-      :root {
-        color-scheme: dark;
-        --bg: #08111d;
-        --panel: rgba(14, 24, 39, 0.92);
-        --panel-strong: rgba(20, 34, 56, 0.96);
-        --line: rgba(151, 181, 214, 0.18);
-        --text: #eff5ff;
-        --muted: #a8bad2;
-        --accent: #53d1c1;
-        --accent-2: #f3c969;
-      }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        font-family: "Segoe UI", Arial, sans-serif;
-        color: var(--text);
-        background:
-          radial-gradient(circle at top left, rgba(83, 209, 193, 0.14), transparent 24%),
-          radial-gradient(circle at 85% 15%, rgba(243, 201, 105, 0.12), transparent 18%),
-          linear-gradient(180deg, #08111d 0%, #0b1524 52%, #09111d 100%);
-      }
-      a { color: inherit; text-decoration: none; }
-      .shell {
-        min-height: 100vh;
-        padding: 40px 24px 56px;
-        max-width: 1180px;
-        margin: 0 auto;
-      }
-      .nav {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 16px;
-        margin-bottom: 36px;
-      }
-      .brand {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        font-weight: 700;
-        letter-spacing: 0.04em;
-      }
-      .brand-mark {
-        width: 14px;
-        height: 14px;
-        border-radius: 999px;
-        background: linear-gradient(135deg, var(--accent), #7bd4ff);
-        box-shadow: 0 0 20px rgba(83, 209, 193, 0.45);
-      }
-      .nav-links {
-        display: flex;
-        gap: 12px;
-        flex-wrap: wrap;
-      }
-      .nav-links a,
-      .cta,
-      .cta-secondary {
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        padding: 10px 14px;
-        font-size: 14px;
-      }
-      .cta {
-        background: linear-gradient(180deg, rgba(83, 209, 193, 0.24), rgba(83, 209, 193, 0.08));
-      }
-      .cta-secondary {
-        background: rgba(255,255,255,0.03);
-      }
-      .hero {
-        display: grid;
-        grid-template-columns: 1.2fr 0.8fr;
-        gap: 20px;
-        margin-bottom: 20px;
-      }
-      .panel {
-        border: 1px solid var(--line);
-        border-radius: 18px;
-        background: var(--panel);
-        padding: 24px;
-        backdrop-filter: blur(10px);
-      }
-      h1 {
-        margin: 0 0 14px;
-        font-size: clamp(34px, 6vw, 64px);
-        line-height: 0.98;
-      }
-      .eyebrow {
-        color: var(--accent);
-        font-size: 13px;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-        margin-bottom: 14px;
-      }
-      .lede {
-        margin: 0;
-        color: var(--muted);
-        font-size: 17px;
-        line-height: 1.65;
-        max-width: 60ch;
-      }
-      .hero-actions {
-        display: flex;
-        gap: 12px;
-        flex-wrap: wrap;
-        margin-top: 22px;
-      }
-      .stat-grid,
-      .feature-grid {
-        display: grid;
-        gap: 16px;
-      }
-      .stat-grid {
-        grid-template-columns: repeat(3, 1fr);
-        margin: 20px 0 28px;
-      }
-      .stat {
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        padding: 16px;
-        background: rgba(255,255,255,0.025);
-      }
-      .stat strong {
-        display: block;
-        font-size: 26px;
-        margin-bottom: 6px;
-      }
-      .stat span,
-      .feature p,
-      .note,
-      .mini-list li {
-        color: var(--muted);
-      }
-      .feature-grid {
-        grid-template-columns: repeat(3, 1fr);
-      }
-      .feature {
-        border: 1px solid var(--line);
-        border-radius: 16px;
-        padding: 18px;
-        background: rgba(255,255,255,0.02);
-      }
-      .feature h3,
-      .side-panel h2,
-      .panel h2 {
-        margin: 0 0 10px;
-        font-size: 18px;
-      }
-      .side-panel {
-        display: grid;
-        gap: 14px;
-      }
-      .mini-list {
-        margin: 0;
-        padding-left: 18px;
-        display: grid;
-        gap: 8px;
-      }
-      code {
-        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-        color: #d9ebff;
-      }
-      .note {
-        margin-top: 18px;
-        font-size: 14px;
-        line-height: 1.6;
-      }
-      @media (max-width: 900px) {
-        .hero,
-        .feature-grid,
-        .stat-grid {
-          grid-template-columns: 1fr;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <main class="shell">
-      <div class="nav">
-        <div class="brand"><span class="brand-mark"></span><span>ShieldSky</span></div>
-        <div class="nav-links">
-          <a href="/console">Operator Console</a>
-          <a href="/v1/health">Health</a>
-          <a href="/v1/version">Version</a>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ShieldSky â€” Operational Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:ital,wght@0,300;0,400;0,500;0,600;1,300&family=Barlow+Condensed:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --bg: #04090f;
+  --bg2: #060f1a;
+  --bg3: #071220;
+  --teal: #00d4b8;
+  --teal-dim: rgba(0,212,184,0.15);
+  --teal-glow: rgba(0,212,184,0.4);
+  --amber: #f0a500;
+  --amber-dim: rgba(240,165,0,0.12);
+  --coral: #ff6b6b;
+  --white: #ffffff;
+  --white-90: rgba(255,255,255,0.9);
+  --white-60: rgba(255,255,255,0.6);
+  --white-30: rgba(255,255,255,0.3);
+  --white-10: rgba(255,255,255,0.07);
+  --blue-mist: #8db4d8;
+  --border: rgba(255,255,255,0.08);
+  --border-teal: rgba(0,212,184,0.25);
+}
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--white);
+  font-family: 'Barlow', sans-serif;
+  overflow-x: hidden;
+  cursor: default;
+}
+
+/* â”€â”€â”€ NOISE TEXTURE OVERLAY â”€â”€â”€ */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+  pointer-events: none;
+  z-index: 1000;
+  opacity: 0.4;
+}
+
+/* â”€â”€â”€ SCANLINE â”€â”€â”€ */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+  pointer-events: none;
+  z-index: 999;
+}
+
+/* â”€â”€â”€ GRID OVERLAY â”€â”€â”€ */
+.grid-bg {
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(0,212,184,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,212,184,0.025) 1px, transparent 1px);
+  background-size: 80px 80px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* â”€â”€â”€ NAV â”€â”€â”€ */
+nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 48px;
+  background: linear-gradient(180deg, rgba(4,9,15,0.95) 0%, transparent 100%);
+  backdrop-filter: blur(2px);
+}
+
+.nav-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+}
+
+.nav-logo-dot {
+  width: 10px; height: 10px;
+  background: var(--teal);
+  border-radius: 50%;
+  box-shadow: 0 0 12px var(--teal), 0 0 24px var(--teal-glow);
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; box-shadow: 0 0 12px var(--teal), 0 0 24px var(--teal-glow); }
+  50% { opacity: 0.7; box-shadow: 0 0 6px var(--teal), 0 0 12px var(--teal-glow); }
+}
+
+.nav-logo-text {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--white);
+  text-transform: uppercase;
+}
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nav-link {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--white-60);
+  text-decoration: none;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  transition: all 0.2s;
+}
+
+.nav-link:hover { color: var(--white); border-color: var(--white-30); }
+
+.nav-cta {
+  background: var(--teal);
+  color: var(--bg) !important;
+  font-weight: 500;
+  border-color: var(--teal) !important;
+}
+
+.nav-cta:hover { background: #00f0d0; box-shadow: 0 0 20px var(--teal-glow); }
+
+/* â”€â”€â”€ HERO â”€â”€â”€ */
+#hero {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+}
+
+#globe-canvas {
+  position: absolute;
+  top: 50%;
+  right: -5%;
+  transform: translateY(-50%);
+  width: 65vw;
+  height: 65vw;
+  max-width: 900px;
+  max-height: 900px;
+  opacity: 0.85;
+  z-index: 1;
+}
+
+.hero-gradient {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 80% at 20% 50%, rgba(0,212,184,0.04) 0%, transparent 70%),
+    radial-gradient(ellipse 40% 60% at 75% 50%, rgba(0,212,184,0.06) 0%, transparent 70%),
+    linear-gradient(90deg, var(--bg) 35%, transparent 70%);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.hero-bottom-fade {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 200px;
+  background: linear-gradient(0deg, var(--bg) 0%, transparent 100%);
+  z-index: 3;
+}
+
+.hero-content {
+  position: relative;
+  z-index: 10;
+  padding: 0 48px;
+  max-width: 800px;
+  animation: hero-in 1.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes hero-in {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.hero-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--teal);
+  margin-bottom: 32px;
+  animation: hero-in 1.2s 0.1s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.hero-tag::before {
+  content: '';
+  display: block;
+  width: 32px; height: 1px;
+  background: var(--teal);
+}
+
+.hero-headline {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(72px, 9vw, 140px);
+  font-weight: 400;
+  line-height: 0.92;
+  letter-spacing: 0.01em;
+  color: var(--white);
+  margin-bottom: 28px;
+  animation: hero-in 1.2s 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.hero-headline em {
+  font-style: normal;
+  color: transparent;
+  -webkit-text-stroke: 1px rgba(255,255,255,0.4);
+}
+
+.hero-subline {
+  font-size: 18px;
+  font-weight: 300;
+  line-height: 1.6;
+  color: var(--white-60);
+  max-width: 520px;
+  margin-bottom: 48px;
+  animation: hero-in 1.2s 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.hero-subline strong {
+  color: var(--white-90);
+  font-weight: 500;
+}
+
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  animation: hero-in 1.2s 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--teal);
+  color: var(--bg);
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding: 14px 32px;
+  border-radius: 2px;
+  transition: all 0.25s;
+  border: none;
+  cursor: pointer;
+}
+
+.btn-primary:hover {
+  background: #00f0d0;
+  box-shadow: 0 0 40px rgba(0,212,184,0.5), 0 8px 24px rgba(0,0,0,0.4);
+  transform: translateY(-1px);
+}
+
+.btn-primary svg { width: 16px; height: 16px; }
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: transparent;
+  color: var(--white-60);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding: 14px 24px;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+  transition: all 0.25s;
+}
+
+.btn-secondary:hover { color: var(--white); border-color: var(--white-30); background: var(--white-10); }
+
+/* LIVE INDICATOR */
+.live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  color: var(--teal);
+  text-transform: uppercase;
+  padding: 6px 14px;
+  border: 1px solid var(--border-teal);
+  border-radius: 2px;
+  background: var(--teal-dim);
+  margin-left: 8px;
+}
+
+.live-dot {
+  width: 6px; height: 6px;
+  background: var(--teal);
+  border-radius: 50%;
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+/* STATS BAR */
+.hero-stats {
+  position: absolute;
+  bottom: 48px;
+  left: 48px;
+  right: 48px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 48px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+  animation: hero-in 1.2s 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-value {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 28px;
+  color: var(--white);
+  letter-spacing: 0.05em;
+}
+
+.stat-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--white-30);
+}
+
+/* â”€â”€â”€ SECTIONS â”€â”€â”€ */
+section {
+  position: relative;
+  z-index: 10;
+}
+
+.section-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 48px;
+}
+
+.section-tag {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--teal);
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.section-tag::after {
+  content: '';
+  flex: 1;
+  max-width: 64px;
+  height: 1px;
+  background: var(--border-teal);
+}
+
+.section-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(48px, 6vw, 88px);
+  font-weight: 400;
+  line-height: 0.94;
+  letter-spacing: 0.01em;
+  color: var(--white);
+  margin-bottom: 24px;
+}
+
+/* â”€â”€â”€ SURFACES SECTION â”€â”€â”€ */
+#surfaces {
+  padding: 120px 0;
+  background: linear-gradient(180deg, transparent 0%, rgba(0,212,184,0.015) 50%, transparent 100%);
+}
+
+.surfaces-header {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 48px;
+  align-items: end;
+  margin-bottom: 64px;
+}
+
+.surfaces-desc {
+  font-size: 17px;
+  font-weight: 300;
+  line-height: 1.7;
+  color: var(--white-60);
+  align-self: end;
+}
+
+.surfaces-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  grid-template-rows: auto auto;
+  gap: 2px;
+  background: var(--border);
+}
+
+.surface-card {
+  background: var(--bg2);
+  padding: 32px;
+  position: relative;
+  overflow: hidden;
+  transition: background 0.3s;
+  cursor: default;
+}
+
+.surface-card:hover { background: var(--bg3); }
+
+.surface-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, var(--teal) 0%, transparent 60%);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.surface-card:hover::before { opacity: 1; }
+
+.surface-card.large {
+  grid-column: 1;
+  grid-row: 1 / 3;
+}
+
+.surface-card-tag {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--teal);
+  margin-bottom: 16px;
+}
+
+.surface-card-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--white);
+  margin-bottom: 12px;
+}
+
+.surface-card-desc {
+  font-size: 14px;
+  font-weight: 300;
+  line-height: 1.6;
+  color: var(--white-60);
+}
+
+/* MOCK SCREEN */
+.surface-mock {
+  margin-top: 28px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 16px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+}
+
+.mock-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.mock-dot { width: 6px; height: 6px; border-radius: 50%; }
+.mock-dot.red { background: #ff6b6b; }
+.mock-dot.yellow { background: #f0a500; }
+.mock-dot.green { background: var(--teal); }
+
+.mock-title { font-size: 10px; color: var(--white-30); letter-spacing: 0.1em; flex: 1; text-align: center; }
+
+.mock-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  font-size: 10px;
+}
+
+.mock-row-label { color: var(--white-60); }
+.mock-row-val { color: var(--teal); }
+.mock-row-val.amber { color: var(--amber); }
+.mock-row-val.coral { color: var(--coral); }
+.mock-row-val.dim { color: var(--white-30); }
+
+.mock-alert {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: rgba(255,107,107,0.08);
+  border-left: 2px solid var(--coral);
+  font-size: 10px;
+  color: var(--white-60);
+  line-height: 1.5;
+}
+
+.mock-alert strong { color: var(--coral); }
+
+/* ATT QUEUE MOCK */
+.mock-queue-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+
+.mock-queue-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.mock-queue-dot.high { background: var(--coral); box-shadow: 0 0 6px var(--coral); }
+.mock-queue-dot.med { background: var(--amber); }
+.mock-queue-dot.low { background: var(--teal); }
+
+.mock-queue-text { font-size: 10px; color: var(--white-60); line-height: 1.5; }
+.mock-queue-text strong { color: var(--white); }
+.mock-queue-time { font-size: 9px; color: var(--white-30); margin-left: auto; white-space: nowrap; }
+
+/* â”€â”€â”€ THINKING SECTION â”€â”€â”€ */
+#thinking {
+  padding: 140px 0;
+  background: var(--bg2);
+  overflow: hidden;
+}
+
+.thinking-header {
+  margin-bottom: 80px;
+}
+
+.thinking-flow {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  position: relative;
+}
+
+.thinking-flow::before {
+  content: '';
+  position: absolute;
+  top: 50px;
+  left: 50px;
+  right: 50px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border-teal), var(--border-teal), transparent);
+}
+
+.thinking-step {
+  flex: 1;
+  padding: 40px 32px;
+  border-left: 1px solid var(--border);
+  position: relative;
+  transition: background 0.3s;
+}
+
+.thinking-step:first-child { border-left: none; }
+.thinking-step:hover { background: rgba(0,212,184,0.03); }
+
+.thinking-step-num {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--white-30);
+  margin-bottom: 24px;
+}
+
+.thinking-step-icon {
+  width: 48px; height: 48px;
+  border: 1px solid var(--border-teal);
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 24px;
+  background: var(--teal-dim);
+  position: relative;
+  z-index: 1;
+}
+
+.thinking-step-icon svg { width: 22px; height: 22px; stroke: var(--teal); fill: none; stroke-width: 1.5; }
+
+.thinking-step-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 32px;
+  color: var(--white);
+  letter-spacing: 0.04em;
+  margin-bottom: 14px;
+}
+
+.thinking-step-desc {
+  font-size: 14px;
+  font-weight: 300;
+  line-height: 1.7;
+  color: var(--white-60);
+}
+
+/* â”€â”€â”€ WHY MATTERS â”€â”€â”€ */
+#why {
+  padding: 140px 0;
+  position: relative;
+  overflow: hidden;
+}
+
+#why::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: radial-gradient(ellipse 80% 60% at 80% 50%, rgba(240,165,0,0.03) 0%, transparent 70%);
+}
+
+.why-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--border);
+  margin-top: 64px;
+}
+
+.why-item {
+  background: var(--bg);
+  padding: 48px;
+  position: relative;
+  overflow: hidden;
+}
+
+.why-item::after {
+  content: attr(data-num);
+  position: absolute;
+  bottom: -20px;
+  right: -10px;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 120px;
+  color: rgba(255,255,255,0.02);
+  line-height: 1;
+  pointer-events: none;
+}
+
+.why-item-icon {
+  width: 40px; height: 2px;
+  background: var(--amber);
+  margin-bottom: 28px;
+}
+
+.why-item-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--white);
+  margin-bottom: 14px;
+}
+
+.why-item-text {
+  font-size: 15px;
+  font-weight: 300;
+  line-height: 1.7;
+  color: var(--white-60);
+}
+
+/* â”€â”€â”€ OPERATORS SECTION â”€â”€â”€ */
+#operators {
+  padding: 140px 0;
+  background: var(--bg2);
+}
+
+.operators-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 100px;
+  align-items: center;
+  margin-top: 64px;
+}
+
+.operators-left { }
+
+.operators-statement {
+  font-family: 'Barlow', sans-serif;
+  font-size: clamp(24px, 3vw, 36px);
+  font-weight: 300;
+  line-height: 1.5;
+  color: var(--white-90);
+  margin-bottom: 40px;
+}
+
+.operators-statement strong {
+  color: var(--white);
+  font-weight: 600;
+}
+
+.operators-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--border);
+}
+
+.metric-cell {
+  background: var(--bg3);
+  padding: 28px;
+}
+
+.metric-num {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 52px;
+  color: var(--white);
+  line-height: 1;
+  margin-bottom: 6px;
+}
+
+.metric-num span { color: var(--teal); }
+
+.metric-desc {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: var(--white-30);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  line-height: 1.5;
+}
+
+.operators-right { }
+
+.capability-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.capability-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 24px 28px;
+  background: rgba(255,255,255,0.02);
+  border-left: 2px solid transparent;
+  transition: all 0.3s;
+}
+
+.capability-item:hover {
+  background: rgba(0,212,184,0.04);
+  border-left-color: var(--teal);
+}
+
+.cap-index {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--white-30);
+  letter-spacing: 0.1em;
+  padding-top: 3px;
+  flex-shrink: 0;
+}
+
+.cap-content { }
+.cap-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--white);
+  margin-bottom: 6px;
+}
+
+.cap-desc {
+  font-size: 13px;
+  font-weight: 300;
+  color: var(--white-60);
+  line-height: 1.6;
+}
+
+/* â”€â”€â”€ CTA SECTION â”€â”€â”€ */
+#cta {
+  padding: 160px 0;
+  position: relative;
+  overflow: hidden;
+  text-align: center;
+}
+
+#cta::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 70% 70% at 50% 50%, rgba(0,212,184,0.07) 0%, transparent 70%);
+}
+
+#cta-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.6;
+}
+
+.cta-inner {
+  position: relative;
+  z-index: 10;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 0 48px;
+}
+
+.cta-tag {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--teal);
+  margin-bottom: 28px;
+}
+
+.cta-headline {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(64px, 8vw, 120px);
+  font-weight: 400;
+  line-height: 0.9;
+  color: var(--white);
+  margin-bottom: 24px;
+}
+
+.cta-sub {
+  font-size: 18px;
+  font-weight: 300;
+  color: var(--white-60);
+  margin-bottom: 48px;
+  line-height: 1.6;
+}
+
+.cta-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* â”€â”€â”€ FOOTER â”€â”€â”€ */
+footer {
+  padding: 48px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+  z-index: 10;
+}
+
+.footer-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+}
+
+.footer-logo-text {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--white-60);
+}
+
+.footer-meta {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--white-30);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.footer-links {
+  display: flex;
+  gap: 24px;
+}
+
+.footer-link {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--white-30);
+  text-decoration: none;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transition: color 0.2s;
+}
+
+.footer-link:hover { color: var(--teal); }
+
+/* â”€â”€â”€ SCROLL REVEAL â”€â”€â”€ */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1), transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.reveal.visible { opacity: 1; transform: translateY(0); }
+.reveal-delay-1 { transition-delay: 0.1s; }
+.reveal-delay-2 { transition-delay: 0.2s; }
+.reveal-delay-3 { transition-delay: 0.3s; }
+.reveal-delay-4 { transition-delay: 0.4s; }
+
+/* â”€â”€â”€ RESPONSIVE â”€â”€â”€ */
+@media (max-width: 1024px) {
+  nav { padding: 16px 24px; }
+  .hero-content { padding: 0 24px; }
+  .hero-stats { left: 24px; right: 24px; gap: 32px; }
+  .section-inner { padding: 0 24px; }
+  #globe-canvas { width: 80vw; height: 80vw; right: -20%; }
+  .surfaces-header { grid-template-columns: 1fr; }
+  .surfaces-grid { grid-template-columns: 1fr 1fr; }
+  .surface-card.large { grid-column: 1 / 3; grid-row: 1; }
+  .thinking-flow { flex-wrap: wrap; }
+  .thinking-flow::before { display: none; }
+  .thinking-step { min-width: 45%; }
+  .why-grid { grid-template-columns: 1fr; }
+  .operators-layout { grid-template-columns: 1fr; gap: 48px; }
+  footer { flex-direction: column; gap: 24px; text-align: center; }
+}
+
+@media (max-width: 640px) {
+  .hero-headline { font-size: 60px; }
+  .hero-stats { flex-wrap: wrap; gap: 20px; }
+  #globe-canvas { width: 100vw; height: 100vw; right: -30%; opacity: 0.4; }
+  .surfaces-grid { grid-template-columns: 1fr; }
+  .surface-card.large { grid-column: 1; grid-row: 1; }
+  .thinking-step { min-width: 100%; }
+  .operators-metrics { grid-template-columns: 1fr; }
+  .nav-links { gap: 4px; }
+  .nav-link { padding: 6px 10px; font-size: 10px; }
+}
+</style>
+</head>
+<body>
+
+<div class="grid-bg"></div>
+
+<!-- NAV -->
+<nav>
+  <a href="/" class="nav-logo">
+    <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0"><defs><filter id="gl"><feGaussianBlur stdDeviation="1.5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><path d="M14 2L3 6.5V14c0 5.8 4.5 11.2 11 13 6.5-1.8 11-7.2 11-13V6.5L14 2z" fill="rgba(0,212,184,0.10)" stroke="#00d4b8" stroke-width="1.1" filter="url(#gl)"/><circle cx="14" cy="13" r="3.5" stroke="#00d4b8" stroke-width="0.7" opacity="0.55"/><circle cx="14" cy="13" r="6" stroke="#00d4b8" stroke-width="0.4" opacity="0.3"/><line x1="14" y1="8.5" x2="14" y2="17.5" stroke="#00d4b8" stroke-width="0.6" opacity="0.6"/><line x1="9.5" y1="13" x2="18.5" y2="13" stroke="#00d4b8" stroke-width="0.6" opacity="0.6"/><circle cx="14" cy="13" r="1.4" fill="#00d4b8"/><circle cx="14" cy="13" r="1.4" fill="#00d4b8" filter="url(#gl)" opacity="0.8"/></svg>
+    <span class="nav-logo-text">ShieldSky</span>
+  </a>
+  <div class="nav-links">
+    <a href="/health" class="nav-link">Health</a>
+    <a href="/v1/health" class="nav-link">API</a>
+    <a href="/console" class="nav-link nav-cta">Operator Console â†’</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section id="hero">
+  <canvas id="globe-canvas"></canvas>
+  <div class="hero-gradient"></div>
+  <div class="hero-bottom-fade"></div>
+
+  <div class="hero-content">
+    <div class="hero-tag">Operational Intelligence Layer</div>
+    <h1 class="hero-headline">
+      The sky<br>
+      <em>doesn't</em><br>
+      hide.
+    </h1>
+    <p class="hero-subline">
+      ShieldSky transforms <strong>passive signals, orbital context, and environmental anomalies</strong> into prioritized intelligence, narrative, and decision surfaces for monitored regions and critical sites.
+    </p>
+    <div class="hero-actions">
+      <a href="/console" class="btn-primary">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+        Enter Command Center
+      </a>
+      <a href="/v1/health" class="btn-secondary">API Surface â†’</a>
+      <span class="live-badge">
+        <span class="live-dot"></span>
+        System Live
+      </span>
+    </div>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat-item">
+      <span class="stat-value">24/7</span>
+      <span class="stat-label">Passive Observation</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-value">âˆž</span>
+      <span class="stat-label">Orbital Context</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-value">ms</span>
+      <span class="stat-label">Event Latency</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-value">100%</span>
+      <span class="stat-label">Auditability</span>
+    </div>
+  </div>
+</section>
+
+<!-- COMMAND SURFACES -->
+<section id="surfaces">
+  <div class="section-inner">
+    <div class="surfaces-header">
+      <div class="reveal">
+        <div class="section-tag">Command Surfaces</div>
+        <h2 class="section-title">What the<br>operator sees.</h2>
+      </div>
+      <p class="surfaces-desc reveal reveal-delay-2">
+        Not charts. Not dashboards. A living intelligence surface â€” attention queue, narrative context, source health, and evidence â€” assembled in real time.
+      </p>
+    </div>
+
+    <div class="surfaces-grid reveal">
+      <!-- Large card: Command Center -->
+      <div class="surface-card large">
+        <div class="surface-card-tag">Primary Surface</div>
+        <div class="surface-card-title">Operator Command Center</div>
+        <p class="surface-card-desc">The full intelligence surface. Attention queue, narrative briefings, site status, anomaly detection, and evidence replay â€” unified in a single operational view.</p>
+        <div class="surface-mock">
+          <div class="mock-bar">
+            <span class="mock-dot red"></span>
+            <span class="mock-dot yellow"></span>
+            <span class="mock-dot green"></span>
+            <span class="mock-title">SHIELDSKY / CONSOLE</span>
+          </div>
+          <div class="mock-row"><span class="mock-row-label">SYSTEM STATUS</span><span class="mock-row-val">â— OPERATIONAL</span></div>
+          <div class="mock-row"><span class="mock-row-label">ACTIVE REGIONS</span><span class="mock-row-val">7</span></div>
+          <div class="mock-row"><span class="mock-row-label">MONITORED SITES</span><span class="mock-row-val">34</span></div>
+          <div class="mock-row"><span class="mock-row-label">ATTENTION QUEUE</span><span class="mock-row-val amber">3 ITEMS</span></div>
+          <div class="mock-row"><span class="mock-row-label">LAST INGEST</span><span class="mock-row-val dim">00:00:04 AGO</span></div>
+          <div class="mock-alert"><strong>PRIORITY:</strong> Orbital anomaly detected over Grid Sector 7-C. Canonical event triggered. Evidence capture active.</div>
         </div>
       </div>
 
-      <section class="hero">
-        <div class="panel">
-          <div class="eyebrow">Sky Security System</div>
-          <h1>Operational airspace intelligence for monitored sites.</h1>
-          <p class="lede">ShieldSky combines passive sensing, orbital context, canonical event detection, and response workflows into one deployable Rust service built for monitoring, triage, and evidence-backed action.</p>
-          <div class="hero-actions">
-            <a class="cta" href="/console">Open Operator Console</a>
-            <a class="cta-secondary" href="/v1/health">API Health</a>
+      <!-- Attention Queue -->
+      <div class="surface-card">
+        <div class="surface-card-tag">Intelligence Layer</div>
+        <div class="surface-card-title">Attention Queue</div>
+        <p class="surface-card-desc">Prioritized signals, not raw feeds. Every item ranked, contextualized, actionable.</p>
+        <div class="surface-mock" style="margin-top:20px">
+          <div class="mock-bar">
+            <span class="mock-dot red"></span><span class="mock-dot yellow"></span><span class="mock-dot green"></span>
+            <span class="mock-title">ATTENTION / QUEUE</span>
           </div>
-          <div class="stat-grid">
-            <div class="stat"><strong>Passive</strong><span>Site and region surveillance from fused sources.</span></div>
-            <div class="stat"><strong>Canonical</strong><span>Event normalization, semantic timelines, and remediation surfaces.</span></div>
-            <div class="stat"><strong>Deployable</strong><span>Rust API running in Render with health endpoints and operator UI.</span></div>
+          <div class="mock-queue-item">
+            <span class="mock-queue-dot high"></span>
+            <div class="mock-queue-text"><strong>ANOMALY â€” SECTOR 7C</strong><br>Orbital pass intersect with passive signal cluster</div>
+            <span class="mock-queue-time">NOW</span>
+          </div>
+          <div class="mock-queue-item">
+            <span class="mock-queue-dot med"></span>
+            <div class="mock-queue-text"><strong>SITE ALPHA-03</strong><br>Environmental threshold exceeded</div>
+            <span class="mock-queue-time">04m</span>
+          </div>
+          <div class="mock-queue-item">
+            <span class="mock-queue-dot low"></span>
+            <div class="mock-queue-text"><strong>NEO RISK BRIEF</strong><br>Updated orbital context available</div>
+            <span class="mock-queue-time">12m</span>
           </div>
         </div>
-        <div class="panel side-panel">
-          <div>
-            <h2>Primary surfaces</h2>
-            <ul class="mini-list">
-              <li><a href="/console"><code>/console</code></a> for the live operator interface</li>
-              <li><a href="/v1/briefing/apod"><code>/v1/briefing/apod</code></a> for NASA APOD briefing</li>
-              <li><a href="/v1/briefing/neows"><code>/v1/briefing/neows</code></a> for NEO risk briefing</li>
-              <li><a href="/v1/passive/dashboard/summary"><code>/v1/passive/dashboard/summary</code></a> for passive operations summary</li>
-            </ul>
-          </div>
-          <div>
-            <h2>Deployment profile</h2>
-            <ul class="mini-list">
-              <li>Render-ready Docker deployment</li>
-              <li><code>/health</code> and <code>/v1/health</code> health endpoints</li>
-              <li>SQLite-backed operational storage</li>
-            </ul>
-          </div>
-          <p class="note">This root page is intentionally concise. The operational UI lives in the console and the API remains directly accessible for integrations and dashboards.</p>
-        </div>
-      </section>
+      </div>
 
-      <section class="feature-grid">
-        <article class="feature">
-          <h3>Passive Region Monitoring</h3>
-          <p>Track monitored regions, mapped sites, risk history, maintenance state, and source-health evidence across the passive surveillance pipeline.</p>
-        </article>
-        <article class="feature">
-          <h3>Event and Timeline Workflows</h3>
-          <p>Canonical events, semantic timelines, and operational timelines surface what changed, why it matters, and which action path follows.</p>
-        </article>
-        <article class="feature">
-          <h3>Briefings and Context</h3>
-          <p>APOD and NeoWs briefings provide external context while the core ShieldSky console focuses on operational site protection and decision support.</p>
-        </article>
-      </section>
-    </main>
-  </body>
+      <!-- Source Health -->
+      <div class="surface-card">
+        <div class="surface-card-tag">System Awareness</div>
+        <div class="surface-card-title">Source Health</div>
+        <p class="surface-card-desc">Signal quality, ingest latency, and source reliability â€” always visible.</p>
+        <div class="surface-mock" style="margin-top:20px">
+          <div class="mock-bar">
+            <span class="mock-dot red"></span><span class="mock-dot yellow"></span><span class="mock-dot green"></span>
+            <span class="mock-title">SOURCE / HEALTH</span>
+          </div>
+          <div class="mock-row"><span class="mock-row-label">PASSIVE / RF</span><span class="mock-row-val">â— 98.2%</span></div>
+          <div class="mock-row"><span class="mock-row-label">ORBITAL CTX</span><span class="mock-row-val">â— 100%</span></div>
+          <div class="mock-row"><span class="mock-row-label">ENV SENSORS</span><span class="mock-row-val amber">â— 87.1%</span></div>
+          <div class="mock-row"><span class="mock-row-label">EVENT BUS</span><span class="mock-row-val">â— NOMINAL</span></div>
+        </div>
+      </div>
+
+      <!-- Narrative -->
+      <div class="surface-card">
+        <div class="surface-card-tag">Intelligence Output</div>
+        <div class="surface-card-title">Narrative Briefings</div>
+        <p class="surface-card-desc">Synthesized context, not raw data. Each event arrives with explanation, evidence, and confidence.</p>
+      </div>
+
+      <!-- Timeline -->
+      <div class="surface-card">
+        <div class="surface-card-tag">Evidence Layer</div>
+        <div class="surface-card-title">Timeline & Replay</div>
+        <p class="surface-card-desc">Full audit trail. Every decision traceable. Every signal captured. Replay any moment.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW SHIELDSKY THINKS -->
+<section id="thinking">
+  <div class="section-inner">
+    <div class="thinking-header reveal">
+      <div class="section-tag">Cognitive Architecture</div>
+      <h2 class="section-title">How ShieldSky<br>thinks.</h2>
+    </div>
+
+    <div class="thinking-flow">
+      <div class="thinking-step reveal">
+        <div class="thinking-step-num">01</div>
+        <div class="thinking-step-icon">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4l1.4-1.4M17 7l1.4-1.4"/></svg>
+        </div>
+        <div class="thinking-step-title">Observe</div>
+        <p class="thinking-step-desc">Continuous passive ingestion of regional signals, orbital passes, environmental data, and site anomalies â€” without interruption.</p>
+      </div>
+
+      <div class="thinking-step reveal reveal-delay-1">
+        <div class="thinking-step-num">02</div>
+        <div class="thinking-step-icon">
+          <svg viewBox="0 0 24 24"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/></svg>
+        </div>
+        <div class="thinking-step-title">Interpret</div>
+        <p class="thinking-step-desc">Raw signals become structured events. Canonical detection normalizes sources into comparable, traceable intelligence units.</p>
+      </div>
+
+      <div class="thinking-step reveal reveal-delay-2">
+        <div class="thinking-step-num">03</div>
+        <div class="thinking-step-icon">
+          <svg viewBox="0 0 24 24"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+        </div>
+        <div class="thinking-step-title">Prioritize</div>
+        <p class="thinking-step-desc">Attention queue surfaces what matters now. Risk, recency, and operational context weight each signal automatically.</p>
+      </div>
+
+      <div class="thinking-step reveal reveal-delay-3">
+        <div class="thinking-step-num">04</div>
+        <div class="thinking-step-icon">
+          <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </div>
+        <div class="thinking-step-title">Explain</div>
+        <p class="thinking-step-desc">Every event arrives with narrative context, evidence references, and confidence levels â€” not just an alert.</p>
+      </div>
+
+      <div class="thinking-step reveal reveal-delay-4">
+        <div class="thinking-step-num">05</div>
+        <div class="thinking-step-icon">
+          <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        </div>
+        <div class="thinking-step-title">Act</div>
+        <p class="thinking-step-desc">Decision surfaces, triage workflows, and evidence-backed actions close the loop from observation to response.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- WHY IT MATTERS -->
+<section id="why">
+  <div class="section-inner">
+    <div class="reveal">
+      <div class="section-tag">Operational Value</div>
+      <h2 class="section-title">Not data.<br>Antecipation.</h2>
+    </div>
+    <div class="why-grid">
+      <div class="why-item reveal" data-num="1">
+        <div class="why-item-icon"></div>
+        <div class="why-item-title">Passive Site Discovery</div>
+        <p class="why-item-text">Sites reveal themselves through signal patterns before any active probe. ShieldSky builds the map from what it hears, not what it asks.</p>
+      </div>
+      <div class="why-item reveal reveal-delay-1" data-num="2">
+        <div class="why-item-icon" style="background:var(--coral)"></div>
+        <div class="why-item-title">Risk Narratives, Not Alerts</div>
+        <p class="why-item-text">Alerts create noise. Narratives create understanding. Every anomaly arrives with context, trajectory, and recommended priority â€” already written.</p>
+      </div>
+      <div class="why-item reveal reveal-delay-2" data-num="3">
+        <div class="why-item-icon" style="background:var(--teal)"></div>
+        <div class="why-item-title">Orbital Context Fused</div>
+        <p class="why-item-text">Ground-level signals and overhead orbital passes analyzed together. Canonical event detection sees what single-layer systems miss.</p>
+      </div>
+      <div class="why-item reveal reveal-delay-3" data-num="4">
+        <div class="why-item-icon" style="background:#8db4d8"></div>
+        <div class="why-item-title">Fully Auditable Decisions</div>
+        <p class="why-item-text">Every action traces back to a signal, a source, a timestamp, a confidence level. Nothing is unexplained. Nothing is unrecorded.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- BUILT FOR OPERATORS -->
+<section id="operators">
+  <div class="section-inner">
+    <div class="operators-layout">
+      <div class="operators-left reveal">
+        <div class="section-tag">Built for Operators</div>
+        <h2 class="section-title" style="font-size: clamp(40px,5vw,72px)">For those<br>who cannot<br>miss.</h2>
+        <p class="operators-statement" style="font-size:17px; margin-top:28px">
+          ShieldSky is built for <strong>infrastructure security teams, site protection officers, and regional intelligence operators</strong> who need answers before questions form.
+        </p>
+        <div class="operators-metrics">
+          <div class="metric-cell">
+            <div class="metric-num">7<span>+</span></div>
+            <div class="metric-desc">Signal<br>source types</div>
+          </div>
+          <div class="metric-cell">
+            <div class="metric-num">1<span>ms</span></div>
+            <div class="metric-desc">Canonical<br>event latency</div>
+          </div>
+          <div class="metric-cell">
+            <div class="metric-num">âˆž</div>
+            <div class="metric-desc">Replay &<br>audit depth</div>
+          </div>
+          <div class="metric-cell">
+            <div class="metric-num">0</div>
+            <div class="metric-desc">Hidden<br>decisions</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="operators-right reveal reveal-delay-2">
+        <div class="capability-list">
+          <div class="capability-item">
+            <span class="cap-index">01</span>
+            <div class="cap-content">
+              <div class="cap-title">Regional Monitoring</div>
+              <p class="cap-desc">Define regions, set thresholds, receive structured intelligence â€” not raw sensor dumps.</p>
+            </div>
+          </div>
+          <div class="capability-item">
+            <span class="cap-index">02</span>
+            <div class="cap-content">
+              <div class="cap-title">Anomaly Detection & Triage</div>
+              <p class="cap-desc">Passive detection surfaces deviations automatically. Triage workflows guide response without ambiguity.</p>
+            </div>
+          </div>
+          <div class="capability-item">
+            <span class="cap-index">03</span>
+            <div class="cap-content">
+              <div class="cap-title">Evidence-Backed Workflows</div>
+              <p class="cap-desc">Every decision surfaces supporting evidence. Every action records itself for future audit.</p>
+            </div>
+          </div>
+          <div class="capability-item">
+            <span class="cap-index">04</span>
+            <div class="cap-content">
+              <div class="cap-title">Orbital & Environmental Context</div>
+              <p class="cap-desc">Ground signals enriched with orbital passes and environmental data â€” automatically fused.</p>
+            </div>
+          </div>
+          <div class="capability-item">
+            <span class="cap-index">05</span>
+            <div class="cap-content">
+              <div class="cap-title">API-First Integration</div>
+              <p class="cap-desc">Full intelligence surface available via API. Connect systems. Extend coverage. Own the pipeline.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FINAL CTA -->
+<section id="cta">
+  <canvas id="cta-canvas"></canvas>
+  <div class="cta-inner reveal">
+    <div class="cta-tag">â€” System Ready</div>
+    <h2 class="cta-headline">The world<br>is already<br>moving.</h2>
+    <p class="cta-sub">The command center is live. Every signal is being observed.<br>The question is whether you're watching.</p>
+    <div class="cta-actions">
+      <a href="/console" class="btn-primary" style="font-size:15px; padding: 16px 40px;">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+        Open Command Center
+      </a>
+      <a href="/v1/health" class="btn-secondary">System Health</a>
+      <a href="/v1/briefing/apod" class="btn-secondary">Orbital Briefing</a>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <a href="/" class="footer-logo">
+    <svg width="16" height="16" viewBox="0 0 28 28" fill="none"><path d="M14 2L3 6.5V14c0 5.8 4.5 11.2 11 13 6.5-1.8 11-7.2 11-13V6.5L14 2z" fill="rgba(0,212,184,0.10)" stroke="#00d4b8" stroke-width="1.5"/><circle cx="14" cy="13" r="1.8" fill="#00d4b8"/></svg>
+    <span class="footer-logo-text">ShieldSky</span>
+  </a>
+  <div class="footer-links">
+    <a href="/console" class="footer-link">Console</a>
+    <a href="/health" class="footer-link">Health</a>
+    <a href="/v1/health" class="footer-link">API</a>
+    <a href="/v1/briefing/neows" class="footer-link">NEO Brief</a>
+  </div>
+  <div class="footer-meta">Operational Intelligence Layer Â· Always On</div>
+</footer>
+
+<script>
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   GLOBE CANVAS
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+(function() {
+  const canvas = document.getElementById('globe-canvas');
+  const ctx = canvas.getContext('2d');
+  let W, H, cx, cy, radius, animId;
+  let rotY = 0;
+
+  function resize() {
+    const rect = canvas.getBoundingClientRect();
+    W = canvas.width = rect.width * window.devicePixelRatio;
+    H = canvas.height = rect.height * window.devicePixelRatio;
+    cx = W / 2; cy = H / 2;
+    radius = Math.min(W, H) * 0.42;
+  }
+
+  window.addEventListener('resize', resize);
+  resize();
+
+  // Generate globe points
+  const DOTS = [];
+  const NUM_DOTS = 2800;
+
+  // Lat/lon regions with higher density (simulate landmasses roughly)
+  const landRegions = [
+    {lat:[20,70], lon:[-10,40]},    // Europe/Africa
+    {lat:[30,70], lon:[40,140]},    // Asia
+    {lat:[-35,35], lon:[-80,-35]},  // S.America
+    {lat:[20,70], lon:[-130,-60]},  // N.America
+    {lat:[-40,-10], lon:[115,155]}, // Australia
+  ];
+
+  function isLand(latDeg, lonDeg) {
+    for (const r of landRegions) {
+      if (latDeg >= r.lat[0] && latDeg <= r.lat[1] && lonDeg >= r.lon[0] && lonDeg <= r.lon[1]) return true;
+    }
+    return false;
+  }
+
+  for (let i = 0; i < NUM_DOTS; i++) {
+    const u = Math.random();
+    const v = Math.random();
+    const theta = 2 * Math.PI * u;
+    const phi = Math.acos(2 * v - 1);
+    const x = Math.sin(phi) * Math.cos(theta);
+    const y = Math.sin(phi) * Math.sin(theta);
+    const z = Math.cos(phi);
+    const latDeg = (Math.PI / 2 - phi) * 180 / Math.PI;
+    const lonDeg = theta * 180 / Math.PI - 180;
+    const land = isLand(latDeg, lonDeg);
+    DOTS.push({ x, y, z, land, size: land ? (Math.random() * 1.5 + 0.8) : (Math.random() * 0.8 + 0.3) });
+  }
+
+  // Latitude lines
+  const LAT_LINES = [];
+  for (let lat = -60; lat <= 60; lat += 30) {
+    const pts = [];
+    const phi = (90 - lat) * Math.PI / 180;
+    for (let lon = 0; lon <= 360; lon += 3) {
+      const theta = lon * Math.PI / 180;
+      pts.push({
+        x: Math.sin(phi) * Math.cos(theta),
+        y: Math.sin(phi) * Math.sin(theta),
+        z: Math.cos(phi)
+      });
+    }
+    LAT_LINES.push(pts);
+  }
+
+  // Longitude lines
+  const LON_LINES = [];
+  for (let lon = 0; lon < 360; lon += 30) {
+    const pts = [];
+    const theta = lon * Math.PI / 180;
+    for (let lat = -90; lat <= 90; lat += 3) {
+      const phi = (90 - lat) * Math.PI / 180;
+      pts.push({
+        x: Math.sin(phi) * Math.cos(theta),
+        y: Math.sin(phi) * Math.sin(theta),
+        z: Math.cos(phi)
+      });
+    }
+    LON_LINES.push(pts);
+  }
+
+  function project(px, py, pz, ry) {
+    // Rotate around Y axis
+    const cosY = Math.cos(ry), sinY = Math.sin(ry);
+    const rx = px * cosY + pz * sinY;
+    const rz = -px * sinY + pz * cosY;
+    return { sx: cx + rx * radius, sy: cy - py * radius, z: rz };
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+
+    // Draw lat/lon grid lines
+    for (const line of [...LAT_LINES, ...LON_LINES]) {
+      ctx.beginPath();
+      let first = true;
+      for (const p of line) {
+        const {sx, sy, z} = project(p.x, p.y, p.z, rotY);
+        if (z < -0.2) { first = true; continue; }
+        const alpha = Math.max(0, (z + 0.2) / 1.2) * 0.12;
+        if (first) { ctx.moveTo(sx, sy); first = false; }
+        else ctx.lineTo(sx, sy);
+      }
+      ctx.strokeStyle = `rgba(0,212,184,0.12)`;
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    }
+
+    // Sort dots by Z (painter's algorithm)
+    const projected = DOTS.map(d => {
+      const p = project(d.x, d.y, d.z, rotY);
+      return {...d, ...p};
+    });
+    projected.sort((a, b) => a.z - b.z);
+
+    for (const d of projected) {
+      if (d.z < -0.1) continue;
+      const depth = (d.z + 1) / 2;
+      const alpha = depth * (d.land ? 0.95 : 0.35);
+      const size = d.size * (0.5 + depth * 0.5) * (W / 800);
+
+      if (d.land) {
+        ctx.beginPath();
+        ctx.arc(d.sx, d.sy, size, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(0,212,184,${alpha * 0.9})`;
+        ctx.fill();
+        if (depth > 0.7 && d.size > 1.2) {
+          ctx.shadowBlur = 6 * (W / 800);
+          ctx.shadowColor = 'rgba(0,212,184,0.6)';
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        }
+      } else {
+        ctx.beginPath();
+        ctx.arc(d.sx, d.sy, size * 0.7, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(140,180,220,${alpha * 0.5})`;
+        ctx.fill();
+      }
+    }
+
+    // Draw globe outline
+    const grad = ctx.createRadialGradient(cx - radius * 0.3, cy - radius * 0.3, 0, cx, cy, radius);
+    grad.addColorStop(0, 'rgba(0,212,184,0.04)');
+    grad.addColorStop(0.7, 'rgba(0,50,80,0.02)');
+    grad.addColorStop(1, 'rgba(0,212,184,0.08)');
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(0,212,184,0.15)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Atmosphere glow
+    const atmoGrad = ctx.createRadialGradient(cx, cy, radius * 0.9, cx, cy, radius * 1.15);
+    atmoGrad.addColorStop(0, 'rgba(0,212,184,0.0)');
+    atmoGrad.addColorStop(0.6, 'rgba(0,212,184,0.04)');
+    atmoGrad.addColorStop(1, 'rgba(0,212,184,0.0)');
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius * 1.15, 0, Math.PI * 2);
+    ctx.fillStyle = atmoGrad;
+    ctx.fill();
+
+    rotY += 0.0025;
+    animId = requestAnimationFrame(draw);
+  }
+
+  draw();
+})();
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   CTA CANVAS â€” PARTICLE FIELD
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+(function() {
+  const canvas = document.getElementById('cta-canvas');
+  const ctx = canvas.getContext('2d');
+  let W, H;
+
+  function resize() {
+    W = canvas.width = canvas.offsetWidth;
+    H = canvas.height = canvas.offsetHeight;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const particles = Array.from({length: 80}, () => ({
+    x: Math.random() * 1200,
+    y: Math.random() * 600,
+    vx: (Math.random() - 0.5) * 0.3,
+    vy: (Math.random() - 0.5) * 0.3,
+    r: Math.random() * 1.5 + 0.3,
+    alpha: Math.random() * 0.5 + 0.1,
+  }));
+
+  function drawCta() {
+    ctx.clearRect(0, 0, W, H);
+    for (const p of particles) {
+      p.x += p.vx; p.y += p.vy;
+      if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
+      if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(0,212,184,${p.alpha})`;
+      ctx.fill();
+    }
+    // Draw connections
+    for (let i = 0; i < particles.length; i++) {
+      for (let j = i + 1; j < particles.length; j++) {
+        const dx = particles[i].x - particles[j].x;
+        const dy = particles[i].y - particles[j].y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if (dist < 120) {
+          ctx.beginPath();
+          ctx.moveTo(particles[i].x, particles[i].y);
+          ctx.lineTo(particles[j].x, particles[j].y);
+          ctx.strokeStyle = `rgba(0,212,184,${(1 - dist/120) * 0.06})`;
+          ctx.lineWidth = 0.5;
+          ctx.stroke();
+        }
+      }
+    }
+    requestAnimationFrame(drawCta);
+  }
+  drawCta();
+})();
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   SCROLL REVEAL
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+const reveals = document.querySelectorAll('.reveal');
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); } });
+}, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+reveals.forEach(el => observer.observe(el));
+
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   NAV SCROLL
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+const nav = document.querySelector('nav');
+window.addEventListener('scroll', () => {
+  if (window.scrollY > 60) {
+    nav.style.background = 'rgba(4,9,15,0.97)';
+    nav.style.backdropFilter = 'blur(12px)';
+    nav.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+  } else {
+    nav.style.background = 'linear-gradient(180deg, rgba(4,9,15,0.95) 0%, transparent 100%)';
+    nav.style.backdropFilter = 'blur(2px)';
+    nav.style.borderBottom = 'none';
+  }
+});
+</script>
+</body>
 </html>
 "##;
