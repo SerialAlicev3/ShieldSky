@@ -1502,7 +1502,8 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<link href="https://cesium.com/downloads/cesiumjs/releases/1.127/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+<script src="https://cesium.com/downloads/cesiumjs/releases/1.127/Build/Cesium/Cesium.js"></script>
 <style>
   /* ============================================================
      SHIELDSKY · COMMAND SURFACE
@@ -1911,12 +1912,22 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
     background: var(--bg-deep);
   }
 
-  #globe-canvas {
+  #cesium-globe {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
   }
+  /* Hide Cesium toolbar chrome */
+  .cesium-viewer-toolbar,
+  .cesium-viewer-animationContainer,
+  .cesium-viewer-timelineContainer,
+  .cesium-viewer-bottom,
+  .cesium-viewer-fullscreenContainer,
+  .cesium-viewer-geocoderContainer { display: none !important; }
+  .cesium-widget-credits { display: none !important; }
+  /* Darken Cesium background to match theme */
+  .cesium-viewer canvas { background: var(--bg-deep) !important; }
 
   /* Crosshair */
   .crosshair {
@@ -2661,7 +2672,7 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
        CENTER — HERO OPERATIONAL SURFACE
        ============================================================ -->
   <main class="center">
-    <canvas id="globe-canvas"></canvas>
+    <div id="cesium-globe"></div>
 
     <svg class="crosshair" width="100%" height="100%">
       <line x1="50%" y1="0" x2="50%" y2="100%" stroke="white" stroke-width="0.5" stroke-dasharray="2 4"/>
@@ -2682,8 +2693,7 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
     <div class="telemetry">
       <div class="tel-item"><span>LAT</span><span id="tel-lat">38.7139&deg;N</span></div>
       <div class="tel-item"><span>LON</span><span id="tel-lon">-009.1400&deg;</span></div>
-      <div class="tel-item"><span>ALT</span><span>12,400 km</span></div>
-      <div class="tel-item"><span>FPS</span><span id="fps">60</span></div>
+      <div class="tel-item"><span>ALT</span><span id="fps">1,800 km</span></div>
     </div>
 
     <!-- Operational Picture -->
@@ -2872,328 +2882,121 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
    OPERATIONAL GLOBE — Three.js r128
    ============================================================ */
 
-const canvas = document.getElementById('globe-canvas');
-const container = canvas.parentElement;
+/* ============================================================
+   OPERATIONAL GLOBE — CesiumJS 1.127
+   Real satellite imagery + OSM tiles, dark theme
+   ============================================================ */
 
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(
-  35,
-  container.clientWidth / container.clientHeight,
-  0.1, 1000
-);
-camera.position.set(0, 0.2, 4.2);
+// Suppress Cesium's default access token requirement for OSM tiles
+Cesium.Ion.defaultAccessToken = '';
 
-const renderer = new THREE.WebGLRenderer({
-  canvas: canvas,
-  antialias: true,
-  alpha: true
+const viewer = new Cesium.Viewer('cesium-globe', {
+  animation: false,
+  timeline: false,
+  selectionIndicator: false,
+  navigationHelpButton: false,
+  homeButton: false,
+  sceneModePicker: false,
+  baseLayerPicker: false,
+  geocoder: false,
+  fullscreenButton: false,
+  infoBox: false,
+  shouldAnimate: true,
+  imageryProvider: new Cesium.OpenStreetMapImageryProvider({
+    url: 'https://tile.openstreetmap.org/',
+    credit: ''
+  }),
 });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(container.clientWidth, container.clientHeight);
-renderer.setClearColor(0x000000, 0);
 
-// --- Globe sphere ---
-const globeGeo = new THREE.SphereGeometry(1.5, 96, 96);
-const globeMat = new THREE.MeshBasicMaterial({
-  color: 0x0a1825,
-  transparent: true,
-  opacity: 0.85
-});
-const globe = new THREE.Mesh(globeGeo, globeMat);
-scene.add(globe);
+// Dark scene settings
+viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#07111B');
+viewer.scene.skyBox.show = true;
+viewer.scene.fog.enabled = true;
+viewer.scene.fog.density = 0.0002;
+viewer.scene.globe.enableLighting = false;
+viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#07111B');
 
-// --- Wireframe overlay ---
-const wireGeo = new THREE.SphereGeometry(1.505, 48, 32);
-const wireMat = new THREE.MeshBasicMaterial({
-  color: 0x4FE0D0,
-  wireframe: true,
-  transparent: true,
-  opacity: 0.09
-});
-const wireframe = new THREE.Mesh(wireGeo, wireMat);
-scene.add(wireframe);
-
-// --- Atmospheric glow ---
-const glowGeo = new THREE.SphereGeometry(1.58, 64, 64);
-const glowMat = new THREE.ShaderMaterial({
-  uniforms: {},
-  vertexShader: `
-    varying vec3 vNormal;
-    varying vec3 vPos;
-    void main() {
-      vNormal = normalize(normalMatrix * normal);
-      vPos = position;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `,
-  fragmentShader: `
-    varying vec3 vNormal;
-    varying vec3 vPos;
-    void main() {
-      float intensity = pow(0.7 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.5);
-      vec3 color = mix(vec3(0.31, 0.88, 0.82), vec3(0.61, 0.55, 1.0), smoothstep(-1.0, 1.0, vPos.y));
-      gl_FragColor = vec4(color, 1.0) * intensity * 0.65;
-    }
-  `,
-  blending: THREE.AdditiveBlending,
-  side: THREE.BackSide,
-  transparent: true
-});
-const glow = new THREE.Mesh(glowGeo, glowMat);
-scene.add(glow);
-
-// --- Utility: lat/lng to Three.js Vector3 ---
-function latLngToVec3(lat, lng, r) {
-  const phi   = (90 - lat) * (Math.PI / 180);
-  const theta = (lng + 180) * (Math.PI / 180);
-  return new THREE.Vector3(
-    -r * Math.sin(phi) * Math.cos(theta),
-     r * Math.cos(phi),
-     r * Math.sin(phi) * Math.sin(theta)
-  );
+// Tint OSM tiles darker to match console theme
+const imageryLayers = viewer.imageryLayers;
+if (imageryLayers.length > 0) {
+  const baseLayer = imageryLayers.get(0);
+  baseLayer.brightness = 0.5;
+  baseLayer.contrast = 1.1;
+  baseLayer.saturation = 0.7;
+  baseLayer.hue = 0.55;
 }
 
-// --- Continental landmass dots (procedural) ---
-function createLandmassDots() {
-  const group = new THREE.Group();
-  const landmasses = [
-    { lat: [35,  60], lng: [-10,  40], density: 0.55 },
-    { lat: [-35, 35], lng: [-18,  50], density: 0.4  },
-    { lat: [10,  70], lng: [ 40, 140], density: 0.45 },
-    { lat: [15,  70], lng: [-170,-55], density: 0.4  },
-    { lat: [-55, 12], lng: [-82, -35], density: 0.45 },
-    { lat: [-40,-10], lng: [112, 155], density: 0.5  },
-  ];
-  const dotGeo = new THREE.SphereGeometry(0.007, 6, 6);
-  const dotMat = new THREE.MeshBasicMaterial({ color: 0x3a5d7a, transparent: true, opacity: 0.6 });
-  for (const lm of landmasses) {
-    const count = Math.floor((lm.lat[1]-lm.lat[0]) * (lm.lng[1]-lm.lng[0]) * lm.density * 0.15);
-    for (let i = 0; i < count; i++) {
-      if (Math.random() > 0.6) continue;
-      const lat = lm.lat[0] + Math.random() * (lm.lat[1] - lm.lat[0]);
-      const lng = lm.lng[0] + Math.random() * (lm.lng[1] - lm.lng[0]);
-      const dot = new THREE.Mesh(dotGeo, dotMat);
-      dot.position.copy(latLngToVec3(lat, lng, 1.51));
-      group.add(dot);
-    }
-  }
-  return group;
+// Initial camera position — Iberian Peninsula
+viewer.camera.setView({
+  destination: Cesium.Cartesian3.fromDegrees(-9.14, 38.71, 1800000),
+  orientation: { heading: 0, pitch: Cesium.Math.toRadians(-45), roll: 0 }
+});
+
+// Update telemetry display from camera
+function updateCameraTelemetry() {
+  const pos = viewer.camera.positionCartographic;
+  if (!pos) return;
+  const lat = Cesium.Math.toDegrees(pos.latitude).toFixed(4);
+  const lon = Cesium.Math.toDegrees(pos.longitude).toFixed(4);
+  const alt = Math.round(pos.height / 1000);
+  const latEl = document.getElementById('tel-lat');
+  const lonEl = document.getElementById('tel-lon');
+  const fpsEl = document.getElementById('fps');
+  if (latEl) latEl.textContent = lat + '\u00b0N';
+  if (lonEl) lonEl.textContent = lon + '\u00b0';
+  if (fpsEl) fpsEl.textContent = alt.toLocaleString() + ' km';
 }
+viewer.camera.changed.addEventListener(updateCameraTelemetry);
 
-const landmassDots = createLandmassDots();
-scene.add(landmassDots);
-
-// --- Lat / longitude grid lines ---
-function createGrid() {
-  const group = new THREE.Group();
-  const mat = new THREE.LineBasicMaterial({ color: 0x4FE0D0, transparent: true, opacity: 0.08 });
-  for (let lat = -60; lat <= 60; lat += 30) {
-    const pts = [];
-    for (let lng = 0; lng <= 360; lng += 4) pts.push(latLngToVec3(lat, lng, 1.51));
-    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
-  }
-  for (let lng = 0; lng < 360; lng += 30) {
-    const pts = [];
-    for (let lat = -90; lat <= 90; lat += 4) pts.push(latLngToVec3(lat, lng, 1.51));
-    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
-  }
-  return group;
-}
-scene.add(createGrid());
-
-// --- Equator highlight ---
-(function() {
-  const pts = [];
-  for (let lng = 0; lng <= 360; lng += 2) pts.push(latLngToVec3(0, lng, 1.512));
-  scene.add(new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints(pts),
-    new THREE.LineBasicMaterial({ color: 0x4FE0D0, transparent: true, opacity: 0.25 })
-  ));
-})();
-
-// --- Site rendering ---
-const siteColors = { critical: 0xFF7C6E, elevated: 0xF1C96B, active: 0x4FE0D0, healthy: 0x8EE59B };
-const siteMeshes = [];
+// Site colour mapping
+const SITE_COLORS = {
+  critical: Cesium.Color.fromCssColorString('#FF7C6E'),
+  elevated: Cesium.Color.fromCssColorString('#F1C96B'),
+  active:   Cesium.Color.fromCssColorString('#4FE0D0'),
+  healthy:  Cesium.Color.fromCssColorString('#8EE59B'),
+};
+const SITE_SIZES = { critical: 14, elevated: 11, active: 9, healthy: 7 };
 
 function addSiteToGlobe(site) {
-  const pos   = latLngToVec3(site.lat, site.lng, 1.515);
-  const color = siteColors[site.level] || siteColors.active;
-  const size  = site.level === 'critical' ? 0.025 : site.level === 'elevated' ? 0.02 : 0.014;
-
-  const dot = new THREE.Mesh(
-    new THREE.SphereGeometry(size, 10, 10),
-    new THREE.MeshBasicMaterial({ color })
-  );
-  dot.position.copy(pos);
-  scene.add(dot);
-  siteMeshes.push({ mesh: dot, level: site.level, basePos: pos.clone() });
-
-  // Halo ring
-  const halo = new THREE.Mesh(
-    new THREE.RingGeometry(size * 1.8, size * 2.2, 24),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5, side: THREE.DoubleSide })
-  );
-  halo.position.copy(pos);
-  halo.lookAt(0, 0, 0);
-  scene.add(halo);
-
-  // Beam + pulse for critical / elevated
-  if (site.level === 'critical' || site.level === 'elevated') {
-    const dir        = pos.clone().normalize();
-    const beamLength = site.level === 'critical' ? 0.3 : 0.18;
-    const beam = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.003, 0.008, beamLength, 8, 1, true),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5, side: THREE.DoubleSide })
-    );
-    beam.position.copy(pos.clone().add(dir.clone().multiplyScalar(beamLength / 2)));
-    beam.lookAt(pos.clone().multiplyScalar(2));
-    beam.rotateX(Math.PI / 2);
-    scene.add(beam);
-
-    const pulse = new THREE.Mesh(
-      new THREE.RingGeometry(size * 2, size * 2.3, 32),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, side: THREE.DoubleSide })
-    );
-    pulse.position.copy(pos);
-    pulse.lookAt(0, 0, 0);
-    scene.add(pulse);
-    siteMeshes.push({ mesh: pulse, pulse: true, basePos: pos.clone(), level: site.level });
-  }
+  const color = SITE_COLORS[site.level] || SITE_COLORS.active;
+  const size  = SITE_SIZES[site.level]  || 9;
+  viewer.entities.add({
+    position: Cesium.Cartesian3.fromDegrees(site.lng, site.lat),
+    point: {
+      pixelSize: size,
+      color: color,
+      outlineColor: Cesium.Color.BLACK.withAlpha(0.7),
+      outlineWidth: 1,
+      heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+    },
+    label: site.label ? {
+      text: site.label,
+      font: '10px monospace',
+      fillColor: Cesium.Color.WHITE.withAlpha(0.85),
+      outlineColor: Cesium.Color.BLACK,
+      outlineWidth: 2,
+      style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+      pixelOffset: new Cesium.Cartesian2(0, -18),
+      scale: 1.0,
+      showBackground: false,
+      heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+    } : undefined,
+    properties: { level: site.level, label: site.label },
+  });
 }
 
-// --- Default fallback sites (used if API returns nothing) ---
+// Default fallback sites while API data loads
 const defaultSites = [
   { lat: 38.71, lng: -9.14, level: 'active',   label: 'Lisbon Node' },
   { lat: 41.15, lng: -8.61, level: 'active',   label: 'Porto Grid' },
+  { lat: 37.20, lng: -8.80, level: 'active',   label: 'Alentejo Solar' },
   { lat: 40.41, lng: -3.70, level: 'elevated', label: 'Madrid Cluster' },
   { lat: 48.85, lng:  2.35, level: 'healthy',  label: 'Paris Node' },
   { lat: 51.50, lng: -0.12, level: 'active',   label: 'London Ops' },
   { lat: 52.52, lng: 13.40, level: 'healthy',  label: 'Berlin Hub' },
   { lat: 40.63, lng:-73.93, level: 'healthy',  label: 'NY East' },
-  { lat: 35.68, lng:139.69, level: 'healthy',  label: 'Tokyo Main' },
 ];
-
 defaultSites.forEach(addSiteToGlobe);
-
-// --- Arc connections ---
-function createArc(startLat, startLng, endLat, endLng, color) {
-  const start = latLngToVec3(startLat, startLng, 1.51);
-  const end   = latLngToVec3(endLat,   endLng,   1.51);
-  const mid   = start.clone().add(end).multiplyScalar(0.5);
-  mid.normalize().multiplyScalar(mid.length() + 0.35);
-  const curve = new THREE.QuadraticBezierCurve3(start, mid, end);
-  const geo   = new THREE.BufferGeometry().setFromPoints(curve.getPoints(60));
-  return new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.5 }));
-}
-
-scene.add(createArc(38.71, -9.14, 40.41, -3.70, 0x4FE0D0));
-scene.add(createArc(40.41, -3.70, 48.85,  2.35, 0xF1C96B));
-scene.add(createArc(51.50, -0.12, 48.85,  2.35, 0x4FE0D0));
-
-// --- Orbital ring + satellite ---
-(function() {
-  const orbit = new THREE.Mesh(
-    new THREE.RingGeometry(2.0, 2.003, 128),
-    new THREE.MeshBasicMaterial({ color: 0x9B8CFF, transparent: true, opacity: 0.25, side: THREE.DoubleSide })
-  );
-  orbit.rotation.x = Math.PI * 0.55;
-  orbit.rotation.y = Math.PI * 0.15;
-  scene.add(orbit);
-
-  const satellite = new THREE.Mesh(
-    new THREE.SphereGeometry(0.018, 8, 8),
-    new THREE.MeshBasicMaterial({ color: 0x9B8CFF })
-  );
-  scene.add(satellite);
-  window.__satellite = { mesh: satellite, orbit };
-})();
-
-// --- Particle field (stars) ---
-(function() {
-  const count     = 400;
-  const geometry  = new THREE.BufferGeometry();
-  const positions = new Float32Array(count * 3);
-  for (let i = 0; i < count; i++) {
-    const r     = 8 + Math.random() * 4;
-    const theta = Math.random() * Math.PI * 2;
-    const phi   = Math.acos(2 * Math.random() - 1);
-    positions[i*3]   = r * Math.sin(phi) * Math.cos(theta);
-    positions[i*3+1] = r * Math.sin(phi) * Math.sin(theta);
-    positions[i*3+2] = r * Math.cos(phi);
-  }
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  scene.add(new THREE.Points(geometry, new THREE.PointsMaterial({
-    color: 0x9EB3C8, size: 0.025, transparent: true, opacity: 0.6
-  })));
-})();
-
-// --- Animation loop ---
-const clock = new THREE.Clock();
-let frames = 0, lastFpsUpdate = 0;
-
-function animate() {
-  requestAnimationFrame(animate);
-  const t = clock.getElapsedTime();
-
-  globe.rotation.y       += 0.0008;
-  wireframe.rotation.y   += 0.0008;
-  landmassDots.rotation.y += 0.0008;
-
-  siteMeshes.forEach(s => {
-    if (s.pulse) {
-      const scale = 1 + Math.sin(t * 2.5 + (s.basePos ? s.basePos.x * 10 : 0)) * 0.35;
-      s.mesh.scale.set(scale, scale, scale);
-      s.mesh.material.opacity = 0.6 - Math.abs(Math.sin(t * 2.5)) * 0.4;
-    }
-  });
-
-  if (window.__satellite) {
-    const r     = 2.0;
-    const angle = t * 0.12;
-    const x = Math.cos(angle) * r;
-    const y = Math.sin(angle) * r * 0.3;
-    const z = Math.sin(angle) * r;
-    window.__satellite.mesh.position.set(x, y, z);
-    window.__satellite.mesh.position.applyAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI * 0.55);
-    window.__satellite.mesh.position.applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI * 0.15);
-  }
-
-  camera.position.x = Math.sin(t * 0.1) * 0.08;
-  camera.position.y = 0.2 + Math.cos(t * 0.13) * 0.04;
-  camera.lookAt(0, 0, 0);
-
-  renderer.render(scene, camera);
-
-  frames++;
-  if (t - lastFpsUpdate > 1) {
-    const fpsel = document.getElementById('fps');
-    if (fpsel) fpsel.textContent = frames;
-    frames = 0;
-    lastFpsUpdate = t;
-  }
-}
-animate();
-
-// --- Resize handling ---
-window.addEventListener('resize', () => {
-  camera.aspect = container.clientWidth / container.clientHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(container.clientWidth, container.clientHeight);
-});
-
-// --- Mouse parallax ---
-let targetRotX = 0, targetRotY = 0;
-container.addEventListener('mousemove', e => {
-  const rect = container.getBoundingClientRect();
-  targetRotY = (e.clientX - rect.left) / rect.width  - 0.5;
-  targetRotX = -((e.clientY - rect.top)  / rect.height - 0.5);
-});
-
-(function applyParallax() {
-  requestAnimationFrame(applyParallax);
-  camera.position.x += (targetRotY * 0.3 - camera.position.x) * 0.05;
-  camera.position.y += (0.2 + targetRotX * 0.3 - camera.position.y) * 0.05;
-})();
 
 // --- Console state (filter + time window) ---
 const CONSOLE_STATE = { filter: 'global', window: '72h' };

@@ -2248,7 +2248,7 @@ async fn operator_console_is_served() {
     // Branding and core rendering technology
     assert!(html.contains("ShieldSky"));
     assert!(html.contains("Operator Console"));
-    assert!(html.contains("three.min.js"));
+    assert!(html.contains("cesium.com/downloads/cesiumjs"));
     // Passive API endpoints wired in JS
     assert!(html.contains("/v1/passive/canonical-events"));
     assert!(html.contains("/v1/passive/command-center/summary"));
