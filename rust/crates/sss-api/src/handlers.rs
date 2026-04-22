@@ -3737,7 +3737,7 @@ const LANDING_PAGE_HTML: &str = r##"<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ShieldSky â€” Operational Intelligence</title>
+<title>ShieldSky | Operational Intelligence Layer</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:ital,wght@0,300;0,400;0,500;0,600;1,300&family=Barlow+Condensed:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet">
@@ -3775,7 +3775,7 @@ body {
   cursor: default;
 }
 
-/* â”€â”€â”€ NOISE TEXTURE OVERLAY â”€â”€â”€ */
+/* --- NOISE TEXTURE OVERLAY --- */
 body::before {
   content: '';
   position: fixed;
@@ -3787,7 +3787,7 @@ body::before {
   opacity: 0.4;
 }
 
-/* â”€â”€â”€ SCANLINE â”€â”€â”€ */
+/* --- SCANLINE --- */
 body::after {
   content: '';
   position: fixed;
@@ -3797,7 +3797,7 @@ body::after {
   z-index: 999;
 }
 
-/* â”€â”€â”€ GRID OVERLAY â”€â”€â”€ */
+/* --- GRID OVERLAY --- */
 .grid-bg {
   position: fixed;
   inset: 0;
@@ -3809,7 +3809,7 @@ body::after {
   z-index: 0;
 }
 
-/* â”€â”€â”€ NAV â”€â”€â”€ */
+/* --- NAV --- */
 nav {
   position: fixed;
   top: 0; left: 0; right: 0;
@@ -3882,7 +3882,7 @@ nav {
 
 .nav-cta:hover { background: #00f0d0; box-shadow: 0 0 20px var(--teal-glow); }
 
-/* â”€â”€â”€ HERO â”€â”€â”€ */
+/* --- HERO --- */
 #hero {
   position: relative;
   min-height: 100vh;
@@ -4105,7 +4105,7 @@ nav {
   color: var(--white-30);
 }
 
-/* â”€â”€â”€ SECTIONS â”€â”€â”€ */
+/* --- SECTIONS --- */
 section {
   position: relative;
   z-index: 10;
@@ -4148,7 +4148,7 @@ section {
   margin-bottom: 24px;
 }
 
-/* â”€â”€â”€ SURFACES SECTION â”€â”€â”€ */
+/* --- SURFACES SECTION --- */
 #surfaces {
   padding: 120px 0;
   background: linear-gradient(180deg, transparent 0%, rgba(0,212,184,0.015) 50%, transparent 100%);
@@ -4309,7 +4309,7 @@ section {
 .mock-queue-text strong { color: var(--white); }
 .mock-queue-time { font-size: 9px; color: var(--white-30); margin-left: auto; white-space: nowrap; }
 
-/* â”€â”€â”€ THINKING SECTION â”€â”€â”€ */
+/* --- THINKING SECTION --- */
 #thinking {
   padding: 140px 0;
   background: var(--bg2);
@@ -4386,7 +4386,7 @@ section {
   color: var(--white-60);
 }
 
-/* â”€â”€â”€ WHY MATTERS â”€â”€â”€ */
+/* --- WHY MATTERS --- */
 #why {
   padding: 140px 0;
   position: relative;
@@ -4449,7 +4449,7 @@ section {
   color: var(--white-60);
 }
 
-/* â”€â”€â”€ OPERATORS SECTION â”€â”€â”€ */
+/* --- OPERATORS SECTION --- */
 #operators {
   padding: 140px 0;
   background: var(--bg2);
@@ -4559,7 +4559,7 @@ section {
   line-height: 1.6;
 }
 
-/* â”€â”€â”€ CTA SECTION â”€â”€â”€ */
+/* --- CTA SECTION --- */
 #cta {
   padding: 160px 0;
   position: relative;
@@ -4624,7 +4624,7 @@ section {
   flex-wrap: wrap;
 }
 
-/* â”€â”€â”€ FOOTER â”€â”€â”€ */
+/* --- FOOTER --- */
 footer {
   padding: 48px;
   border-top: 1px solid var(--border);
@@ -4676,7 +4676,7 @@ footer {
 
 .footer-link:hover { color: var(--teal); }
 
-/* â”€â”€â”€ SCROLL REVEAL â”€â”€â”€ */
+/* --- SCROLL REVEAL --- */
 .reveal {
   opacity: 0;
   transform: translateY(24px);
@@ -4689,7 +4689,7 @@ footer {
 .reveal-delay-3 { transition-delay: 0.3s; }
 .reveal-delay-4 { transition-delay: 0.4s; }
 
-/* â”€â”€â”€ RESPONSIVE â”€â”€â”€ */
+/* --- RESPONSIVE --- */
 @media (max-width: 1024px) {
   nav { padding: 16px 24px; }
   .hero-content { padding: 0 24px; }
@@ -4727,13 +4727,13 @@ footer {
 <!-- NAV -->
 <nav>
   <a href="/" class="nav-logo">
-    <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0"><defs><filter id="gl"><feGaussianBlur stdDeviation="1.5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><path d="M14 2L3 6.5V14c0 5.8 4.5 11.2 11 13 6.5-1.8 11-7.2 11-13V6.5L14 2z" fill="rgba(0,212,184,0.10)" stroke="#00d4b8" stroke-width="1.1" filter="url(#gl)"/><circle cx="14" cy="13" r="3.5" stroke="#00d4b8" stroke-width="0.7" opacity="0.55"/><circle cx="14" cy="13" r="6" stroke="#00d4b8" stroke-width="0.4" opacity="0.3"/><line x1="14" y1="8.5" x2="14" y2="17.5" stroke="#00d4b8" stroke-width="0.6" opacity="0.6"/><line x1="9.5" y1="13" x2="18.5" y2="13" stroke="#00d4b8" stroke-width="0.6" opacity="0.6"/><circle cx="14" cy="13" r="1.4" fill="#00d4b8"/><circle cx="14" cy="13" r="1.4" fill="#00d4b8" filter="url(#gl)" opacity="0.8"/></svg>
+    <div class="nav-logo-dot"></div>
     <span class="nav-logo-text">ShieldSky</span>
   </a>
   <div class="nav-links">
     <a href="/health" class="nav-link">Health</a>
     <a href="/v1/health" class="nav-link">API</a>
-    <a href="/console" class="nav-link nav-cta">Operator Console â†’</a>
+    <a href="/console" class="nav-link nav-cta">Operator Console →</a>
   </div>
 </nav>
 
@@ -4746,19 +4746,19 @@ footer {
   <div class="hero-content">
     <div class="hero-tag">Operational Intelligence Layer</div>
     <h1 class="hero-headline">
-      The sky<br>
-      <em>doesn't</em><br>
-      hide.
+      Observe<br>
+      before<br>
+      <em>escalation.</em>
     </h1>
     <p class="hero-subline">
-      ShieldSky transforms <strong>passive signals, orbital context, and environmental anomalies</strong> into prioritized intelligence, narrative, and decision surfaces for monitored regions and critical sites.
+      ShieldSky turns <strong>passive signals, orbital passes, and site anomalies</strong> into ranked intelligence, narrative briefings, and auditable decisions -- before an incident becomes an event.
     </p>
     <div class="hero-actions">
       <a href="/console" class="btn-primary">
         <svg viewBox="0 0 16 16" fill="currentColor"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
         Enter Command Center
       </a>
-      <a href="/v1/health" class="btn-secondary">API Surface â†’</a>
+      <a href="/v1/health" class="btn-secondary">API Surface →</a>
       <span class="live-badge">
         <span class="live-dot"></span>
         System Live
@@ -4772,7 +4772,7 @@ footer {
       <span class="stat-label">Passive Observation</span>
     </div>
     <div class="stat-item">
-      <span class="stat-value">âˆž</span>
+      <span class="stat-value">∞</span>
       <span class="stat-label">Orbital Context</span>
     </div>
     <div class="stat-item">
@@ -4795,7 +4795,7 @@ footer {
         <h2 class="section-title">What the<br>operator sees.</h2>
       </div>
       <p class="surfaces-desc reveal reveal-delay-2">
-        Not charts. Not dashboards. A living intelligence surface â€” attention queue, narrative context, source health, and evidence â€” assembled in real time.
+        Not charts. Not dashboards. A living intelligence surface — attention queue, narrative context, source health, and evidence — assembled in real time.
       </p>
     </div>
 
@@ -4804,7 +4804,7 @@ footer {
       <div class="surface-card large">
         <div class="surface-card-tag">Primary Surface</div>
         <div class="surface-card-title">Operator Command Center</div>
-        <p class="surface-card-desc">The full intelligence surface. Attention queue, narrative briefings, site status, anomaly detection, and evidence replay â€” unified in a single operational view.</p>
+        <p class="surface-card-desc">The full intelligence surface. Attention queue, narrative briefings, site status, anomaly detection, and evidence replay — unified in a single operational view.</p>
         <div class="surface-mock">
           <div class="mock-bar">
             <span class="mock-dot red"></span>
@@ -4812,12 +4812,12 @@ footer {
             <span class="mock-dot green"></span>
             <span class="mock-title">SHIELDSKY / CONSOLE</span>
           </div>
-          <div class="mock-row"><span class="mock-row-label">SYSTEM STATUS</span><span class="mock-row-val">â— OPERATIONAL</span></div>
-          <div class="mock-row"><span class="mock-row-label">ACTIVE REGIONS</span><span class="mock-row-val">7</span></div>
-          <div class="mock-row"><span class="mock-row-label">MONITORED SITES</span><span class="mock-row-val">34</span></div>
-          <div class="mock-row"><span class="mock-row-label">ATTENTION QUEUE</span><span class="mock-row-val amber">3 ITEMS</span></div>
-          <div class="mock-row"><span class="mock-row-label">LAST INGEST</span><span class="mock-row-val dim">00:00:04 AGO</span></div>
-          <div class="mock-alert"><strong>PRIORITY:</strong> Orbital anomaly detected over Grid Sector 7-C. Canonical event triggered. Evidence capture active.</div>
+          <div class="mock-row"><span class="mock-row-label">OP PICTURE</span><span class="mock-row-val">● LIVE</span></div>
+          <div class="mock-row"><span class="mock-row-label">REGIONS ACTIVE</span><span class="mock-row-val">7</span></div>
+          <div class="mock-row"><span class="mock-row-label">CANONICAL EVENTS</span><span class="mock-row-val amber">3 UNREVIEWED</span></div>
+          <div class="mock-row"><span class="mock-row-label">EVIDENCE BUNDLES</span><span class="mock-row-val">12 CAPTURED</span></div>
+          <div class="mock-row"><span class="mock-row-label">INGEST LATENCY</span><span class="mock-row-val dim">4s</span></div>
+          <div class="mock-alert"><strong>CANONICAL EVENT:</strong> Passive signal cluster aligned with orbital pass -- REGION-04. Evidence bundle captured. Narrative generated.</div>
         </div>
       </div>
 
@@ -4833,18 +4833,18 @@ footer {
           </div>
           <div class="mock-queue-item">
             <span class="mock-queue-dot high"></span>
-            <div class="mock-queue-text"><strong>ANOMALY â€” SECTOR 7C</strong><br>Orbital pass intersect with passive signal cluster</div>
+            <div class="mock-queue-text"><strong>CANONICAL EVENT -- REGION-04</strong><br>Passive cluster + orbital pass. Evidence bundle active.</div>
             <span class="mock-queue-time">NOW</span>
           </div>
           <div class="mock-queue-item">
             <span class="mock-queue-dot med"></span>
-            <div class="mock-queue-text"><strong>SITE ALPHA-03</strong><br>Environmental threshold exceeded</div>
-            <span class="mock-queue-time">04m</span>
+            <div class="mock-queue-text"><strong>SITE DELTA-09</strong><br>Operational pressure above threshold. Narrative briefing ready.</div>
+            <span class="mock-queue-time">06m</span>
           </div>
           <div class="mock-queue-item">
             <span class="mock-queue-dot low"></span>
-            <div class="mock-queue-text"><strong>NEO RISK BRIEF</strong><br>Updated orbital context available</div>
-            <span class="mock-queue-time">12m</span>
+            <div class="mock-queue-text"><strong>NEO FLYBY BRIEF</strong><br>Updated orbital context. Replay available.</div>
+            <span class="mock-queue-time">14m</span>
           </div>
         </div>
       </div>
@@ -4853,16 +4853,16 @@ footer {
       <div class="surface-card">
         <div class="surface-card-tag">System Awareness</div>
         <div class="surface-card-title">Source Health</div>
-        <p class="surface-card-desc">Signal quality, ingest latency, and source reliability â€” always visible.</p>
+        <p class="surface-card-desc">Signal quality, ingest latency, and source reliability — always visible.</p>
         <div class="surface-mock" style="margin-top:20px">
           <div class="mock-bar">
             <span class="mock-dot red"></span><span class="mock-dot yellow"></span><span class="mock-dot green"></span>
             <span class="mock-title">SOURCE / HEALTH</span>
           </div>
-          <div class="mock-row"><span class="mock-row-label">PASSIVE / RF</span><span class="mock-row-val">â— 98.2%</span></div>
-          <div class="mock-row"><span class="mock-row-label">ORBITAL CTX</span><span class="mock-row-val">â— 100%</span></div>
-          <div class="mock-row"><span class="mock-row-label">ENV SENSORS</span><span class="mock-row-val amber">â— 87.1%</span></div>
-          <div class="mock-row"><span class="mock-row-label">EVENT BUS</span><span class="mock-row-val">â— NOMINAL</span></div>
+          <div class="mock-row"><span class="mock-row-label">PASSIVE INGEST</span><span class="mock-row-val">● NOMINAL</span></div>
+          <div class="mock-row"><span class="mock-row-label">ORBITAL / NEOWS</span><span class="mock-row-val">● NOMINAL</span></div>
+          <div class="mock-row"><span class="mock-row-label">SITE CORPUS</span><span class="mock-row-val amber">◐ PARTIAL</span></div>
+          <div class="mock-row"><span class="mock-row-label">CANONICAL BUS</span><span class="mock-row-val">● NOMINAL</span></div>
         </div>
       </div>
 
@@ -4898,7 +4898,7 @@ footer {
           <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4l1.4-1.4M17 7l1.4-1.4"/></svg>
         </div>
         <div class="thinking-step-title">Observe</div>
-        <p class="thinking-step-desc">Continuous passive ingestion of regional signals, orbital passes, environmental data, and site anomalies â€” without interruption.</p>
+        <p class="thinking-step-desc">Continuous passive ingestion of regional signals, orbital passes, environmental data, and site anomalies — without interruption.</p>
       </div>
 
       <div class="thinking-step reveal reveal-delay-1">
@@ -4925,7 +4925,7 @@ footer {
           <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
         </div>
         <div class="thinking-step-title">Explain</div>
-        <p class="thinking-step-desc">Every event arrives with narrative context, evidence references, and confidence levels â€” not just an alert.</p>
+        <p class="thinking-step-desc">Every event arrives with narrative context, evidence references, and confidence levels — not just an alert.</p>
       </div>
 
       <div class="thinking-step reveal reveal-delay-4">
@@ -4956,7 +4956,7 @@ footer {
       <div class="why-item reveal reveal-delay-1" data-num="2">
         <div class="why-item-icon" style="background:var(--coral)"></div>
         <div class="why-item-title">Risk Narratives, Not Alerts</div>
-        <p class="why-item-text">Alerts create noise. Narratives create understanding. Every anomaly arrives with context, trajectory, and recommended priority â€” already written.</p>
+        <p class="why-item-text">Alerts create noise. Narratives create understanding. Every anomaly arrives with context, trajectory, and recommended priority — already written.</p>
       </div>
       <div class="why-item reveal reveal-delay-2" data-num="3">
         <div class="why-item-icon" style="background:var(--teal)"></div>
@@ -4978,9 +4978,9 @@ footer {
     <div class="operators-layout">
       <div class="operators-left reveal">
         <div class="section-tag">Built for Operators</div>
-        <h2 class="section-title" style="font-size: clamp(40px,5vw,72px)">For those<br>who cannot<br>miss.</h2>
+        <h2 class="section-title" style="font-size: clamp(40px,5vw,72px)">Know<br>before<br>it moves.</h2>
         <p class="operators-statement" style="font-size:17px; margin-top:28px">
-          ShieldSky is built for <strong>infrastructure security teams, site protection officers, and regional intelligence operators</strong> who need answers before questions form.
+          Built for <strong>regional intelligence operators and critical site teams</strong> who cannot afford to discover a threat in the after-action report.
         </p>
         <div class="operators-metrics">
           <div class="metric-cell">
@@ -4992,7 +4992,7 @@ footer {
             <div class="metric-desc">Canonical<br>event latency</div>
           </div>
           <div class="metric-cell">
-            <div class="metric-num">âˆž</div>
+            <div class="metric-num">∞</div>
             <div class="metric-desc">Replay &<br>audit depth</div>
           </div>
           <div class="metric-cell">
@@ -5008,7 +5008,7 @@ footer {
             <span class="cap-index">01</span>
             <div class="cap-content">
               <div class="cap-title">Regional Monitoring</div>
-              <p class="cap-desc">Define regions, set thresholds, receive structured intelligence â€” not raw sensor dumps.</p>
+              <p class="cap-desc">Define regions, set thresholds, receive structured intelligence — not raw sensor dumps.</p>
             </div>
           </div>
           <div class="capability-item">
@@ -5029,7 +5029,7 @@ footer {
             <span class="cap-index">04</span>
             <div class="cap-content">
               <div class="cap-title">Orbital & Environmental Context</div>
-              <p class="cap-desc">Ground signals enriched with orbital passes and environmental data â€” automatically fused.</p>
+              <p class="cap-desc">Ground signals enriched with orbital passes and environmental data — automatically fused.</p>
             </div>
           </div>
           <div class="capability-item">
@@ -5049,7 +5049,7 @@ footer {
 <section id="cta">
   <canvas id="cta-canvas"></canvas>
   <div class="cta-inner reveal">
-    <div class="cta-tag">â€” System Ready</div>
+    <div class="cta-tag">— System Ready</div>
     <h2 class="cta-headline">The world<br>is already<br>moving.</h2>
     <p class="cta-sub">The command center is live. Every signal is being observed.<br>The question is whether you're watching.</p>
     <div class="cta-actions">
@@ -5069,19 +5069,18 @@ footer {
     <svg width="16" height="16" viewBox="0 0 28 28" fill="none"><path d="M14 2L3 6.5V14c0 5.8 4.5 11.2 11 13 6.5-1.8 11-7.2 11-13V6.5L14 2z" fill="rgba(0,212,184,0.10)" stroke="#00d4b8" stroke-width="1.5"/><circle cx="14" cy="13" r="1.8" fill="#00d4b8"/></svg>
     <span class="footer-logo-text">ShieldSky</span>
   </a>
+  <div class="footer-meta">Signals become decisions here. Always on.</div>
   <div class="footer-links">
     <a href="/console" class="footer-link">Console</a>
-    <a href="/health" class="footer-link">Health</a>
     <a href="/v1/health" class="footer-link">API</a>
-    <a href="/v1/briefing/neows" class="footer-link">NEO Brief</a>
+    <a href="/v1/briefing/neows" class="footer-link">Orbital Brief</a>
   </div>
-  <div class="footer-meta">Operational Intelligence Layer Â· Always On</div>
 </footer>
 
 <script>
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+/* ==============================================
    GLOBE CANVAS
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+============================================== */
 (function() {
   const canvas = document.getElementById('globe-canvas');
   const ctx = canvas.getContext('2d');
@@ -5252,9 +5251,9 @@ footer {
   draw();
 })();
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   CTA CANVAS â€” PARTICLE FIELD
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* ==============================================
+   CTA CANVAS — PARTICLE FIELD
+============================================== */
 (function() {
   const canvas = document.getElementById('cta-canvas');
   const ctx = canvas.getContext('2d');
@@ -5308,18 +5307,18 @@ footer {
   drawCta();
 })();
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+/* ==============================================
    SCROLL REVEAL
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+============================================== */
 const reveals = document.querySelectorAll('.reveal');
 const observer = new IntersectionObserver((entries) => {
   entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('visible'); } });
 }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
 reveals.forEach(el => observer.observe(el));
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+/* ==============================================
    NAV SCROLL
-â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+============================================== */
 const nav = document.querySelector('nav');
 window.addEventListener('scroll', () => {
   if (window.scrollY > 60) {
