@@ -3390,11 +3390,11 @@ async function refreshProvenance() {
 
 // --- Op Picture + Globe ---
 // GET /v1/passive/map/regions  → RegionMapResponse { regions: RegionMapItem[] }
-//   RegionMapItem: { region_id, name, enabled, seeds_known, seeds_elevated, max_priority }
-// GET /v1/passive/map/sites?region_id=X → SiteMapResponse { sites: SiteMapItem[] }
-//   SiteMapItem: { coordinates:{lat,lon}, elevated, scan_priority, name, seed_key }
+//   RegionMapItem: { region_id, name, enabled, seeds_known, seeds_elevated,
+//                   recent_events, critical_events, bbox: {south,west,north,east} }
 // GET /v1/passive/canonical-events → CanonicalEventsResponse { events: [...] }
-let globeSitesLoaded = false;
+//   Uses region-level aggregates (seeds_elevated, recent_events) to avoid
+//   hanging per-region site fetches which have no timeout guarantee.
 async function refreshOpPicture() {
   try {
     const [regData, evData] = await Promise.all([
@@ -3404,51 +3404,54 @@ async function refreshOpPicture() {
     const regions = regData.regions || [];
     const events  = evData.events   || [];
 
-    // Fetch sites for each enabled region (cap at 3 regions)
-    let allSites = [];
-    for (const r of regions.filter(r => r.enabled).slice(0, 3)) {
-      try {
-        const sd = await API.get('/v1/passive/map/sites?region_id=' + encodeURIComponent(r.region_id));
-        allSites = allSites.concat(sd.sites || []);
-      } catch (_) {}
-    }
-
-    const activeRegions = regions.filter(r => r.enabled && (r.seeds_known > 0 || r.seeds_elevated > 0)).length
-                        || regions.filter(r => r.enabled).length;
-    const elevSites  = allSites.filter(s => s.elevated || s.scan_priority === 'high' || s.scan_priority === 'critical').length;
+    const enabledRegions = regions.filter(r => r.enabled);
+    const activeRegions  = enabledRegions.length;
+    // seeds_elevated is the per-region count of elevated seeds (observed sites at risk)
+    const elevSites  = enabledRegions.reduce((s, r) => s + (r.seeds_elevated || 0), 0);
     const liveEvents = events.length;
+    // total seeds known across all regions
+    const seedsKnown = enabledRegions.reduce((s, r) => s + (r.seeds_known || 0), 0);
 
     const opR   = document.getElementById('op-regions');
     const opS   = document.getElementById('op-sites');
     const opEv  = document.getElementById('op-events');
     const opMsg = document.getElementById('op-message');
-    if (opR)  opR.textContent  = activeRegions;
+    if (opR)  opR.textContent  = activeRegions || '\u2014';
     if (opS)  opS.textContent  = elevSites;
     if (opEv) opEv.textContent = liveEvents;
     if (opMsg) {
       if (!regions.length) {
         opMsg.innerHTML = 'No regions configured. Add regions to begin monitoring.';
-      } else if (!liveEvents) {
-        opMsg.innerHTML = regions.length + ' region' + (regions.length === 1 ? '' : 's') + ' monitored \u00b7 awaiting scan results.';
+      } else if (!liveEvents && !elevSites) {
+        opMsg.innerHTML = activeRegions + ' region' + (activeRegions === 1 ? '' : 's') + ' monitored'
+          + (seedsKnown > 0 ? ' \u00b7 ' + seedsKnown.toLocaleString() + ' seeds indexed' : '')
+          + ' \u00b7 awaiting scan results.';
       } else {
         opMsg.innerHTML = '<strong>' + elevSites + ' site' + (elevSites === 1 ? '' : 's') + '</strong> elevated \u00b7 '
           + liveEvents + ' event' + (liveEvents === 1 ? '' : 's') + ' live across '
-          + regions.length + ' region' + (regions.length === 1 ? '' : 's') + '.';
+          + activeRegions + ' region' + (activeRegions === 1 ? '' : 's') + '.';
       }
     }
 
-    // Add real sites to globe once
-    if (!globeSitesLoaded && allSites.length > 0) {
-      globeSitesLoaded = true;
-      allSites.forEach(s => {
-        if (s.coordinates) {
-          const p     = s.scan_priority || 'low';
-          const level = s.elevated ? (p === 'critical' ? 'critical' : 'elevated')
-                      : p === 'high' ? 'elevated' : 'active';
-          addSiteToGlobe({ lat: s.coordinates.lat, lng: s.coordinates.lon, level, label: s.name || s.seed_key || 'Site' });
-        }
-      });
-    }
+    // Place globe markers at region bbox centres for visual context
+    enabledRegions.forEach(r => {
+      if (r.bbox) {
+        const lat = (r.bbox.south + r.bbox.north) / 2;
+        const lng = (r.bbox.west  + r.bbox.east)  / 2;
+        const level = (r.seeds_elevated || 0) > 0 ? 'elevated' : 'active';
+        addSiteToGlobe({ lat, lng, level, label: r.name || r.region_id });
+      }
+    });
+    // Also place event locations on globe
+    events.forEach(ev => {
+      if (ev.coordinates) {
+        addSiteToGlobe({
+          lat: ev.coordinates.lat, lng: ev.coordinates.lon,
+          level: sevCls(ev.severity),
+          label: ev.site_name || ev.event_type || 'Event',
+        });
+      }
+    });
   } catch (_) { /* leave defaults */ }
 }
 
