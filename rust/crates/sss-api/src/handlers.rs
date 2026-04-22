@@ -3103,11 +3103,20 @@ clickHandler.setInputAction(function(click) {
 
 document.getElementById('focus-close-btn').addEventListener('click', () => {
   document.getElementById('focus-panel').classList.remove('visible');
+  _focusCoords = { lat: null, lng: null };
+});
+
+document.getElementById('focus-primary-btn').addEventListener('click', () => {
+  if (_focusCoords.lat != null) {
+    focusOnGlobe(_focusCoords.lat, _focusCoords.lng, 180000);
+  }
 });
 
 // --- Globe data cache + focus system ---
 const GLOBE_DATA = { regions: [], events: [] };
 let lastAttentionItems = [];
+let _focusCoords = { lat: null, lng: null };
+const PRESSURE_HISTORY = []; // circular buffer { t, score }
 
 function focusOnGlobe(lat, lng, altM) {
   viewer.camera.flyTo({
@@ -3131,6 +3140,7 @@ function openFocusPanel({ kind, title, reason, lat, lng }) {
   fTitle.textContent  = title || '\u2014';
   fReason.textContent = reason || '';
   fCoords.textContent = lat != null ? lat.toFixed(4) + '\u00b0N \u00b7 ' + lng.toFixed(4) + '\u00b0' : '';
+  _focusCoords = { lat, lng };
   panel.classList.add('visible');
   if (lat != null) focusOnGlobe(lat, lng);
 }
@@ -3155,10 +3165,51 @@ document.querySelectorAll('.chip-group').forEach(group => {
   });
 });
 
-// --- Legend toggles ---
+// --- Legend toggles — wire to Cesium entity visibility ---
 document.querySelectorAll('.legend-toggle').forEach(t => {
-  t.addEventListener('click', () => t.classList.toggle('on'));
+  t.addEventListener('click', () => {
+    t.classList.toggle('on');
+    const layer = t.dataset.layer;
+    const isOn  = t.classList.contains('on');
+    if (!layer || !viewer) return;
+    viewer.entities.values.forEach(ent => {
+      const props = ent.properties;
+      if (!props) return;
+      const entLayer = props.layer && props.layer.getValue();
+      if (entLayer === layer) ent.show = isOn;
+    });
+  });
 });
+
+// --- Search ---
+(function() {
+  const input = document.getElementById('console-search');
+  if (!input) return;
+  let timeout = null;
+  input.addEventListener('input', function() {
+    clearTimeout(timeout);
+    timeout = setTimeout(function() {
+      const q = input.value.trim().toLowerCase();
+      if (!q || q.length < 2) return;
+      const r = GLOBE_DATA.regions.find(function(r) { return (r.name || r.region_id || '').toLowerCase().includes(q); });
+      if (r && r.bbox) {
+        const lat = (r.bbox.south + r.bbox.north) / 2;
+        const lng = (r.bbox.west  + r.bbox.east)  / 2;
+        openFocusPanel({ kind: 'region', title: r.name || r.region_id, reason: (r.seeds_elevated || 0) + ' seeds elevated \u00b7 ' + (r.seeds_known || 0) + ' indexed', lat: lat, lng: lng });
+        input.value = '';
+        return;
+      }
+      const ev = GLOBE_DATA.events.find(function(e) { return ((e.site_name || '') + ' ' + (e.event_type || '') + ' ' + (e.summary || '')).toLowerCase().includes(q); });
+      if (ev && ev.coordinates) {
+        openFocusPanel({ kind: 'canonical_event', title: ev.site_name || ev.event_type || 'Event', reason: ev.summary || ev.operational_readout || '', lat: ev.coordinates.lat, lng: ev.coordinates.lon });
+        input.value = '';
+      }
+    }, 350);
+  });
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') { input.value = ''; input.blur(); }
+  });
+}());
 
 /* ============================================================
    API INTEGRATION
@@ -3220,7 +3271,7 @@ async function refreshWhatChanged() {
     const count  = document.getElementById('changes-count');
     if (!list) return;
     if (!events.length) {
-      list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">No recent events.</div>';
+      list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;line-height:1.6;">No active changes detected in the current ' + CONSOLE_STATE.window + ' horizon.</div>';
       if (count) count.textContent = '0';
       return;
     }
@@ -3248,14 +3299,30 @@ async function refreshNarrative() {
     const narEl = document.getElementById('narrative-text');
     const metaEl = document.getElementById('narrative-meta');
     if (!narEl) return;
-    if (data.summary) { narEl.textContent = data.summary; narEl.style.color = ''; }
+    const attn  = data.attention_queue || [];
+    const maint = data.maintenance || {};
+    const acts  = (maint.suggested_actions || []).length;
+    const stale = maint.stale_heartbeat_count || 0;
+    // Build operational briefing language from server data
+    let nar = '';
+    if (!attn.length && !acts && !stale) {
+      nar = 'Observation stable in the selected region. No live operational escalations detected in the current window. Maintenance queue is clear.';
+    } else if (data.summary) {
+      nar = data.summary
+        .replace(/command center focused on ([^.\n]+)/i, 'Monitoring active across $1.')
+        .replace(/^command center/i, 'Operational monitor');
+      if (attn.length > 0) nar += ' ' + attn.length + ' item' + (attn.length === 1 ? '' : 's') + ' requiring attention.';
+      if (acts > 0) nar += ' ' + acts + ' recommended action' + (acts === 1 ? '' : 's') + ' queued.';
+    } else {
+      nar = 'Monitoring active. ' + attn.length + ' attention item' + (attn.length === 1 ? '' : 's') + ' in queue.';
+      if (stale > 0) nar += ' ' + stale + ' stale heartbeat' + (stale === 1 ? '' : 's') + ' detected.';
+    }
+    narEl.textContent = nar;
+    narEl.style.color = '';
     if (metaEl) {
-      const attn  = (data.attention_queue || []).length;
-      const maint = data.maintenance || {};
-      const acts  = (maint.suggested_actions || []).length;
       metaEl.innerHTML =
-        '<span>QUEUE \u00b7 ' + attn + '</span>' +
-        '<span>STALE \u00b7 ' + (maint.stale_heartbeat_count || 0) + '</span>' +
+        '<span>QUEUE \u00b7 ' + attn.length + '</span>' +
+        '<span>STALE \u00b7 ' + stale + '</span>' +
         '<span>ACTIONS \u00b7 ' + acts + '</span>';
     }
   } catch (_) { /* leave */ }
@@ -3446,6 +3513,10 @@ async function refreshAttentionQueue() {
       canonical_event: { cls: 'evidence', label: 'Event' },
       maintenance:     { cls: 'replay',   label: 'Maintenance' },
     };
+    // Update Risk Trend window label
+    const rtwEl = document.getElementById('risk-trend-window');
+    if (rtwEl) rtwEl.textContent = CONSOLE_STATE.window.toUpperCase();
+
     lastAttentionItems = items.slice(0, 5);
     list.innerHTML = lastAttentionItems.map((item, idx) => {
       const pc  = pClass(idx);
@@ -3469,20 +3540,28 @@ function handleAttentionClick(idx) {
   if (!item) return;
   // Resolve coordinates from cached globe data
   let lat = null, lng = null;
-  if (item.kind === 'region' || item.kind === 'site') {
-    const r = GLOBE_DATA.regions.find(r => r.name === item.title || r.region_id === item.title);
+  if (item.kind === 'region') {
+    const r = GLOBE_DATA.regions.find(r => r.name === item.title || r.region_id === item.title
+      || (r.name || '').toLowerCase() === item.title.toLowerCase()
+      || (r.region_id || '').toLowerCase() === item.title.toLowerCase());
     if (r && r.bbox) {
       lat = (r.bbox.south + r.bbox.north) / 2;
       lng = (r.bbox.west  + r.bbox.east)  / 2;
+    } else if (GLOBE_DATA.regions.length) {
+      // best effort: centroid of first region
+      const first = GLOBE_DATA.regions[0];
+      if (first.bbox) { lat = (first.bbox.south + first.bbox.north) / 2; lng = (first.bbox.west + first.bbox.east) / 2; }
     }
-  } else if (item.kind === 'canonical_event') {
-    const ev = GLOBE_DATA.events.find(e => (e.summary || e.event_type || '') === item.title || (e.site_name || '') === item.title);
+  } else if (item.kind === 'site') {
+    // Sites have no separate cache — search events for a coordinate match
+    const ev = GLOBE_DATA.events.find(e => (e.site_name || '').toLowerCase() === item.title.toLowerCase());
     if (ev && ev.coordinates) { lat = ev.coordinates.lat; lng = ev.coordinates.lon; }
-    // fallback: fly to first region
-    if (lat === null && GLOBE_DATA.regions.length) {
-      const r = GLOBE_DATA.regions[0];
-      if (r.bbox) { lat = (r.bbox.south + r.bbox.north) / 2; lng = (r.bbox.west + r.bbox.east) / 2; }
-    }
+  } else if (item.kind === 'canonical_event' || item.kind === 'neo') {
+    const ev = GLOBE_DATA.events.find(e =>
+      (e.summary || e.event_type || '').toLowerCase().includes(item.title.toLowerCase()) ||
+      (e.site_name || '').toLowerCase().includes(item.title.toLowerCase()));
+    if (ev && ev.coordinates) { lat = ev.coordinates.lat; lng = ev.coordinates.lon; }
+    // No dangerous fallback — lat stays null, panel opens without fly-to
   }
   openFocusPanel({ kind: item.kind, title: item.title, reason: item.reason, lat, lng });
 }
@@ -3496,7 +3575,7 @@ async function refreshRecommendedActions() {
     if (!list) return;
     const actions = (data.maintenance || {}).suggested_actions || [];
     if (!actions.length) {
-      list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:6px 0;">No recommendations at this time.</div>';
+      list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:6px 0;line-height:1.6;">No operator actions required in the current window. Monitoring continues.</div>';
       return;
     }
     const colors = ['var(--coral)', 'var(--amber)', 'var(--teal)', 'var(--lime)'];
@@ -3546,6 +3625,64 @@ async function refreshEventComposition() {
         + '</div></div>';
     }).join('');
   } catch (_) { /* leave */ }
+}
+
+// --- Risk Trend ---
+function updateRiskTrend(pressure) {
+  const metricEl = document.getElementById('risk-metric');
+  const deltaEl  = document.getElementById('risk-delta');
+  const lineEl   = document.getElementById('risk-line');
+  const areaEl   = document.getElementById('risk-area');
+  if (metricEl) metricEl.textContent = pressure.toFixed(2);
+  if (deltaEl && PRESSURE_HISTORY.length > 1) {
+    const prev = PRESSURE_HISTORY[PRESSURE_HISTORY.length - 2].score;
+    const diff = pressure - prev;
+    const sign = diff > 0.005 ? '\u2191' : diff < -0.005 ? '\u2193' : '\u2192';
+    const col  = diff > 0.005 ? 'var(--coral)' : diff < -0.005 ? 'var(--lime)' : 'var(--text-tertiary)';
+    deltaEl.style.color = col;
+    deltaEl.innerHTML   = sign + ' ' + (diff >= 0 ? '+' : '') + (diff * 100).toFixed(1) + '%';
+  }
+  if (lineEl && areaEl && PRESSURE_HISTORY.length > 1) {
+    const h = PRESSURE_HISTORY;
+    const n = h.length;
+    const pts = h.map(function(p, i) {
+      const x = (i / (n - 1)) * 300;
+      const y = 62 - Math.min(p.score, 1) * 56; // map 0-1 to y 62-6
+      return x.toFixed(1) + ' ' + y.toFixed(1);
+    });
+    const lineD = 'M ' + pts.join(' L ');
+    const first = pts[0].split(' ');
+    const last  = pts[pts.length - 1].split(' ');
+    const areaD = 'M ' + pts[0] + ' L ' + pts.slice(1).join(' L ') + ' L ' + last[0] + ' 64 L ' + first[0] + ' 64 Z';
+    lineEl.setAttribute('d', lineD);
+    areaEl.setAttribute('d', areaD);
+  }
+}
+
+// --- Timeline strip ---
+function refreshTimeline(events) {
+  const strip = document.getElementById('timeline-events');
+  if (!strip) return;
+  if (!events || !events.length) { strip.innerHTML = ''; return; }
+  const now   = Date.now();
+  const start = now - 36 * 3600 * 1000;
+  const total = 72 * 3600 * 1000;
+  const colorMap = { critical: 'var(--coral)', elevated: 'var(--amber)', active: 'var(--teal)', resolved: 'var(--lime)' };
+  strip.innerHTML = events
+    .filter(function(ev) { return ev.last_observed_at_unix_seconds; })
+    .map(function(ev) {
+      const pct   = Math.max(2, Math.min(97, ((ev.last_observed_at_unix_seconds * 1000 - start) / total) * 100));
+      const cls   = sevCls(ev.severity);
+      const color = colorMap[cls] || 'var(--teal)';
+      const label = (ev.site_name || ev.event_type || 'event').replace(/_/g, ' ').toUpperCase();
+      const reason = (ev.summary || '').replace(/'/g, ' ').substring(0, 80);
+      const lat   = ev.coordinates ? ev.coordinates.lat : null;
+      const lng   = ev.coordinates ? ev.coordinates.lon : null;
+      return '<div class="timeline-event" '
+        + 'style="left:' + pct.toFixed(1) + '%;background:' + color + ';cursor:pointer;width:10px;height:10px;border:2px solid rgba(255,255,255,0.25);" '
+        + 'title="' + label + '" '
+        + 'onclick="openFocusPanel({kind:\'canonical_event\',title:\'' + label.replace(/'/g, '') + '\',reason:\'' + reason + '\',lat:' + lat + ',lng:' + lng + '})"></div>';
+    }).join('');
 }
 
 // --- Sys status ---
