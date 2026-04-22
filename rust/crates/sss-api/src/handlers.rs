@@ -2515,6 +2515,83 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
     100% { background-position: -200% 0; }
   }
 
+  /* ============================================================
+     FOCUS PANEL
+     ============================================================ */
+  .focus-panel {
+    position: absolute;
+    top: 80px; left: 50%;
+    transform: translateX(-50%) translateY(-12px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+    background: var(--bg-panel);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid var(--line-strong);
+    border-radius: 4px;
+    padding: 16px 20px;
+    min-width: 300px;
+    max-width: 420px;
+    z-index: 5;
+  }
+  .focus-panel.visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+    pointer-events: auto;
+  }
+  .focus-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .focus-kind-badge {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--teal);
+    background: var(--teal-dim);
+    padding: 3px 8px;
+    border-radius: 2px;
+  }
+  .focus-kind-badge.region { color: var(--amber); background: var(--amber-dim); }
+  .focus-kind-badge.event  { color: var(--coral); background: var(--coral-dim); }
+  .focus-close {
+    background: none;
+    border: none;
+    color: var(--text-tertiary);
+    font-size: 20px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 4px;
+    transition: color 0.15s;
+  }
+  .focus-close:hover { color: var(--text-primary); }
+  .focus-ftitle {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 7px;
+    line-height: 1.35;
+  }
+  .focus-reason {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.55;
+    margin-bottom: 10px;
+  }
+  .focus-coords {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-tertiary);
+    letter-spacing: 0.1em;
+    margin-bottom: 12px;
+  }
+  .focus-divider { border: none; border-top: 1px solid var(--line); margin: 10px 0; }
+  .focus-actions { display: flex; gap: 8px; }
+
   /* Load animation — staggered reveals */
   .console > * {
     opacity: 0;
@@ -2755,6 +2832,22 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
         <div class="legend-toggle on" data-layer="orbital"></div>
       </div>
     </div>
+
+    <!-- Focus Panel — appears when site/region selected -->
+    <div id="focus-panel" class="focus-panel">
+      <div class="focus-panel-header">
+        <span class="focus-kind-badge" id="focus-kind">SITE</span>
+        <button class="focus-close" id="focus-close-btn">&#215;</button>
+      </div>
+      <div class="focus-ftitle" id="focus-title">&mdash;</div>
+      <div class="focus-reason" id="focus-reason"></div>
+      <div class="focus-coords" id="focus-coords"></div>
+      <hr class="focus-divider">
+      <div class="focus-actions">
+        <button class="att-action" id="focus-primary-btn">Open &rarr;</button>
+      </div>
+    </div>
+
   </main>
 
   <!-- ============================================================
@@ -2985,18 +3078,62 @@ function addSiteToGlobe(site) {
   });
 }
 
-// Default fallback sites while API data loads
-const defaultSites = [
-  { lat: 38.71, lng: -9.14, level: 'active',   label: 'Lisbon Node' },
-  { lat: 41.15, lng: -8.61, level: 'active',   label: 'Porto Grid' },
-  { lat: 37.20, lng: -8.80, level: 'active',   label: 'Alentejo Solar' },
-  { lat: 40.41, lng: -3.70, level: 'elevated', label: 'Madrid Cluster' },
-  { lat: 48.85, lng:  2.35, level: 'healthy',  label: 'Paris Node' },
-  { lat: 51.50, lng: -0.12, level: 'active',   label: 'London Ops' },
-  { lat: 52.52, lng: 13.40, level: 'healthy',  label: 'Berlin Hub' },
-  { lat: 40.63, lng:-73.93, level: 'healthy',  label: 'NY East' },
-];
-defaultSites.forEach(addSiteToGlobe);
+// Globe entity click — open focus panel
+const clickHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+clickHandler.setInputAction(function(click) {
+  const picked = viewer.scene.pick(click.position);
+  if (!picked || !picked.id) return;
+  const ent = picked.id;
+  const props = ent.properties;
+  if (!props) return;
+  const pos = ent.position && ent.position.getValue(Cesium.JulianDate.now());
+  let lat = null, lng = null;
+  if (pos) {
+    const carto = Cesium.Ellipsoid.WGS84.cartesianToCartographic(pos);
+    lat = Cesium.Math.toDegrees(carto.latitude);
+    lng = Cesium.Math.toDegrees(carto.longitude);
+  }
+  openFocusPanel({
+    kind:   (props.kind && props.kind.getValue()) || 'site',
+    title:  (props.label && props.label.getValue()) || (ent.name) || 'Unknown',
+    reason: (props.reason && props.reason.getValue()) || '',
+    lat, lng,
+  });
+}, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+document.getElementById('focus-close-btn').addEventListener('click', () => {
+  document.getElementById('focus-panel').classList.remove('visible');
+});
+
+// --- Globe data cache + focus system ---
+const GLOBE_DATA = { regions: [], events: [] };
+let lastAttentionItems = [];
+
+function focusOnGlobe(lat, lng, altM) {
+  viewer.camera.flyTo({
+    destination: Cesium.Cartesian3.fromDegrees(lng, lat, altM || 450000),
+    orientation: { heading: 0, pitch: Cesium.Math.toRadians(-50), roll: 0 },
+    duration: 1.5,
+  });
+}
+
+function openFocusPanel({ kind, title, reason, lat, lng }) {
+  const panel   = document.getElementById('focus-panel');
+  const fKind   = document.getElementById('focus-kind');
+  const fTitle  = document.getElementById('focus-title');
+  const fReason = document.getElementById('focus-reason');
+  const fCoords = document.getElementById('focus-coords');
+  if (!panel) return;
+  const kindLabel = { site: 'SITE', region: 'REGION', canonical_event: 'EVENT', neo: 'NEO', maintenance: 'MAINTENANCE' }[kind] || (kind || 'SITE').toUpperCase();
+  const kindCls   = kind === 'region' ? 'region' : kind === 'canonical_event' ? 'event' : '';
+  fKind.textContent   = kindLabel;
+  fKind.className     = 'focus-kind-badge' + (kindCls ? ' ' + kindCls : '');
+  fTitle.textContent  = title || '\u2014';
+  fReason.textContent = reason || '';
+  fCoords.textContent = lat != null ? lat.toFixed(4) + '\u00b0N \u00b7 ' + lng.toFixed(4) + '\u00b0' : '';
+  panel.classList.add('visible');
+  if (lat != null) focusOnGlobe(lat, lng);
+}
 
 // --- Console state (filter + time window) ---
 const CONSOLE_STATE = { filter: 'global', window: '72h' };
@@ -3022,16 +3159,6 @@ document.querySelectorAll('.chip-group').forEach(group => {
 document.querySelectorAll('.legend-toggle').forEach(t => {
   t.addEventListener('click', () => t.classList.toggle('on'));
 });
-
-// --- Simulated telemetry drift ---
-setInterval(() => {
-  const lat = (38.7139 + (Math.random() - 0.5) * 0.0004).toFixed(4);
-  const lon = (-9.1400 + (Math.random() - 0.5) * 0.0004).toFixed(4);
-  const latEl = document.getElementById('tel-lat');
-  const lonEl = document.getElementById('tel-lon');
-  if (latEl) latEl.textContent = lat + '\u00b0N';
-  if (lonEl) lonEl.textContent = lon + '\u00b0';
-}, 2000);
 
 /* ============================================================
    API INTEGRATION
@@ -3246,22 +3373,45 @@ async function refreshOpPicture() {
       }
     }
 
-    // Place globe markers at region bbox centres for visual context
+    // Store in global cache for focus lookups
+    GLOBE_DATA.regions = enabledRegions;
+    GLOBE_DATA.events  = events;
+
+    // Rebuild globe entities from live API data (clear previous)
+    viewer.entities.removeAll();
     enabledRegions.forEach(r => {
       if (r.bbox) {
-        const lat = (r.bbox.south + r.bbox.north) / 2;
-        const lng = (r.bbox.west  + r.bbox.east)  / 2;
+        const lat   = (r.bbox.south + r.bbox.north) / 2;
+        const lng   = (r.bbox.west  + r.bbox.east)  / 2;
         const level = (r.seeds_elevated || 0) > 0 ? 'elevated' : 'active';
-        addSiteToGlobe({ lat, lng, level, label: r.name || r.region_id });
+        const color = SITE_COLORS[level] || SITE_COLORS.active;
+        viewer.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(lng, lat),
+          point: { pixelSize: SITE_SIZES[level] || 9, color, outlineColor: Cesium.Color.BLACK.withAlpha(0.7), outlineWidth: 1, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND },
+          label: { text: r.name || r.region_id, font: '10px monospace', fillColor: Cesium.Color.WHITE.withAlpha(0.85), outlineColor: Cesium.Color.BLACK, outlineWidth: 2, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(0, -18), scale: 1.0, showBackground: false, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND },
+          properties: { kind: 'region', label: r.name || r.region_id, region_id: r.region_id, reason: (r.seeds_elevated || 0) + ' seeds elevated · ' + (r.seeds_known || 0) + ' indexed' },
+        });
+        // Region outline rectangle
+        viewer.entities.add({
+          rectangle: {
+            coordinates: Cesium.Rectangle.fromDegrees(r.bbox.west, r.bbox.south, r.bbox.east, r.bbox.north),
+            material: color.withAlpha(0.08),
+            outline: true,
+            outlineColor: color.withAlpha(0.5),
+            outlineWidth: 1.5,
+            height: 0,
+          },
+        });
       }
     });
-    // Also place event locations on globe
     events.forEach(ev => {
       if (ev.coordinates) {
-        addSiteToGlobe({
-          lat: ev.coordinates.lat, lng: ev.coordinates.lon,
-          level: sevCls(ev.severity),
-          label: ev.site_name || ev.event_type || 'Event',
+        const level = sevCls(ev.severity);
+        const color = SITE_COLORS[level] || SITE_COLORS.active;
+        viewer.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(ev.coordinates.lon, ev.coordinates.lat),
+          point: { pixelSize: SITE_SIZES[level] || 9, color, outlineColor: Cesium.Color.BLACK.withAlpha(0.7), outlineWidth: 1, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND },
+          properties: { kind: 'canonical_event', label: ev.site_name || ev.event_type || 'Event', reason: ev.summary || ev.operational_readout || '' },
         });
       }
     });
@@ -3296,7 +3446,8 @@ async function refreshAttentionQueue() {
       canonical_event: { cls: 'evidence', label: 'Event' },
       maintenance:     { cls: 'replay',   label: 'Maintenance' },
     };
-    list.innerHTML = items.slice(0, 5).map((item, idx) => {
+    lastAttentionItems = items.slice(0, 5);
+    list.innerHTML = lastAttentionItems.map((item, idx) => {
       const pc  = pClass(idx);
       const km  = kindMap[item.kind] || { cls: 'evidence', label: String(item.kind || 'Item') };
       const num = String(idx + 1).padStart(2, '0');
@@ -3307,10 +3458,33 @@ async function refreshAttentionQueue() {
         + '<div class="att-head"><span class="att-kind ' + km.cls + '">' + km.label + '</span></div>'
         + '<div class="att-title">' + (item.title || 'Unnamed') + '</div>'
         + (item.reason ? '<div class="att-reason">' + item.reason + '</div>' : '')
-        + '<button class="att-action">' + lbl + '</button>'
+        + '<button class="att-action" onclick="handleAttentionClick(' + idx + ')">' + lbl + '</button>'
         + '</div></div>';
     }).join('');
   } catch (_) { /* leave */ }
+}
+
+function handleAttentionClick(idx) {
+  const item = lastAttentionItems[idx];
+  if (!item) return;
+  // Resolve coordinates from cached globe data
+  let lat = null, lng = null;
+  if (item.kind === 'region' || item.kind === 'site') {
+    const r = GLOBE_DATA.regions.find(r => r.name === item.title || r.region_id === item.title);
+    if (r && r.bbox) {
+      lat = (r.bbox.south + r.bbox.north) / 2;
+      lng = (r.bbox.west  + r.bbox.east)  / 2;
+    }
+  } else if (item.kind === 'canonical_event') {
+    const ev = GLOBE_DATA.events.find(e => (e.summary || e.event_type || '') === item.title || (e.site_name || '') === item.title);
+    if (ev && ev.coordinates) { lat = ev.coordinates.lat; lng = ev.coordinates.lon; }
+    // fallback: fly to first region
+    if (lat === null && GLOBE_DATA.regions.length) {
+      const r = GLOBE_DATA.regions[0];
+      if (r.bbox) { lat = (r.bbox.south + r.bbox.north) / 2; lng = (r.bbox.west + r.bbox.east) / 2; }
+    }
+  }
+  openFocusPanel({ kind: item.kind, title: item.title, reason: item.reason, lat, lng });
 }
 
 // --- Recommended Actions ---
