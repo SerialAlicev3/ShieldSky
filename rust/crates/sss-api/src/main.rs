@@ -3,7 +3,11 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use sss_api::{build_router, state::{PassiveRegionRunRequest, PassiveRegionTargetRequest}, AppState, WebhookDeliveryPolicy};
+use sss_api::{
+    build_router,
+    state::{PassiveRegionRunRequest, PassiveRegionTargetRequest},
+    AppState, WebhookDeliveryPolicy,
+};
 use sss_site_registry::SiteType;
 use sss_storage::SqliteStore;
 
@@ -345,7 +349,11 @@ fn seed_default_regions(state: &AppState) -> bool {
             west: -9.5,
             north: 42.1,
             east: -6.2,
-            site_types: Some(vec![SiteType::Substation, SiteType::SolarPlant, SiteType::DataCenter]),
+            site_types: Some(vec![
+                SiteType::Substation,
+                SiteType::SolarPlant,
+                SiteType::DataCenter,
+            ]),
             timezone: None,
             country_code: Some("PT".to_string()),
             default_operator_name: None,
@@ -378,8 +386,12 @@ fn seed_default_regions(state: &AppState) -> bool {
 
     for region in defaults {
         match state.upsert_passive_region_target(region) {
-            Ok(created) => tracing::info!(region_id = %created.region_id, "seeded default passive region"),
-            Err(error) => tracing::warn!(%error, name = %region.name, "failed to seed default passive region"),
+            Ok(created) => {
+                tracing::info!(region_id = %created.region_id, "seeded default passive region")
+            }
+            Err(error) => {
+                tracing::warn!(%error, name = %region.name, "failed to seed default passive region")
+            }
         }
     }
     true
