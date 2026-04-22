@@ -3452,7 +3452,10 @@ async function refreshOpPicture() {
         });
       }
     });
-  } catch (_) { /* leave defaults */ }
+  } catch (e) {
+    const opMsg = document.getElementById('op-message');
+    if (opMsg) opMsg.innerHTML = 'Operational feed error — retrying…';
+  }
 }
 
 // --- Attention Queue ---

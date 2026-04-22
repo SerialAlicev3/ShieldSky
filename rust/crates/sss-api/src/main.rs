@@ -3,7 +3,8 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use sss_api::{build_router, state::PassiveRegionRunRequest, AppState, WebhookDeliveryPolicy};
+use sss_api::{build_router, state::{PassiveRegionRunRequest, PassiveRegionTargetRequest}, AppState, WebhookDeliveryPolicy};
+use sss_site_registry::SiteType;
 use sss_storage::SqliteStore;
 
 #[tokio::main(flavor = "multi_thread")]
@@ -29,6 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("sss-api listening on http://{local_addr}");
     tracing::info!("sss-api storage at {}", storage_path.display());
     let state = configure_state_from_env(AppState::from_storage(storage)?);
+    seed_default_regions(&state);
     if let Some(config) = scheduler_config() {
         tracing::info!(
             poll_seconds = config.poll_interval.as_secs(),
@@ -312,6 +314,67 @@ async fn run_passive_region_scheduler(state: AppState, config: PassiveRegionSche
                 );
                 delay = config.retry_interval;
             }
+        }
+    }
+}
+
+/// Seed the two default Portugal monitoring regions on startup if none exist.
+/// This recovers automatically after Render redeploys wipe the SQLite database.
+fn seed_default_regions(state: &AppState) {
+    let existing = match state.passive_region_targets(1, false) {
+        Ok(targets) => targets,
+        Err(error) => {
+            tracing::warn!(%error, "failed to query passive regions during startup seed");
+            return;
+        }
+    };
+    if !existing.is_empty() {
+        return;
+    }
+
+    let defaults: &[PassiveRegionTargetRequest] = &[
+        PassiveRegionTargetRequest {
+            region_id: Some("portugal-iberian-watch-36.900--9.500".to_string()),
+            name: "Portugal Iberian Watch".to_string(),
+            south: 36.9,
+            west: -9.5,
+            north: 42.1,
+            east: -6.2,
+            site_types: Some(vec![SiteType::Substation, SiteType::SolarPlant, SiteType::DataCenter]),
+            timezone: None,
+            country_code: Some("PT".to_string()),
+            default_operator_name: None,
+            default_criticality: None,
+            observation_radius_km: None,
+            discovery_cadence_seconds: Some(86_400),
+            scan_limit: Some(200),
+            minimum_priority: None,
+            enabled: Some(true),
+        },
+        PassiveRegionTargetRequest {
+            region_id: Some("alentejo-solar-belt-37.200--8.800".to_string()),
+            name: "Alentejo Solar Belt".to_string(),
+            south: 37.2,
+            west: -8.8,
+            north: 38.8,
+            east: -7.0,
+            site_types: Some(vec![SiteType::SolarPlant, SiteType::Substation]),
+            timezone: None,
+            country_code: Some("PT".to_string()),
+            default_operator_name: None,
+            default_criticality: None,
+            observation_radius_km: None,
+            discovery_cadence_seconds: Some(86_400),
+            scan_limit: Some(200),
+            minimum_priority: None,
+            enabled: Some(true),
+        },
+    ];
+
+    for region in defaults {
+        match state.upsert_passive_region_target(region) {
+            Ok(created) => tracing::info!(region_id = %created.region_id, "seeded default passive region"),
+            Err(error) => tracing::warn!(%error, name = %region.name, "failed to seed default passive region"),
         }
     }
 }
