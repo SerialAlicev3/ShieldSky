@@ -3222,48 +3222,62 @@ setInterval(() => {
 
 /* ============================================================
    API INTEGRATION
+   Field mapping against actual Rust response structs:
+   - CanonicalEventsResponse { events: CanonicalPassiveEvent[] }
+     CanonicalPassiveEvent: event_type, severity (critical/high/medium/low),
+     summary, operational_readout, last_observed_at_unix_seconds, coordinates: {lat,lon}
+   - PassiveCommandCenterSummary { summary, attention_queue, maintenance, highlights }
+     maintenance.suggested_actions: [{ action_id, title, reason, method, path }]
+     attention_queue: [{ item_id, kind, priority, title, reason, primary_action_label }]
+   - OperationalVisibilitySummary { regions: OperationalVisibilityRegion[], total_regions }
+     OperationalVisibilityRegion: { name, state: healthy|pressured|degraded|failing }
+   - RegionMapResponse { regions: RegionMapItem[] }
+     RegionMapItem: { region_id, name, enabled, seeds_known, seeds_elevated, max_priority }
+   - SiteMapResponse { sites: SiteMapItem[] }  (requires ?region_id=...)
+     SiteMapItem: { coordinates:{lat,lon}, elevated, scan_priority, name, seed_key }
+   - IngestBatchLog: { request_id, source, timestamp_unix_seconds, records_received }
    ============================================================ */
 
 const API = {
   async get(path) {
-    const res = await fetch(path);
+    const res  = await fetch(path);
     const json = await res.json();
     if (!res.ok) throw new Error((json.error && json.error.message) || 'HTTP ' + res.status);
     return json.data !== undefined ? json.data : json;
   }
 };
 
-function timeAgo(isoStr) {
-  if (!isoStr) return '\u2014';
-  const diff = Math.floor((Date.now() - new Date(isoStr)) / 1000);
-  if (diff < 60)  return diff + 's ago';
-  if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
-  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
-  return Math.floor(diff / 86400) + 'd ago';
+// unix seconds → "Xm ago"
+function tAgo(ts) {
+  if (!ts) return '\u2014';
+  const d = Math.floor(Date.now() / 1000 - ts);
+  if (d < 60)    return d + 's ago';
+  if (d < 3600)  return Math.floor(d / 60) + 'm ago';
+  if (d < 86400) return Math.floor(d / 3600) + 'h ago';
+  return Math.floor(d / 86400) + 'd ago';
 }
 
-function levelClass(level) {
-  const l = (level || '').toLowerCase();
-  if (l === 'critical') return 'critical';
-  if (l === 'elevated') return 'elevated';
-  if (l === 'resolved' || l === 'healthy') return 'resolved';
-  return 'active';
+// CanonicalPassiveEvent.severity → CSS marker class
+function sevCls(sev) {
+  const s = (sev || '').toLowerCase();
+  if (s === 'critical') return 'critical';
+  if (s === 'high')     return 'elevated';
+  if (s === 'medium')   return 'active';
+  return 'resolved';
 }
 
-function priorityClass(idx) {
-  if (idx === 0) return 'p1';
-  if (idx === 1) return 'p1';
-  if (idx <= 3)  return 'p2';
-  return 'p3';
+function pClass(idx) {
+  return idx <= 1 ? 'p1' : idx <= 3 ? 'p2' : 'p3';
 }
 
 // --- What Changed ---
+// GET /v1/passive/canonical-events → CanonicalEventsResponse
 async function refreshWhatChanged() {
   try {
-    const data = await API.get('/v1/passive/map/canonical-events');
-    const events = Array.isArray(data) ? data : (data.events || data.items || []);
-    const list = document.getElementById('what-changed-list');
-    const count = document.getElementById('changes-count');
+    const data   = await API.get('/v1/passive/canonical-events');
+    const events = data.events || [];
+    const list   = document.getElementById('what-changed-list');
+    const count  = document.getElementById('changes-count');
     if (!list) return;
     if (!events.length) {
       list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">No recent events.</div>';
@@ -3272,102 +3286,101 @@ async function refreshWhatChanged() {
     }
     if (count) count.textContent = events.length + ' new';
     list.innerHTML = events.slice(0, 7).map(ev => {
-      const cls = levelClass(ev.level || ev.severity);
-      const typeLabel = (ev.event_type || ev.kind || 'event').toUpperCase().replace(/_/g, ' ');
-      const titleText = ev.title || ev.summary || ev.description || 'Unnamed event';
-      const when = timeAgo(ev.created_at || ev.timestamp);
+      const cls  = sevCls(ev.severity);
+      const type = (ev.event_type || 'event').toUpperCase().replace(/_/g, ' ');
+      const text = ev.summary || ev.operational_readout || 'Event detected';
+      const when = tAgo(ev.last_observed_at_unix_seconds);
       return '<div class="change-item">'
         + '<div class="change-marker ' + cls + '"></div>'
         + '<div class="change-body">'
-        + '<div class="change-meta">'
-        + '<span class="change-type">' + typeLabel + '</span>'
-        + '<span class="change-time">' + when + '</span>'
-        + '</div>'
-        + '<div class="change-title">' + titleText + '</div>'
+        + '<div class="change-meta"><span class="change-type">' + type + '</span><span class="change-time">' + when + '</span></div>'
+        + '<div class="change-title">' + text + '</div>'
         + '</div></div>';
     }).join('');
-  } catch (_) { /* leave loading state */ }
+  } catch (_) { /* leave */ }
 }
 
 // --- Narrative ---
+// GET /v1/passive/command-center/summary → PassiveCommandCenterSummary
 async function refreshNarrative() {
   try {
-    const data = await API.get('/v1/passive/command-center/summary');
+    const data  = await API.get('/v1/passive/command-center/summary');
     const narEl = document.getElementById('narrative-text');
     const metaEl = document.getElementById('narrative-meta');
-    const verEl  = document.getElementById('narrative-version');
     if (!narEl) return;
-    const summary = data.summary || data.narrative || data.description;
-    if (summary) {
-      narEl.textContent = summary;
-      narEl.style.color = '';
-    }
+    if (data.summary) { narEl.textContent = data.summary; narEl.style.color = ''; }
     if (metaEl) {
-      const drivers = data.driver_count || (data.drivers && data.drivers.length) || 0;
-      const sources = data.source_count || (data.sources && data.sources.length) || 0;
-      const conf    = data.confidence != null ? data.confidence.toFixed(2) : '\u2014';
+      const attn  = (data.attention_queue || []).length;
+      const maint = data.maintenance || {};
+      const acts  = (maint.suggested_actions || []).length;
       metaEl.innerHTML =
-        '<span>DRIVERS \u00b7 ' + drivers + '</span>' +
-        '<span>SOURCES \u00b7 ' + sources + '</span>' +
-        '<span>CONFIDENCE \u00b7 ' + conf + '</span>';
+        '<span>QUEUE \u00b7 ' + attn + '</span>' +
+        '<span>STALE \u00b7 ' + (maint.stale_heartbeat_count || 0) + '</span>' +
+        '<span>ACTIONS \u00b7 ' + acts + '</span>';
     }
-    if (verEl && data.version) verEl.textContent = 'v' + data.version;
-  } catch (_) { /* leave loading */ }
+  } catch (_) { /* leave */ }
 }
 
 // --- Source Health ---
+// GET /v1/passive/operational-visibility → OperationalVisibilitySummary
+// regions: [{ name, state: 'healthy'|'pressured'|'degraded'|'failing' }]
 async function refreshSourceHealth() {
   try {
-    const data = await API.get('/v1/passive/operational-visibility');
-    const grid  = document.getElementById('source-health-list');
-    const cnt   = document.getElementById('source-count');
+    const data    = await API.get('/v1/passive/operational-visibility');
+    const grid    = document.getElementById('source-health-list');
+    const cnt     = document.getElementById('source-count');
+    const sysEl   = document.getElementById('sys-sources');
     if (!grid) return;
-    const sources = data.sources || data.feeds || data.source_health || [];
-    if (!sources.length) {
-      grid.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">No source data.</div>';
+    const regions = data.regions || [];
+    if (!regions.length) {
+      grid.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">No regions configured.</div>';
+      if (cnt) cnt.textContent = '\u2014';
+      if (sysEl) sysEl.textContent = 'no regions';
       return;
     }
-    const healthy = sources.filter(s => (s.score || s.health || 0) >= 75).length;
-    if (cnt) cnt.textContent = healthy + ' / ' + sources.length;
-    grid.innerHTML = sources.map(s => {
-      const score  = Math.round(s.score || s.health || 0);
-      const name   = (s.name || s.source_id || 'SOURCE').toUpperCase().replace(/_/g, '-');
-      const cls    = score >= 80 ? 'healthy' : score >= 50 ? 'degraded' : 'failing';
+    const score = { healthy: 97, pressured: 62, degraded: 35, failing: 14 };
+    const cls   = { healthy: 'healthy', pressured: 'degraded', degraded: 'degraded', failing: 'failing' };
+    const nHealthy = regions.filter(r => r.state === 'healthy').length;
+    if (cnt)   cnt.textContent  = nHealthy + ' / ' + regions.length;
+    if (sysEl) sysEl.textContent = nHealthy + ' / ' + regions.length + ' regions';
+    grid.innerHTML = regions.map(r => {
+      const sc = score[r.state] || 50;
+      const cl = cls[r.state]   || 'degraded';
+      const nm = (r.name || r.region_id || 'REGION').toUpperCase().substring(0, 14);
       return '<div class="source-row">'
-        + '<div class="source-name">' + name.substring(0, 12) + '</div>'
-        + '<div class="source-bar"><div class="source-bar-fill ' + cls + '" style="width:' + score + '%"></div></div>'
-        + '<div class="source-value">' + score + '</div>'
+        + '<div class="source-name">' + nm + '</div>'
+        + '<div class="source-bar"><div class="source-bar-fill ' + cl + '" style="width:' + sc + '%"></div></div>'
+        + '<div class="source-value">' + sc + '</div>'
         + '</div>';
     }).join('');
-    // Update sys-status too
-    const sysEl = document.getElementById('sys-sources');
-    if (sysEl) sysEl.textContent = healthy + ' / ' + sources.length + ' sources';
   } catch (_) {
-    // Fallback: show default source names
     const grid = document.getElementById('source-health-list');
-    if (grid) grid.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">Source data unavailable.</div>';
+    if (grid) grid.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">Visibility data unavailable.</div>';
   }
 }
 
 // --- Provenance ---
+// GET /v1/ingest/batches → Vec<IngestBatchLog>
+// IngestBatchLog: { request_id, source, timestamp_unix_seconds, records_received }
 async function refreshProvenance() {
   try {
-    const data  = await API.get('/v1/ingest/batches');
-    const list  = document.getElementById('provenance-list');
+    const data    = await API.get('/v1/ingest/batches');
+    const list    = document.getElementById('provenance-list');
     if (!list) return;
-    const batches = Array.isArray(data) ? data : (data.batches || data.items || []);
+    const batches = Array.isArray(data) ? data : [];
     if (!batches.length) {
       list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">No ingest batches yet.</div>';
       return;
     }
     list.innerHTML = batches.slice(0, 3).map(b => {
-      const id   = b.batch_id || b.id || 'unknown';
-      const kind = (b.source || b.kind || 'INGEST').toUpperCase();
-      const when = timeAgo(b.created_at || b.ingested_at);
-      return '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed var(--line);cursor:pointer;">'
+      const id   = (b.request_id || 'unknown').substring(0, 20);
+      const kind = (b.source || 'INGEST').toUpperCase();
+      const when = tAgo(b.timestamp_unix_seconds);
+      const recs = b.records_received != null ? b.records_received + ' records' : '';
+      return '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed var(--line);">'
         + '<div>'
-        + '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);letter-spacing:0.08em;">' + kind + '</div>'
-        + '<div style="font-size:12px;color:var(--text-primary);margin-top:2px;">' + id.substring(0, 24) + '</div>'
+        + '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);letter-spacing:0.08em;">' + kind + (recs ? ' \u00b7 ' + recs : '') + '</div>'
+        + '<div style="font-size:12px;color:var(--text-primary);margin-top:2px;">' + id + '</div>'
         + '</div>'
         + '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);align-self:center;">' + when + '</div>'
         + '</div>';
@@ -3375,53 +3388,64 @@ async function refreshProvenance() {
   } catch (_) { /* leave */ }
 }
 
-// --- Op Picture ---
+// --- Op Picture + Globe ---
+// GET /v1/passive/map/regions  → RegionMapResponse { regions: RegionMapItem[] }
+//   RegionMapItem: { region_id, name, enabled, seeds_known, seeds_elevated, max_priority }
+// GET /v1/passive/map/sites?region_id=X → SiteMapResponse { sites: SiteMapItem[] }
+//   SiteMapItem: { coordinates:{lat,lon}, elevated, scan_priority, name, seed_key }
+// GET /v1/passive/canonical-events → CanonicalEventsResponse { events: [...] }
+let globeSitesLoaded = false;
 async function refreshOpPicture() {
   try {
-    const [regData, siteData, evData] = await Promise.all([
+    const [regData, evData] = await Promise.all([
       API.get('/v1/passive/map/regions'),
-      API.get('/v1/passive/map/sites'),
-      API.get('/v1/passive/map/canonical-events'),
+      API.get('/v1/passive/canonical-events'),
     ]);
-    const regions  = Array.isArray(regData)  ? regData  : (regData.regions   || regData.items   || []);
-    const sites    = Array.isArray(siteData)  ? siteData : (siteData.sites    || siteData.items  || []);
-    const events   = Array.isArray(evData)    ? evData   : (evData.events     || evData.items    || []);
+    const regions = regData.regions || [];
+    const events  = evData.events   || [];
 
-    const activeRegions = regions.filter(r => r.active || r.status === 'active').length;
-    const elevSites     = sites.filter(s => {
-      const l = (s.level || s.status || '').toLowerCase();
-      return l === 'critical' || l === 'elevated';
-    }).length;
+    // Fetch sites for each enabled region (cap at 3 regions)
+    let allSites = [];
+    for (const r of regions.filter(r => r.enabled).slice(0, 3)) {
+      try {
+        const sd = await API.get('/v1/passive/map/sites?region_id=' + encodeURIComponent(r.region_id));
+        allSites = allSites.concat(sd.sites || []);
+      } catch (_) {}
+    }
+
+    const activeRegions = regions.filter(r => r.enabled && (r.seeds_known > 0 || r.seeds_elevated > 0)).length
+                        || regions.filter(r => r.enabled).length;
+    const elevSites  = allSites.filter(s => s.elevated || s.scan_priority === 'high' || s.scan_priority === 'critical').length;
     const liveEvents = events.length;
 
-    const opR  = document.getElementById('op-regions');
-    const opS  = document.getElementById('op-sites');
-    const opEv = document.getElementById('op-events');
+    const opR   = document.getElementById('op-regions');
+    const opS   = document.getElementById('op-sites');
+    const opEv  = document.getElementById('op-events');
     const opMsg = document.getElementById('op-message');
-
-    if (opR)  opR.textContent  = activeRegions || regions.length;
+    if (opR)  opR.textContent  = activeRegions;
     if (opS)  opS.textContent  = elevSites;
     if (opEv) opEv.textContent = liveEvents;
     if (opMsg) {
-      if (liveEvents === 0 && sites.length === 0) {
-        opMsg.innerHTML = 'No active sites or events. Awaiting data ingestion.';
+      if (!regions.length) {
+        opMsg.innerHTML = 'No regions configured. Add regions to begin monitoring.';
+      } else if (!liveEvents) {
+        opMsg.innerHTML = regions.length + ' region' + (regions.length === 1 ? '' : 's') + ' monitored \u00b7 awaiting scan results.';
       } else {
-        opMsg.innerHTML = '<strong>' + elevSites + ' site' + (elevSites === 1 ? '' : 's') + '</strong> elevated &middot; '
+        opMsg.innerHTML = '<strong>' + elevSites + ' site' + (elevSites === 1 ? '' : 's') + '</strong> elevated \u00b7 '
           + liveEvents + ' event' + (liveEvents === 1 ? '' : 's') + ' live across '
           + regions.length + ' region' + (regions.length === 1 ? '' : 's') + '.';
       }
     }
 
-    // Update globe with real site data
-    if (sites.length > 0) {
-      sites.forEach(s => {
-        if (s.lat != null && s.lng != null) {
-          addSiteToGlobe({
-            lat:   parseFloat(s.lat),
-            lng:   parseFloat(s.lng),
-            level: (s.level || s.status || 'active').toLowerCase(),
-            label: s.name || s.site_id || 'Site',
-          });
+    // Add real sites to globe once
+    if (!globeSitesLoaded && allSites.length > 0) {
+      globeSitesLoaded = true;
+      allSites.forEach(s => {
+        if (s.coordinates) {
+          const p     = s.scan_priority || 'low';
+          const level = s.elevated ? (p === 'critical' ? 'critical' : 'elevated')
+                      : p === 'high' ? 'elevated' : 'active';
+          addSiteToGlobe({ lat: s.coordinates.lat, lng: s.coordinates.lon, level, label: s.name || s.seed_key || 'Site' });
         }
       });
     }
@@ -3429,74 +3453,75 @@ async function refreshOpPicture() {
 }
 
 // --- Attention Queue ---
+// PassiveCommandCenterAttentionItem: { item_id, kind, priority, title, reason, primary_action_label }
+// kind values: site | region | neo | canonical_event | maintenance
 async function refreshAttentionQueue() {
   try {
-    const data = await API.get('/v1/passive/command-center/summary');
-    const list = document.getElementById('attention-queue-list');
-    const cnt  = document.getElementById('attention-count');
+    const data  = await API.get('/v1/passive/command-center/summary');
+    const list  = document.getElementById('attention-queue-list');
+    const cnt   = document.getElementById('attention-count');
     if (!list) return;
-    const items = data.attention_queue || data.queue || data.items || [];
+    const items = data.attention_queue || [];
     if (!items.length) {
       list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">Queue is clear.</div>';
       if (cnt) cnt.textContent = '0';
       return;
     }
     if (cnt) cnt.textContent = 'top ' + Math.min(items.length, 5);
+    const kindMap = {
+      site:            { cls: 'focus',    label: 'Site' },
+      region:          { cls: 'region',   label: 'Region' },
+      neo:             { cls: 'focus',    label: 'NEO Alert' },
+      canonical_event: { cls: 'evidence', label: 'Event' },
+      maintenance:     { cls: 'replay',   label: 'Maintenance' },
+    };
     list.innerHTML = items.slice(0, 5).map((item, idx) => {
-      const pc   = priorityClass(idx);
-      const kind = (item.kind || item.type || 'event').toLowerCase();
-      const kindClass = kind === 'site' ? 'focus' : kind === 'region' ? 'region' : kind === 'replay' ? 'replay' : 'evidence';
-      const kindLabel = kind === 'site' ? 'Focus Site' : kind === 'region' ? 'Open Region' : kind === 'replay' ? 'Replay' : 'Evidence';
-      const title  = item.title || item.name || 'Unnamed item';
-      const reason = item.reason || item.description || '';
-      const num    = String(idx + 1).padStart(2, '0');
-      const isWarn = idx <= 1 && (item.level || '').toLowerCase() !== 'healthy';
+      const pc  = pClass(idx);
+      const km  = kindMap[item.kind] || { cls: 'evidence', label: String(item.kind || 'Item') };
+      const num = String(idx + 1).padStart(2, '0');
+      const lbl = item.primary_action_label || 'Open \u2192';
       return '<div class="attention-item">'
         + '<div class="priority-number ' + pc + '">' + num + '</div>'
         + '<div class="att-body">'
-        + '<div class="att-head"><span class="att-kind ' + kindClass + '">' + kindLabel + '</span></div>'
-        + '<div class="att-title">' + title + '</div>'
-        + (reason ? '<div class="att-reason">' + reason + '</div>' : '')
-        + '<button class="att-action' + (isWarn ? ' warn' : '') + '">Open &rarr;</button>'
-        + '</div></div>';
-    }).join('');
-  } catch (_) { /* leave loading */ }
-}
-
-// --- Recommended Actions ---
-async function refreshRecommendedActions() {
-  try {
-    const data = await API.get('/v1/passive/command-center/summary');
-    const list = document.getElementById('recommended-actions-list');
-    if (!list) return;
-    const actions = data.recommended_actions || data.actions || data.remediations || [];
-    if (!actions.length) {
-      list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:6px 0;">No recommendations at this time.</div>';
-      return;
-    }
-    const colorMap = { high: 'var(--coral)', med: 'var(--amber)', medium: 'var(--amber)', low: 'var(--teal)' };
-    list.innerHTML = actions.slice(0, 4).map(a => {
-      const impact = (a.impact || a.priority || 'med').toLowerCase();
-      const color  = colorMap[impact] || 'var(--teal)';
-      const conf   = a.confidence != null ? a.confidence.toFixed(2) : '\u2014';
-      const desc   = a.description || a.action || a.title || 'Action required.';
-      const target = a.target || a.site || a.region || '';
-      return '<div style="padding:11px 12px;background:var(--bg-elevated);border-left:2px solid ' + color + ';border-radius:0 2px 2px 0;">'
-        + '<div style="font-size:12px;color:var(--text-primary);line-height:1.4;">'
-        + desc + (target ? ' <strong style="color:' + color + ';font-weight:500">' + target + '</strong>' : '')
-        + '</div>'
-        + '<div style="font-family:var(--font-mono);font-size:9.5px;color:var(--text-tertiary);margin-top:5px;letter-spacing:0.08em;">'
-        + 'IMPACT &middot; ' + impact.toUpperCase() + ' &nbsp;&middot;&nbsp; CONF &middot; ' + conf
+        + '<div class="att-head"><span class="att-kind ' + km.cls + '">' + km.label + '</span></div>'
+        + '<div class="att-title">' + (item.title || 'Unnamed') + '</div>'
+        + (item.reason ? '<div class="att-reason">' + item.reason + '</div>' : '')
+        + '<button class="att-action">' + lbl + '</button>'
         + '</div></div>';
     }).join('');
   } catch (_) { /* leave */ }
 }
 
+// --- Recommended Actions ---
+// maintenance.suggested_actions: [{ action_id, title, reason, method, path }]
+async function refreshRecommendedActions() {
+  try {
+    const data    = await API.get('/v1/passive/command-center/summary');
+    const list    = document.getElementById('recommended-actions-list');
+    if (!list) return;
+    const actions = (data.maintenance || {}).suggested_actions || [];
+    if (!actions.length) {
+      list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:6px 0;">No recommendations at this time.</div>';
+      return;
+    }
+    const colors = ['var(--coral)', 'var(--amber)', 'var(--teal)', 'var(--lime)'];
+    list.innerHTML = actions.slice(0, 4).map((a, i) => {
+      const color = colors[i % colors.length];
+      return '<div style="padding:11px 12px;background:var(--bg-elevated);border-left:2px solid ' + color + ';border-radius:0 2px 2px 0;">'
+        + '<div style="font-size:12px;color:var(--text-primary);line-height:1.4;">' + (a.title || 'Action required') + '</div>'
+        + (a.reason ? '<div style="font-size:11px;color:var(--text-secondary);margin-top:3px;line-height:1.4;">' + a.reason + '</div>' : '')
+        + '<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-tertiary);margin-top:6px;letter-spacing:0.08em;">'
+        + (a.method || 'POST') + ' ' + (a.path || '') + '</div></div>';
+    }).join('');
+  } catch (_) { /* leave */ }
+}
+
 // --- Event Composition ---
+// CanonicalPassiveEvent: { event_type, severity, priority }
 async function refreshEventComposition() {
   try {
-    const data   = await API.get('/v1/passive/map/canonical-events');
-    const events = Array.isArray(data) ? data : (data.events || data.items || []);
+    const data   = await API.get('/v1/passive/canonical-events');
+    const events = data.events || [];
     const list   = document.getElementById('event-composition-list');
     const total  = document.getElementById('event-total');
     if (!list) return;
@@ -3506,10 +3531,9 @@ async function refreshEventComposition() {
       return;
     }
     if (total) total.textContent = events.length + ' live';
-    // Count by type
     const counts = {};
     events.forEach(ev => {
-      const t = (ev.event_type || ev.kind || ev.type || 'other').toUpperCase().replace(/_/g, ' ');
+      const t = (ev.event_type || 'other').toUpperCase().replace(/_/g, ' ');
       counts[t] = (counts[t] || 0) + 1;
     });
     const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
@@ -3520,8 +3544,7 @@ async function refreshEventComposition() {
       const color = colors[i % colors.length];
       return '<div>'
         + '<div style="display:flex;justify-content:space-between;margin-bottom:4px;font-family:var(--font-mono);font-size:10.5px;">'
-        + '<span style="color:var(--text-secondary);">' + type + '</span>'
-        + '<span style="color:' + color + '">' + n + '</span>'
+        + '<span style="color:var(--text-secondary);">' + type + '</span><span style="color:' + color + '">' + n + '</span>'
         + '</div>'
         + '<div style="height:3px;background:var(--bg-deep);border-radius:1px;overflow:hidden;">'
         + '<div style="width:' + pct + '%;height:100%;background:' + color + ';"></div>'
@@ -3541,20 +3564,15 @@ function updateTimelineLabels() {
   const now   = new Date();
   const start = new Date(now.getTime() - 36 * 3600 * 1000);
   const end   = new Date(now.getTime() + 36 * 3600 * 1000);
-  const fmt   = d => d.toUTCString().split(' ').slice(1, 5).join(' ').replace(':00 GMT', ' UTC');
-
-  const pad = n => String(n).padStart(2, '0');
+  const pad   = n => String(n).padStart(2, '0');
   const fmtTime = d => pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + ' UTC';
-  const fmtDate = d => ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getUTCMonth()] + ' ' + d.getUTCDate() + ', ' + d.getUTCFullYear();
-
-  const st = document.getElementById('timeline-start-time');
-  const sd = document.getElementById('timeline-start-date');
-  const et = document.getElementById('timeline-end-time');
-  const ed = document.getElementById('timeline-end-date');
-  if (st) st.textContent = fmtTime(start);
-  if (sd) sd.textContent = fmtDate(start);
-  if (et) et.textContent = fmtTime(end);
-  if (ed) ed.textContent = fmtDate(end);
+  const months  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const fmtDate = d => months[d.getUTCMonth()] + ' ' + d.getUTCDate() + ', ' + d.getUTCFullYear();
+  const el = id => document.getElementById(id);
+  if (el('timeline-start-time')) el('timeline-start-time').textContent = fmtTime(start);
+  if (el('timeline-start-date')) el('timeline-start-date').textContent = fmtDate(start);
+  if (el('timeline-end-time'))   el('timeline-end-time').textContent   = fmtTime(end);
+  if (el('timeline-end-date'))   el('timeline-end-date').textContent   = fmtDate(end);
 }
 
 // --- Master refresh ---
@@ -3573,7 +3591,7 @@ async function refreshAll() {
   ]);
 }
 
-// Initial load + polling
+// Initial load + 30s polling
 refreshAll();
 setInterval(refreshAll, 30000);
 </script>
