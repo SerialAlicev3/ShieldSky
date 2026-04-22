@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+﻿use std::sync::atomic::{AtomicU64, Ordering};
 
 use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
@@ -1493,3988 +1493,2091 @@ fn request_id(headers: &HeaderMap) -> String {
         )
 }
 
-const OPERATOR_CONSOLE_HTML: &str = r##"<!doctype html>
+const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>SSS Operator Console</title>
-    <link href="https://cesium.com/downloads/cesiumjs/releases/1.127/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
-    <style>
-    :root {
-      color-scheme: dark;
-      --bg: #08111d;
-      --panel: rgba(12, 23, 38, 0.92);
-      --panel-strong: rgba(18, 34, 56, 0.96);
-      --line: rgba(151, 181, 214, 0.18);
-      --text: #ecf3ff;
-      --muted: #a7bbd6;
-      --accent: #53d1c1;
-      --accent-2: #f3c969;
-      --danger: #ff8e7c;
-      --ok: #87e39b;
-    }
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ShieldSky &middot; Operator Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  /* ============================================================
+     SHIELDSKY · COMMAND SURFACE
+     Design tokens — operational intelligence, not corporate UI
+     ============================================================ */
+  :root {
+    --bg-deep:        #07111B;
+    --bg-surface:     #0D1826;
+    --bg-elevated:    #122235;
+    --bg-panel:       rgba(13, 24, 38, 0.72);
+    --line:           rgba(160, 190, 220, 0.14);
+    --line-strong:    rgba(160, 190, 220, 0.28);
+    --text-primary:   #ECF4FF;
+    --text-secondary: #9EB3C8;
+    --text-tertiary:  #5F7389;
+    --teal:           #4FE0D0;
+    --teal-dim:       rgba(79, 224, 208, 0.15);
+    --amber:          #F1C96B;
+    --amber-dim:      rgba(241, 201, 107, 0.15);
+    --coral:          #FF7C6E;
+    --coral-dim:      rgba(255, 124, 110, 0.18);
+    --lime:           #8EE59B;
+    --lime-dim:       rgba(142, 229, 155, 0.15);
+    --violet:         #9B8CFF;
 
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: "Segoe UI", Arial, sans-serif;
-      background:
-        radial-gradient(circle at top left, rgba(83, 209, 193, 0.12), transparent 28%),
-        radial-gradient(circle at top right, rgba(243, 201, 105, 0.12), transparent 22%),
-        linear-gradient(180deg, #08111d, #0c1626 42%, #0a1320 100%);
-      color: var(--text);
-    }
-    a { color: inherit; }
-    .shell {
-      min-height: 100vh;
-      padding: 24px;
-      display: grid;
-      gap: 18px;
-      background: linear-gradient(180deg, rgba(6, 10, 18, 0.15), rgba(6, 10, 18, 0.68));
-    }
-    .hero {
-      display: grid;
-      gap: 8px;
-      padding: 8px 0 2px;
-    }
-    .globe-stage {
-      min-height: 60vh;
-      position: relative;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      overflow: hidden;
-      background: rgba(6, 12, 20, 0.72);
-    }
-    #cesium-globe {
-      width: 100%;
-      height: 60vh;
-      min-height: 480px;
-    }
-    .globe-overlay {
-      position: absolute;
-      left: 16px;
-      bottom: 16px;
-      z-index: 2;
-      max-width: min(480px, calc(100% - 32px));
-      padding: 12px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: rgba(10, 18, 31, 0.84);
-      backdrop-filter: blur(10px);
-    }
-    .globe-overlay h3 {
-      margin: 0 0 6px 0;
-      font-size: 14px;
-    }
-    .globe-overlay p {
-      margin: 0;
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.5;
-    }
-    .globe-legend {
-      position: absolute;
-      right: 16px;
-      top: 16px;
-      z-index: 2;
-      max-width: min(340px, calc(100% - 32px));
-      padding: 12px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: rgba(10, 18, 31, 0.84);
-      backdrop-filter: blur(10px);
-      display: grid;
-      gap: 10px;
-    }
-    .globe-legend h3 {
-      margin: 0;
-      font-size: 14px;
-    }
-    .legend-grid {
-      display: grid;
-      gap: 8px;
-    }
-    .legend-row {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      flex-wrap: wrap;
-      color: var(--muted);
-      font-size: 12px;
-    }
-    .legend-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 999px;
-      display: inline-block;
-      border: 1px solid rgba(255,255,255,0.25);
-      flex: 0 0 auto;
-    }
-    .hero h1 {
-      margin: 0;
-      font-size: 32px;
-      line-height: 1.05;
-      font-weight: 700;
-    }
-    .hero p {
-      margin: 0;
-      color: var(--muted);
-      max-width: 880px;
-      line-height: 1.5;
-    }
-    .toolbar, .grid, .detail-grid {
-      display: grid;
-      gap: 16px;
-    }
-    .toolbar {
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      align-items: end;
-    }
-    .toggle {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      min-height: 42px;
-      padding: 10px 12px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: rgba(255,255,255,0.03);
-    }
-    .toggle input {
-      width: 16px;
-      height: 16px;
-      margin: 0;
-    }
-    .grid {
-      grid-template-columns: 1.1fr 1.1fr 0.8fr;
-    }
-    .detail-grid {
-      grid-template-columns: 1fr 1fr;
-    }
-    .panel {
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--panel);
-      backdrop-filter: blur(10px);
-      overflow: hidden;
-      min-height: 140px;
-    }
-    .panel-head {
-      padding: 14px 16px;
-      border-bottom: 1px solid var(--line);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      background: var(--panel-strong);
-    }
-    .panel-head h2, .panel-head h3 {
-      margin: 0;
-      font-size: 15px;
-      font-weight: 600;
-    }
-    .panel-body { padding: 16px; }
-    .metrics {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 12px;
-    }
-    .metric {
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 14px;
-      background: rgba(255,255,255,0.02);
-      min-height: 92px;
-    }
-    .metric-label {
-      color: var(--muted);
-      font-size: 12px;
-      text-transform: uppercase;
-    }
-    .metric-value {
-      margin-top: 10px;
-      font-size: 28px;
-      font-weight: 700;
-    }
-    .row {
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-    label {
-      display: grid;
-      gap: 6px;
-      font-size: 12px;
-      color: var(--muted);
-    }
-    input, select, button {
-      border-radius: 8px;
-      border: 1px solid var(--line);
-      background: rgba(7, 16, 28, 0.94);
-      color: var(--text);
-      padding: 10px 12px;
-      font: inherit;
-      min-height: 40px;
-    }
-    button {
-      cursor: pointer;
-      background: linear-gradient(180deg, rgba(83, 209, 193, 0.22), rgba(83, 209, 193, 0.08));
-    }
-    button.secondary {
-      background: rgba(255,255,255,0.03);
-    }
-    .status {
-      font-size: 12px;
-      color: var(--muted);
-    }
-    .list {
-      display: grid;
-      gap: 10px;
-    }
-    .card {
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 12px;
-      background: rgba(255,255,255,0.02);
-    }
-    .neo-briefing-item {
-      cursor: pointer;
-      transition: border-color 120ms ease, background 120ms ease;
-    }
-    .neo-briefing-item:hover {
-      border-color: rgba(83, 209, 193, 0.28);
-      background: rgba(83, 209, 193, 0.06);
-    }
-    .neo-briefing-item-selected {
-      border-color: rgba(83, 209, 193, 0.44);
-      background: rgba(83, 209, 193, 0.08);
-    }
-    .card h4 {
-      margin: 0 0 6px 0;
-      font-size: 14px;
-    }
-    .meta {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      color: var(--muted);
-      font-size: 12px;
-    }
-    .pill {
-      display: inline-flex;
-      align-items: center;
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      padding: 4px 8px;
-      font-size: 11px;
-      color: var(--text);
-      background: rgba(255,255,255,0.04);
-    }
-    .pill.ok { color: var(--ok); }
-    .pill.warn { color: var(--accent-2); }
-    .pill.danger { color: var(--danger); }
-    .mono {
-      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-      font-size: 12px;
-    }
-    pre {
-      margin: 0;
-      white-space: pre-wrap;
-      word-break: break-word;
-      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-      font-size: 12px;
-      color: #d8e6fb;
-    }
-    .empty {
-      color: var(--muted);
-      font-size: 13px;
-      padding: 4px 0;
-    }
-    @keyframes stl-flash {
-      0%   { background: rgba(255,255,100,0.18); }
-      100% { background: transparent; }
-    }
-    .stl-updated { animation: stl-flash 0.7s ease-out; }
-    .stl-empty {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 6px;
-      padding: 24px 0;
-      color: var(--muted);
-      font-size: 13px;
-    }
-    .stl-empty-icon { font-size: 22px; opacity: 0.5; }
-    .stl-entry-headline { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
-    .stl-entry-trend { display: flex; gap: 10px; align-items: center; margin: 3px 0; font-size: 12px; }
-    .stl-entry-when { color: var(--muted); font-size: 11px; margin-top: 3px; }
-    .stl-action-escalate { background: #e53935; color: #fff; font-weight: 700; }
-    .stl-action-monitor  { background: #f9a825; color: #1a1a1a; font-weight: 700; }
-    .stl-action-ignore   { background: #555; color: #ccc; }
-    .stl-action-respond  { background: #7b1fa2; color: #fff; font-weight: 700; }
-    .stl-highlight { box-shadow: 0 0 0 2px currentColor, 0 0 10px 1px rgba(229,57,53,0.25); border-radius: 5px; }
-    .stl-badge { display: inline-block; font-size: 10px; font-weight: 800; letter-spacing: 0.05em; padding: 1px 6px; border-radius: 3px; margin-left: 6px; vertical-align: middle; text-transform: uppercase; }
-    .stl-badge-spike  { background: #e53935; color: #fff; }
-    .stl-badge-new    { background: #1565c0; color: #fff; }
-    .stl-quick-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
-    .stl-quick-actions button { font-size: 11px; padding: 2px 8px; border-radius: 4px; cursor: pointer; border: 1px solid var(--line,#555); background: rgba(255,255,255,0.06); color: inherit; }
-    .stl-quick-actions button:hover { background: rgba(255,255,255,0.14); }
-    @media (max-width: 1100px) {
-      .grid, .detail-grid { grid-template-columns: 1fr; }
-      .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    }
-    @media (max-width: 700px) {
-      .shell { padding: 16px; }
-      .metrics { grid-template-columns: 1fr; }
-      .hero h1 { font-size: 26px; }
-    }
-  </style>
+    --font-display: 'Sora', sans-serif;
+    --font-body:    'Inter', sans-serif;
+    --font-mono:    'JetBrains Mono', monospace;
+
+    --rail-width: 340px;
+    --top-height: 56px;
+    --bottom-height: 112px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg-deep);
+    font-family: var(--font-body);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ============================================================
+     MASTER GRID
+     ============================================================ */
+  .console {
+    display: grid;
+    height: 100vh;
+    grid-template-columns: var(--rail-width) 1fr var(--rail-width);
+    grid-template-rows: var(--top-height) 1fr var(--bottom-height);
+    grid-template-areas:
+      "top    top    top"
+      "left   center right"
+      "bottom bottom bottom";
+  }
+
+  /* ============================================================
+     TOP COMMAND BAR
+     ============================================================ */
+  .top-bar {
+    grid-area: top;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding: 0;
+    position: relative;
+    z-index: 10;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 18px;
+    height: 100%;
+    border-right: 1px solid var(--line);
+    min-width: 180px;
+  }
+
+  .brand-mark {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+  }
+
+  .brand-mark svg { width: 100%; height: 100%; }
+
+  .brand-text { display: flex; flex-direction: column; gap: 1px; }
+
+  .brand-name {
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--text-primary);
+  }
+
+  .brand-context {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  /* Chips */
+  .chip-group {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 12px;
+    height: 100%;
+    border-right: 1px solid var(--line);
+  }
+
+  .chip {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    background: transparent;
+    border: none;
+    padding: 5px 9px;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .chip:hover { color: var(--text-secondary); background: var(--bg-elevated); }
+  .chip.active { color: var(--teal); background: var(--teal-dim); }
+
+  /* Search */
+  .search {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 16px;
+    height: 100%;
+    border-right: 1px solid var(--line);
+  }
+
+  .search-icon { color: var(--text-tertiary); flex-shrink: 0; }
+
+  .search input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    font-family: var(--font-body);
+    font-size: 12.5px;
+    color: var(--text-primary);
+  }
+
+  .search input::placeholder { color: var(--text-tertiary); }
+
+  .search-kbd {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-tertiary);
+    background: var(--bg-elevated);
+    border: 1px solid var(--line-strong);
+    padding: 2px 5px;
+    border-radius: 2px;
+  }
+
+  /* Sys status */
+  .sys-status {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0 16px;
+    height: 100%;
+    border-right: 1px solid var(--line);
+  }
+
+  .sys-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--text-secondary);
+  }
+
+  .pulse-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--lime);
+    box-shadow: 0 0 6px var(--lime);
+    animation: pulse 2s infinite ease-in-out;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  /* Operator avatar */
+  .operator {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: var(--teal-dim);
+    border: 1px solid var(--teal);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--teal);
+    margin: 0 14px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  /* ============================================================
+     LEFT INTELLIGENCE RAIL
+     ============================================================ */
+  .left-rail {
+    grid-area: left;
+    background: var(--bg-surface);
+    border-right: 1px solid var(--line);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Panel structure */
+  .panel {
+    border-bottom: 1px solid var(--line);
+    padding: 14px 16px;
+    flex-shrink: 0;
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+
+  .panel-title {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  .panel-title.violet { color: var(--violet); }
+  .panel-title.amber  { color: var(--amber); }
+  .panel-title.coral  { color: var(--coral); }
+
+  .panel-count {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-tertiary);
+    letter-spacing: 0.06em;
+  }
+
+  /* Change items */
+  .change-item {
+    display: flex;
+    gap: 10px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .change-item:last-child { border-bottom: none; }
+
+  .change-marker {
+    width: 2px;
+    border-radius: 1px;
+    flex-shrink: 0;
+    align-self: stretch;
+  }
+  .change-marker.critical { background: var(--coral); }
+  .change-marker.elevated { background: var(--amber); }
+  .change-marker.active   { background: var(--teal); }
+  .change-marker.resolved { background: var(--lime); }
+
+  .change-body { flex: 1; min-width: 0; }
+
+  .change-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 3px;
+  }
+
+  .change-type {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  .change-time {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-tertiary);
+    letter-spacing: 0.04em;
+  }
+
+  .change-title {
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--text-secondary);
+  }
+
+  .change-title strong { color: var(--text-primary); font-weight: 500; }
+  .change-title strong.crit { color: var(--coral); }
+  .change-title strong.warn { color: var(--amber); }
+
+  /* Narrative block */
+  .narrative {
+    background: var(--bg-elevated);
+    border-left: 2px solid var(--teal);
+    padding: 10px 12px;
+    border-radius: 0 2px 2px 0;
+  }
+
+  .narrative-text {
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+  }
+
+  .narrative-text em { font-style: normal; color: var(--text-primary); }
+  .narrative-text em.crit { color: var(--coral); }
+  .narrative-text em.warn { color: var(--amber); }
+
+  .narrative-meta {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    color: var(--text-tertiary);
+    letter-spacing: 0.1em;
+  }
+
+  /* Source health */
+  .source-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .source-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .source-name {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.1em;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    min-width: 90px;
+    flex-shrink: 0;
+  }
+
+  .source-bar {
+    flex: 1;
+    height: 3px;
+    background: var(--bg-deep);
+    border-radius: 1px;
+    overflow: hidden;
+  }
+
+  .source-bar-fill {
+    height: 100%;
+    border-radius: 1px;
+    transition: width 0.6s ease;
+  }
+  .source-bar-fill.healthy  { background: var(--lime); }
+  .source-bar-fill.degraded { background: var(--amber); }
+  .source-bar-fill.failing  { background: var(--coral); }
+
+  .source-value {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-secondary);
+    min-width: 24px;
+    text-align: right;
+  }
+
+  /* ============================================================
+     CENTER — HERO OPERATIONAL SURFACE
+     ============================================================ */
+  .center {
+    grid-area: center;
+    position: relative;
+    overflow: hidden;
+    background: var(--bg-deep);
+  }
+
+  #globe-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* Crosshair */
+  .crosshair {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.15;
+  }
+
+  /* Scanlines overlay */
+  .scanlines {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0, 0, 0, 0.08) 2px,
+      rgba(0, 0, 0, 0.08) 4px
+    );
+    z-index: 1;
+  }
+
+  /* Vignette */
+  .vignette {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 40%, rgba(7, 17, 27, 0.85) 100%);
+    z-index: 1;
+  }
+
+  /* Operational Picture — bottom left overlay */
+  .op-picture {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    background: var(--bg-panel);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--line-strong);
+    border-radius: 2px;
+    padding: 14px 18px;
+    min-width: 240px;
+    z-index: 2;
+  }
+
+  .op-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  .op-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+  }
+
+  .op-stats > div {
+    padding: 0 10px 0 0;
+    border-right: 1px solid var(--line);
+    margin-right: 10px;
+  }
+  .op-stats > div:last-child {
+    border-right: none;
+    margin-right: 0;
+    padding-right: 0;
+  }
+
+  .op-stat-value {
+    font-family: var(--font-display);
+    font-size: 24px;
+    font-weight: 500;
+    line-height: 1;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+  }
+
+  .op-stat-value.teal  { color: var(--teal); }
+  .op-stat-value.amber { color: var(--amber); }
+  .op-stat-value.coral { color: var(--coral); }
+
+  .op-stat-label {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-top: 5px;
+  }
+
+  .op-message {
+    margin-top: 12px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+  }
+
+  .op-message strong {
+    color: var(--amber);
+    font-weight: 500;
+  }
+
+  /* Legend — top right overlay */
+  .legend {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: var(--bg-panel);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--line-strong);
+    border-radius: 2px;
+    padding: 14px 16px;
+    min-width: 190px;
+    z-index: 2;
+  }
+
+  .legend-header {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: 10px;
+  }
+
+  .legend-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--text-secondary);
+    padding: 5px 0;
+    cursor: pointer;
+    transition: color 0.15s ease;
+  }
+
+  .legend-row:hover { color: var(--text-primary); }
+
+  .legend-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+  }
+
+  .legend-dot.coral  { background: var(--coral); box-shadow: 0 0 6px var(--coral); }
+  .legend-dot.amber  { background: var(--amber); box-shadow: 0 0 5px var(--amber); }
+  .legend-dot.teal   { background: var(--teal);  box-shadow: 0 0 5px var(--teal); }
+  .legend-dot.lime   { background: var(--lime);  box-shadow: 0 0 5px var(--lime); }
+
+  .legend-toggle {
+    margin-left: auto;
+    width: 20px; height: 10px;
+    background: var(--bg-deep);
+    border-radius: 5px;
+    position: relative;
+    border: 1px solid var(--line);
+  }
+
+  .legend-toggle.on { background: var(--teal-dim); border-color: var(--teal); }
+  .legend-toggle::after {
+    content: '';
+    position: absolute;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--text-tertiary);
+    top: 1px; left: 1px;
+    transition: all 0.15s ease;
+  }
+  .legend-toggle.on::after {
+    background: var(--teal);
+    left: 11px;
+    box-shadow: 0 0 4px var(--teal);
+  }
+
+  /* Corner bracket frames */
+  .corner-frame {
+    position: absolute;
+    width: 24px; height: 24px;
+    border-color: var(--text-tertiary);
+    opacity: 0.4;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .corner-frame.tl { top: 12px; left: 12px; border-top: 1px solid; border-left: 1px solid; }
+  .corner-frame.tr { top: 12px; right: 12px; border-top: 1px solid; border-right: 1px solid; }
+  .corner-frame.bl { bottom: 12px; left: 12px; border-bottom: 1px solid; border-left: 1px solid; }
+  .corner-frame.br { bottom: 12px; right: 12px; border-bottom: 1px solid; border-right: 1px solid; }
+
+  /* Coordinates badge */
+  .coord-badge {
+    position: absolute;
+    top: 50%; left: 20px;
+    transform: translateY(-50%);
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    color: var(--text-tertiary);
+    letter-spacing: 0.1em;
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    opacity: 0.5;
+    z-index: 2;
+  }
+
+  /* Telemetry ticker */
+  .telemetry {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 24px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-tertiary);
+    letter-spacing: 0.12em;
+    background: var(--bg-panel);
+    backdrop-filter: blur(8px);
+    padding: 8px 16px;
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    z-index: 2;
+  }
+
+  .tel-item { display: flex; gap: 6px; }
+  .tel-item span:last-child { color: var(--text-secondary); }
+
+  /* ============================================================
+     RIGHT DECISION RAIL
+     ============================================================ */
+  .right-rail {
+    grid-area: right;
+    background: var(--bg-surface);
+    border-left: 1px solid var(--line);
+    overflow-y: auto;
+  }
+
+  /* Attention queue */
+  .attention-item {
+    padding: 13px 0;
+    border-bottom: 1px solid var(--line);
+    cursor: pointer;
+    position: relative;
+    display: flex;
+    gap: 11px;
+    transition: transform 0.15s ease;
+  }
+  .attention-item:last-child { border-bottom: none; }
+  .attention-item:hover { transform: translateX(2px); }
+
+  .priority-number {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 18px;
+    color: var(--text-tertiary);
+    min-width: 22px;
+    line-height: 1;
+    padding-top: 1px;
+    letter-spacing: -0.02em;
+  }
+
+  .priority-number.p1 { color: var(--coral); }
+  .priority-number.p2 { color: var(--amber); }
+  .priority-number.p3 { color: var(--teal); }
+
+  .att-body { flex: 1; min-width: 0; }
+
+  .att-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 4px;
+  }
+
+  .att-kind {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 2px;
+  }
+
+  .att-kind.focus    { background: var(--coral-dim); color: var(--coral); }
+  .att-kind.region   { background: var(--amber-dim); color: var(--amber); }
+  .att-kind.evidence { background: var(--teal-dim);  color: var(--teal); }
+  .att-kind.replay   { background: rgba(155, 140, 255, 0.15); color: var(--violet); }
+
+  .att-title {
+    font-size: 12.5px;
+    color: var(--text-primary);
+    line-height: 1.35;
+    margin-bottom: 4px;
+    font-weight: 400;
+  }
+
+  .att-reason {
+    font-size: 11px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    margin-bottom: 7px;
+  }
+
+  .att-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--teal);
+    padding: 4px 9px;
+    border: 1px solid rgba(79, 224, 208, 0.3);
+    border-radius: 2px;
+    background: transparent;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .att-action:hover {
+    background: var(--teal-dim);
+    border-color: var(--teal);
+  }
+
+  .att-action.warn {
+    color: var(--amber);
+    border-color: rgba(241, 201, 107, 0.3);
+  }
+  .att-action.warn:hover {
+    background: var(--amber-dim);
+    border-color: var(--amber);
+  }
+
+  /* Risk trend mini chart */
+  .chart-container {
+    padding: 14px 0 4px;
+  }
+
+  .chart-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 10px;
+  }
+
+  .chart-metric {
+    font-family: var(--font-display);
+    font-size: 22px;
+    font-weight: 500;
+    line-height: 1;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+  }
+
+  .chart-metric .unit {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin-left: 4px;
+    font-weight: 400;
+  }
+
+  .chart-delta {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--coral);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .chart-svg {
+    width: 100%;
+    height: 64px;
+  }
+
+  .chart-x-labels {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-tertiary);
+    letter-spacing: 0.06em;
+    margin-top: 4px;
+  }
+
+  /* ============================================================
+     BOTTOM TEMPORAL STRIP
+     ============================================================ */
+  .bottom-bar {
+    grid-area: bottom;
+    background: var(--bg-surface);
+    border-top: 1px solid var(--line);
+    display: grid;
+    grid-template-columns: 160px 1fr 160px;
+    position: relative;
+  }
+
+  .bottom-bar::before {
+    content: '';
+    position: absolute;
+    left: 0; right: 0; top: -1px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--line-strong) 20%, var(--line-strong) 80%, transparent);
+  }
+
+  .time-label {
+    padding: 14px 18px;
+    border-right: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 5px;
+  }
+
+  .time-label.right {
+    border-right: none;
+    border-left: 1px solid var(--line);
+    text-align: right;
+  }
+
+  .time-label-kicker {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  .time-label-time {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--text-primary);
+    letter-spacing: 0.04em;
+  }
+
+  .time-label-date {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-secondary);
+  }
+
+  .timeline-container {
+    position: relative;
+    padding: 12px 16px;
+  }
+
+  .timeline-track {
+    position: absolute;
+    left: 16px; right: 16px;
+    top: 50%;
+    height: 1px;
+    background: var(--line);
+  }
+
+  .now-marker {
+    position: absolute;
+    top: 8px; bottom: 8px;
+    width: 1px;
+    background: var(--teal);
+    box-shadow: 0 0 8px var(--teal);
+    z-index: 3;
+  }
+
+  .now-marker::before {
+    content: 'NOW';
+    position: absolute;
+    top: -2px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    letter-spacing: 0.2em;
+    color: var(--teal);
+    background: var(--bg-surface);
+    padding: 0 4px;
+  }
+
+  .now-marker::after {
+    content: '';
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--teal);
+    box-shadow: 0 0 12px var(--teal);
+    animation: pulse 2s infinite ease-in-out;
+  }
+
+  .future-window {
+    position: absolute;
+    top: 10px; bottom: 10px;
+    background: linear-gradient(90deg, rgba(79,224,208,0.08), rgba(79,224,208,0.02));
+    border-left: 1px solid rgba(79,224,208,0.3);
+    border-right: 1px solid rgba(79,224,208,0.1);
+    z-index: 1;
+  }
+
+  .timeline-event {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    z-index: 2;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+  }
+
+  .timeline-event:hover { transform: translate(-50%, -50%) scale(1.5); }
+
+  .timeline-event.critical { background: var(--coral); box-shadow: 0 0 10px var(--coral); }
+  .timeline-event.elevated { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+  .timeline-event.active   { background: var(--teal);  box-shadow: 0 0 6px var(--teal); }
+  .timeline-event.resolved { background: var(--lime); }
+  .timeline-event.forecast {
+    background: transparent;
+    border: 1px solid var(--teal);
+    width: 8px; height: 8px;
+  }
+
+  .timeline-event-label {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    letter-spacing: 0.06em;
+    opacity: 0;
+    transition: opacity 0.15s;
+    pointer-events: none;
+  }
+
+  .timeline-event:hover .timeline-event-label { opacity: 1; }
+
+  .timeline-tick {
+    position: absolute;
+    top: 50%;
+    width: 1px; height: 4px;
+    background: var(--text-tertiary);
+    transform: translate(-50%, -50%);
+    opacity: 0.4;
+  }
+
+  .timeline-tick-label {
+    position: absolute;
+    top: calc(50% + 10px);
+    transform: translateX(-50%);
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    color: var(--text-tertiary);
+    letter-spacing: 0.08em;
+  }
+
+  /* Scrollbars */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
+
+  /* Shimmer loading state */
+  .loading-shimmer {
+    height: 10px;
+    background: linear-gradient(90deg, var(--bg-elevated) 25%, var(--bg-surface) 50%, var(--bg-elevated) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 2px;
+    margin: 4px 0;
+  }
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* Load animation — staggered reveals */
+  .console > * {
+    opacity: 0;
+    animation: rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  }
+  .top-bar    { animation-delay: 0.0s; }
+  .left-rail  { animation-delay: 0.15s; }
+  .center     { animation-delay: 0.08s; }
+  .right-rail { animation-delay: 0.2s; }
+  .bottom-bar { animation-delay: 0.25s; }
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .panel { opacity: 0; animation: rise 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+  .panel:nth-child(1) { animation-delay: 0.3s; }
+  .panel:nth-child(2) { animation-delay: 0.4s; }
+  .panel:nth-child(3) { animation-delay: 0.5s; }
+  .panel:nth-child(4) { animation-delay: 0.6s; }
+  .panel:nth-child(5) { animation-delay: 0.7s; }
+</style>
 </head>
 <body>
-  <main class="shell">
-    <section class="hero">
-      <h1>SSS Operator Console</h1>
-      <p>ShieldSky fuses orbital context, passive sensing, and response routing into one operator surface for site protection, airspace monitoring, and evidence-backed decisions.</p>
-    </section>
 
-    <section class="globe-stage">
-      <div id="cesium-globe"></div>
-      <div class="globe-overlay">
-        <h3>ShieldSky Operational Map</h3>
-        <p>Regions, observed sites, canonical events, future checkpoints, and orbital context are coordinated here as one live operational picture.</p>
-      </div>
-      <div class="globe-legend" id="passive-map-legend"></div>
-    </section>
+<div class="console">
 
-    <section class="panel">
-      <div class="panel-head">
-        <h2>Mission Snapshot</h2>
-        <div class="status" id="refresh-status">Refreshing...</div>
+  <!-- ============================================================
+       TOP COMMAND BAR
+       ============================================================ -->
+  <header class="top-bar">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 32 32" fill="none">
+          <defs>
+            <linearGradient id="g1" x1="0" y1="0" x2="32" y2="32">
+              <stop offset="0" stop-color="#4FE0D0"/>
+              <stop offset="1" stop-color="#9B8CFF"/>
+            </linearGradient>
+          </defs>
+          <path d="M16 2 L28 9 L28 23 L16 30 L4 23 L4 9 Z" stroke="url(#g1)" stroke-width="1.5" fill="none"/>
+          <path d="M16 8 L22 11.5 L22 20.5 L16 24 L10 20.5 L10 11.5 Z" stroke="#4FE0D0" stroke-width="1" fill="rgba(79,224,208,0.1)"/>
+          <circle cx="16" cy="16" r="2" fill="#4FE0D0"/>
+        </svg>
       </div>
-      <div class="panel-body">
-        <div class="metrics">
-          <div class="metric"><div class="metric-label">Source Freshness</div><div class="metric-value" id="metric-freshness">-</div></div>
-          <div class="metric"><div class="metric-label">Future Events</div><div class="metric-value" id="metric-events">-</div></div>
-          <div class="metric"><div class="metric-label">Deliveries</div><div class="metric-value" id="metric-deliveries">-</div></div>
-          <div class="metric"><div class="metric-label">Replay Drift</div><div class="metric-value" id="metric-drift">-</div></div>
-        </div>
+      <div class="brand-text">
+        <div class="brand-name">ShieldSky</div>
+        <div class="brand-context">Operator Console</div>
       </div>
-    </section>
+    </div>
 
-    <section class="panel">
-      <div class="panel-head">
-        <h2>Operator Controls</h2>
-        <div class="row">
-          <button id="refresh-all">Refresh</button>
-          <button id="dispatch-alert" class="secondary">Dispatch Alert</button>
-        </div>
-      </div>
-      <div class="panel-body toolbar">
-        <label>Object
-          <input id="object-id" value="SAT-001" />
-        </label>
-        <label>Timeline Horizon (h)
-          <input id="timeline-horizon" type="number" min="1" max="168" value="72" />
-        </label>
-        <label>Window (h)
-          <input id="overview-window" type="number" min="1" max="168" value="24" />
-        </label>
-        <label>Ingest Source
-          <input id="source-name" value="celestrak-active" />
-        </label>
-        <label>Event Type
-          <select id="event-type-filter">
-            <option value="">All</option>
-            <option value="PredictedCloseApproach">PredictedCloseApproach</option>
-            <option value="BehaviorShiftDetected">BehaviorShiftDetected</option>
-            <option value="UnstableTrack">UnstableTrack</option>
-            <option value="CoordinationPatternSuspected">CoordinationPatternSuspected</option>
-          </select>
-        </label>
-        <label class="toggle">
-          <input id="toggle-neo-layer" type="checkbox" />
-          <span>Show NEO context</span>
-        </label>
-        <label class="toggle">
-          <input id="toggle-close-approach-layer" type="checkbox" checked />
-          <span>Show close approaches</span>
-        </label>
-      </div>
-    </section>
+    <div class="chip-group" style="border-left: none; padding-left: 0;">
+      <button class="chip active" data-filter="global">Global</button>
+      <button class="chip" data-filter="regional">Regional</button>
+      <button class="chip" data-filter="site">Site</button>
+      <button class="chip" data-filter="incident">Incident</button>
+    </div>
 
-      <section class="grid">
-        <article class="panel">
-          <div class="panel-head"><h3>APOD Briefing</h3></div>
-          <div class="panel-body" id="apod-briefing"></div>
-        </article>
-        <article class="panel">
-          <div class="panel-head"><h3>NEO Risk Briefing</h3></div>
-          <div class="panel-body" id="neows-briefing"></div>
-        </article>
-        <article class="panel">
-          <div class="panel-head"><h3>Future Event Timeline</h3></div>
-          <div class="panel-body list" id="events-timeline"></div>
-        </article>
-        <article class="panel">
-          <div class="panel-head"><h3>Event Queue</h3></div>
-          <div class="panel-body list" id="event-queue"></div>
-        </article>
-        <article class="panel">
-          <div class="panel-head"><h3>Passive Operations</h3></div>
-          <div class="panel-body list" id="passive-dashboard"></div>
-        </article>
-        <article class="panel">
-          <div class="panel-head">
-            <h3>Operational Visibility</h3>
-            <button class="secondary" id="refresh-operational-visibility">Refresh</button>
-          </div>
-          <div class="panel-body list" id="operational-visibility"></div>
-        </article>
-        <article class="panel">
-          <div class="panel-head"><h3>Command Center</h3></div>
-          <div class="panel-body list" id="passive-command-center"></div>
-        </article>
-        <article class="panel">
-          <div class="panel-head">
-            <h3>Canonical Events</h3>
-            <button class="secondary" id="refresh-canonical-events">Refresh</button>
-          </div>
-          <div class="panel-body list" id="canonical-events"></div>
-        </article>
-        <article class="panel">
-        <div class="panel-head"><h3>Deliveries</h3></div>
-        <div class="panel-body list" id="deliveries"></div>
-      </article>
-      <article class="panel">
-        <div class="panel-head"><h3>Ingest Status</h3></div>
-        <div class="panel-body list" id="ingest-status"></div>
-      </article>
-    </section>
+    <div class="chip-group">
+      <button class="chip" data-window="24h">24h</button>
+      <button class="chip active" data-window="72h">72h</button>
+      <button class="chip" data-window="7d">7d</button>
+      <button class="chip" data-window="30d">30d</button>
+    </div>
 
-    <section class="detail-grid">
-      <article class="panel">
-        <div class="panel-head"><h3>Object Timeline</h3></div>
-        <div class="panel-body list" id="object-timeline"></div>
-      </article>
-      <article class="panel">
-        <div class="panel-head"><h3>Close Approaches</h3></div>
-        <div class="panel-body list" id="close-approaches"></div>
-      </article>
-      <article class="panel">
-        <div class="panel-head"><h3>Prediction Snapshots</h3></div>
-        <div class="panel-body list" id="prediction-snapshots"></div>
-      </article>
-      <article class="panel">
-        <div class="panel-head"><h3>Replay Diff</h3></div>
-        <div class="panel-body" id="replay-diff"></div>
-      </article>
-      <article class="panel">
-        <div class="panel-head">
-          <h3>Semantic Timeline</h3>
-          <div class="row">
-            <span class="status" id="semantic-timeline-label"></span>
-            <button class="secondary" id="refresh-semantic-timeline">Refresh</button>
+    <div class="search">
+      <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="7"/>
+        <path d="m20 20-3.5-3.5"/>
+      </svg>
+      <input type="text" placeholder="Search sites &middot; regions &middot; events &middot; bundles" id="console-search"/>
+      <kbd class="search-kbd">&#8984;K</kbd>
+    </div>
+
+    <div class="sys-status">
+      <div class="sys-item">
+        <span class="pulse-dot" id="sys-pulse"></span>
+        <span id="sys-sources">connecting&hellip;</span>
+      </div>
+      <div class="sys-item">
+        <span style="color: var(--text-tertiary)">updated</span>
+        <span id="sys-updated" style="color: var(--lime)">&#8212;</span>
+      </div>
+    </div>
+
+    <div class="operator" title="Operator">OP</div>
+  </header>
+
+  <!-- ============================================================
+       LEFT — INTELLIGENCE RAIL
+       ============================================================ -->
+  <aside class="left-rail">
+
+    <!-- WHAT CHANGED -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">What Changed</div>
+        <div class="panel-count" id="changes-count">&#8212;</div>
+      </div>
+      <div id="what-changed-list">
+        <div class="change-item">
+          <div class="change-marker active"></div>
+          <div class="change-body">
+            <div class="change-meta"><span class="change-type">SYSTEM</span><span class="change-time">now</span></div>
+            <div class="change-title" style="color:var(--text-tertiary)">Connecting to intelligence feeds&hellip;</div>
           </div>
         </div>
-        <div class="panel-body list" id="semantic-timeline"></div>
-      </article>
-      <article class="panel">
-        <div class="panel-head"><h3>Passive Focus</h3></div>
-        <div class="panel-body list" id="passive-focus"></div>
-      </article>
-    </section>
+      </div>
+    </div>
+
+    <!-- NARRATIVE -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title violet">Narrative</div>
+        <div class="panel-count" id="narrative-version">auto</div>
+      </div>
+      <div class="narrative">
+        <div class="narrative-text" id="narrative-text" style="color:var(--text-tertiary)">
+          Loading operational narrative&hellip;
+        </div>
+        <div class="narrative-meta" id="narrative-meta"></div>
+      </div>
+    </div>
+
+    <!-- SOURCE HEALTH -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title amber">Source Health</div>
+        <div class="panel-count" id="source-count">&#8212;</div>
+      </div>
+      <div class="source-grid" id="source-health-list">
+        <div class="loading-shimmer" style="width:100%;margin:6px 0"></div>
+        <div class="loading-shimmer" style="width:85%;margin:6px 0"></div>
+        <div class="loading-shimmer" style="width:92%;margin:6px 0"></div>
+      </div>
+    </div>
+
+    <!-- PROVENANCE -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Provenance</div>
+        <div class="panel-count">latest</div>
+      </div>
+      <div id="provenance-list" style="display:flex;flex-direction:column;gap:8px">
+        <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">
+          No ingest batches yet.
+        </div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ============================================================
+       CENTER — HERO OPERATIONAL SURFACE
+       ============================================================ -->
+  <main class="center">
+    <canvas id="globe-canvas"></canvas>
+
+    <svg class="crosshair" width="100%" height="100%">
+      <line x1="50%" y1="0" x2="50%" y2="100%" stroke="white" stroke-width="0.5" stroke-dasharray="2 4"/>
+      <line x1="0" y1="50%" x2="100%" y2="50%" stroke="white" stroke-width="0.5" stroke-dasharray="2 4"/>
+    </svg>
+
+    <div class="scanlines"></div>
+    <div class="vignette"></div>
+
+    <div class="corner-frame tl"></div>
+    <div class="corner-frame tr"></div>
+    <div class="corner-frame bl"></div>
+    <div class="corner-frame br"></div>
+
+    <div class="coord-badge" id="coord-badge">38.71&deg;N &middot; 9.14&deg;W &middot; IBERIAN WATCH</div>
+
+    <!-- Telemetry ticker -->
+    <div class="telemetry">
+      <div class="tel-item"><span>LAT</span><span id="tel-lat">38.7139&deg;N</span></div>
+      <div class="tel-item"><span>LON</span><span id="tel-lon">-009.1400&deg;</span></div>
+      <div class="tel-item"><span>ALT</span><span>12,400 km</span></div>
+      <div class="tel-item"><span>FPS</span><span id="fps">60</span></div>
+    </div>
+
+    <!-- Operational Picture -->
+    <div class="op-picture">
+      <div class="op-header">
+        <span>Operational Picture</span>
+        <span style="color: var(--teal)" id="live-indicator">&#9679; LIVE</span>
+      </div>
+      <div class="op-stats">
+        <div>
+          <div class="op-stat-value amber" id="op-regions">&#8212;</div>
+          <div class="op-stat-label">Regions Active</div>
+        </div>
+        <div>
+          <div class="op-stat-value coral" id="op-sites">&#8212;</div>
+          <div class="op-stat-label">Sites Elevated</div>
+        </div>
+        <div>
+          <div class="op-stat-value teal" id="op-events">&#8212;</div>
+          <div class="op-stat-label">Events Live</div>
+        </div>
+      </div>
+      <div class="op-message" id="op-message">
+        Connecting to operational feeds&hellip;
+      </div>
+    </div>
+
+    <!-- Legend -->
+    <div class="legend">
+      <div class="legend-header">Layers</div>
+      <div class="legend-row">
+        <span class="legend-dot coral"></span>
+        <span>Critical</span>
+        <div class="legend-toggle on" data-layer="critical"></div>
+      </div>
+      <div class="legend-row">
+        <span class="legend-dot amber"></span>
+        <span>Elevated</span>
+        <div class="legend-toggle on" data-layer="elevated"></div>
+      </div>
+      <div class="legend-row">
+        <span class="legend-dot teal"></span>
+        <span>Active</span>
+        <div class="legend-toggle on" data-layer="active"></div>
+      </div>
+      <div class="legend-row">
+        <span class="legend-dot lime"></span>
+        <span>Healthy</span>
+        <div class="legend-toggle on" data-layer="healthy"></div>
+      </div>
+      <div class="legend-row" style="margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--line)">
+        <span style="width: 8px; height: 8px; border: 1px solid var(--teal); display:inline-block"></span>
+        <span>Forecast</span>
+        <div class="legend-toggle" data-layer="forecast"></div>
+      </div>
+      <div class="legend-row">
+        <span style="width: 8px; height: 2px; background: var(--violet); display:inline-block"></span>
+        <span>Orbital</span>
+        <div class="legend-toggle on" data-layer="orbital"></div>
+      </div>
+    </div>
   </main>
 
-  <script src="https://cesium.com/downloads/cesiumjs/releases/1.127/Build/Cesium/Cesium.js"></script>
-  <script>
-      const state = {
-        lastBundleHash: null,
-        lastManifestHash: null,
-        viewer: null,
-        globeReady: false,
-        globeEntities: [],
-        passiveGlobeEntities: [],
-        passiveFocusOverlayEntities: [],
-        neoEntityIndex: {},
-        passiveEntityIndex: {},
-        passiveSiteEntityIndex: {},
-        passiveSiteEventIndex: {},
-        neoBriefing: null,
-        closeApproaches: null,
-        selectedNeoReferenceId: null,
-        passiveSemanticFilter: "all",
-        passivePressureFilter: "all",
-        passiveAttentionKindFilter: "all",
-        passiveAttentionPriorityFilter: "all",
-        passiveAttentionMapMode: false,
-        selectedPassiveOperationalTimeline: null,
-        selectedPassiveRegionId: null,
-        selectedPassiveSiteId: null,
-        selectedPassiveCanonicalEventId: null,
-        passiveSelectedAttention: null,
-        passiveMapSummary: null,
-        passiveDashboardSummary: null,
-        passiveMaintenanceSummary: null,
-        passiveCommandCenterSummary: null,
-        passiveOperationalVisibility: null,
-        semanticTimeline: null,
-      };
+  <!-- ============================================================
+       RIGHT — DECISION RAIL
+       ============================================================ -->
+  <aside class="right-rail">
 
-    const $ = (id) => document.getElementById(id);
+    <!-- ATTENTION QUEUE -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title coral">Attention Queue</div>
+        <div class="panel-count" id="attention-count">&#8212;</div>
+      </div>
+      <div id="attention-queue-list">
+        <div class="loading-shimmer" style="width:100%;margin:6px 0;height:14px"></div>
+        <div class="loading-shimmer" style="width:90%;margin:6px 0;height:14px"></div>
+        <div class="loading-shimmer" style="width:95%;margin:6px 0;height:14px"></div>
+      </div>
+    </div>
 
-    function formatSeconds(seconds) {
-      if (seconds == null || Number.isNaN(seconds)) return "-";
-      if (seconds < 60) return `${seconds}s`;
-      if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
-      return `${(seconds / 3600).toFixed(1)}h`;
-    }
+    <!-- RECOMMENDED ACTIONS -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title violet">Recommended Actions</div>
+        <div class="panel-count">impact-sorted</div>
+      </div>
+      <div id="recommended-actions-list" style="display:flex;flex-direction:column;gap:8px">
+        <div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:6px 0;">
+          Loading recommendations&hellip;
+        </div>
+      </div>
+    </div>
 
-    function formatEpoch(epoch) {
-      if (!epoch) return "n/a";
-      return new Date(epoch * 1000).toLocaleString();
-    }
-
-    function pillClass(value) {
-      if (value === "delivered" || value === "ok") return "pill ok";
-      if (value === "Warning" || value === "Watch") return "pill warn";
-      if (value === "Critical" || value === "failed") return "pill danger";
-      return "pill";
-    }
-
-    function riskDeltaClass(classification) {
-      if (!classification) return "";
-      const c = String(classification).toLowerCase();
-      if (c === "spike") return "danger";
-      if (c === "increase") return "warn";
-      if (c === "decrease") return "ok";
-      return "";
-    }
-
-    function renderRiskDeltaPill(classification) {
-      if (!classification) return "";
-      const cls = riskDeltaClass(classification);
-      return `<span class="pill${cls ? " " + cls : ""}">${escapeHtml(String(classification))}</span>`;
-    }
-
-    async function api(path, options) {
-      const response = await fetch(path, options);
-      const body = await response.json();
-      if (!response.ok) {
-        throw new Error(body.error?.message || `Request failed: ${response.status}`);
-      }
-      return body.data;
-    }
-
-    function renderEmpty(target, text) {
-      target.innerHTML = `<div class="empty">${text}</div>`;
-    }
-
-    function renderCards(target, items, render) {
-      if (!items.length) return renderEmpty(target, "No data in this window.");
-      target.innerHTML = items.map(render).join("");
-    }
-
-    function escapeHtml(value) {
-      return String(value ?? "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#39;");
-    }
-
-    function cesiumPropertyValue(property) {
-      if (!property) return null;
-      if (typeof property.getValue === "function") {
-        return property.getValue(Cesium.JulianDate.now());
-      }
-      return property;
-    }
-
-    function passiveActionLinks(bundleHashes, manifestHashes) {
-      const evidenceLinks = (bundleHashes || []).slice(0, 2).map((bundleHash) =>
-        `<a class="secondary" href="/v1/evidence/${encodeURIComponent(bundleHash)}" target="_blank" rel="noreferrer">Evidence ${escapeHtml(bundleHash.slice(0, 12))}</a>`
-      ).join("");
-      const replayButtons = (manifestHashes || []).slice(0, 2).map((manifestHash) =>
-        `<button class="secondary passive-replay" data-manifest-hash="${escapeHtml(manifestHash)}">Replay ${escapeHtml(manifestHash.slice(0, 12))}</button>`
-      ).join("");
-      return `${evidenceLinks}${replayButtons}`;
-    }
-
-    function renderFocusedChainActions(payload) {
-      const primaryBundleHash = payload?.bundle_hashes?.[0];
-      const primaryManifestHash = payload?.manifest_hashes?.[0];
-      return `
-        <div class="card">
-          <h4>Focused Chain Actions</h4>
-          <div class="meta">
-            <span>${escapeHtml(payload?.site_name ?? payload?.name ?? "unknown site")}</span>
-            <span>${escapeHtml(payload?.event_type ?? payload?.top_canonical_status ?? "site focus")}</span>
-            <span>${payload?.support_count != null ? `${payload.support_count} signals` : "site scope"}</span>
+    <!-- RISK TREND CHART -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title" id="risk-trend-title">Region Risk</div>
+        <div class="panel-count" id="risk-trend-window">72h</div>
+      </div>
+      <div class="chart-container">
+        <div class="chart-title">
+          <div>
+            <div class="chart-metric"><span id="risk-metric">&#8212;</span><span class="unit">/ 1.0</span></div>
+            <div style="font-family: var(--font-mono); font-size: 9.5px; color: var(--text-tertiary); letter-spacing: 0.1em; margin-top: 3px; text-transform: uppercase;">Pressure Index</div>
           </div>
-          <div class="row" style="margin-top:12px">
-            ${payload?.canonical_event_id ? `<button class="secondary passive-go-map" data-canonical-id="${escapeHtml(payload.canonical_event_id)}" data-site-id="${escapeHtml(payload.site_id)}">Go to Map</button>` : ""}
-            ${payload?.site_id ? `<button class="secondary passive-go-site" data-site-id="${escapeHtml(payload.site_id)}">Focus Site</button>` : ""}
-            ${primaryBundleHash ? `<button class="secondary passive-open-evidence" data-bundle-hash="${escapeHtml(primaryBundleHash)}">Open Evidence</button>` : ""}
-            ${primaryManifestHash ? `<button class="secondary passive-run-replay" data-manifest-hash="${escapeHtml(primaryManifestHash)}">Run Replay</button>` : ""}
-          </div>
-        </div>`;
-    }
-
-    function renderNarrativeProvenance(provenance) {
-      const drivers = provenance?.top_drivers || [];
-      const paths = [
-        provenance?.site_overview_path,
-        provenance?.site_narrative_path,
-        ...(provenance?.canonical_event_paths || []).slice(0, 2),
-        ...(provenance?.evidence_paths || []).slice(0, 2),
-        ...(provenance?.replay_paths || []).slice(0, 2),
-      ].filter(Boolean);
-      return `
-        <div class="card">
-          <h4>Narrative Provenance</h4>
-          <div class="meta">
-            <span>${provenance?.canonical_event_ids?.length ?? 0} canonical events</span>
-            <span>${provenance?.bundle_hashes?.length ?? 0} evidence bundles</span>
-            <span>${provenance?.manifest_hashes?.length ?? 0} replays</span>
-          </div>
-          <div class="list" style="margin-top:10px">
-            ${drivers.slice(0, 3).map((driver) => `
-              <div class="card">
-                <h4>${escapeHtml(driver.event_type)} Â· ${escapeHtml(driver.status)}</h4>
-                <div class="meta">
-                  <span>risk ${Math.round((driver.risk_score ?? 0) * 100)}%</span>
-                  <span>confidence ${Math.round((driver.confidence ?? 0) * 100)}%</span>
-                  <span>${driver.support_count ?? 0} signals</span>
-                </div>
-                <div class="meta" style="margin-top:8px">${escapeHtml(driver.summary ?? "no summary")}</div>
-                <div class="row" style="margin-top:8px">
-                  ${driver.bundle_hashes?.[0] ? `<button class="secondary passive-open-evidence" data-bundle-hash="${escapeHtml(driver.bundle_hashes[0])}">Open Evidence</button>` : ""}
-                  ${driver.manifest_hashes?.[0] ? `<button class="secondary passive-run-replay" data-manifest-hash="${escapeHtml(driver.manifest_hashes[0])}">Run Replay</button>` : ""}
-                </div>
-              </div>`).join("") || `<div class="empty">No provenance drivers yet.</div>`}
-          </div>
-          <div class="row" style="margin-top:10px">
-            ${readPathButtons(paths, null)}
-          </div>
-          <div class="meta" style="margin-top:10px">
-            ${paths.slice(0, 6).map((path) => `<span>${escapeHtml(path)}</span>`).join("") || `<span>no paths</span>`}
-          </div>
-        </div>`;
-    }
-
-    function renderRegionProvenance(provenance) {
-      const paths = [
-        provenance?.region_overview_path,
-        provenance?.semantic_timeline_path,
-        provenance?.operational_timeline_path,
-        provenance?.remediation_path,
-        provenance?.runs_path,
-        provenance?.source_health_path,
-        ...(provenance?.top_site_overview_paths || []).slice(0, 2),
-        ...(provenance?.top_site_narrative_paths || []).slice(0, 2),
-      ].filter(Boolean);
-      return `
-        <div class="card">
-          <h4>Region Provenance</h4>
-          <div class="meta">
-            <span>${provenance?.top_site_overview_paths?.length ?? 0} site overviews</span>
-            <span>${provenance?.top_site_narrative_paths?.length ?? 0} site narratives</span>
-          </div>
-          <div class="row" style="margin-top:10px">
-            ${readPathButtons(paths, null)}
-          </div>
-          <div class="meta" style="margin-top:10px">
-            ${paths.map((path) => `<span>${escapeHtml(path)}</span>`).join("") || `<span>no paths</span>`}
-          </div>
-        </div>`;
-    }
-
-    async function openPassiveLease(regionId, message) {
-      const leases = await api("/v1/passive/regions/leases?limit=100");
-      const lease = (leases || []).find((item) => item.region_id === regionId);
-      if (!lease) {
-        renderEmpty($("passive-focus"), `No active lease found for ${regionId}.`);
-        return;
-      }
-      $("passive-focus").innerHTML = `
-        <div class="card">
-          <h4>Region Lease</h4>
-          <div class="meta">
-            <span>${escapeHtml(lease.region_id)}</span>
-            <span>${escapeHtml(lease.worker_id)}</span>
-            <span>run ${escapeHtml(lease.run_id)}</span>
-          </div>
-          <div class="meta" style="margin-top:8px">
-            <span>acquired ${formatEpoch(lease.acquired_at_unix_seconds)}</span>
-            <span>heartbeat ${formatEpoch(lease.heartbeat_at_unix_seconds)}</span>
-            <span>expires ${formatEpoch(lease.expires_at_unix_seconds)}</span>
-          </div>
-        </div>`;
-      $("refresh-status").textContent = message;
-    }
-
-    async function openPassiveHeartbeat(workerId, message) {
-      const heartbeats = await api("/v1/passive/worker/heartbeats?limit=100");
-      const heartbeat = (heartbeats || []).find((item) => item.worker_id === workerId);
-      if (!heartbeat) {
-        renderEmpty($("passive-focus"), `No heartbeat found for ${workerId}.`);
-        return;
-      }
-      $("passive-focus").innerHTML = `
-        <div class="card">
-          <h4>Worker Heartbeat</h4>
-          <div class="meta">
-            <span>${escapeHtml(heartbeat.worker_id)}</span>
-            <span>${escapeHtml(heartbeat.status)}</span>
-            <span>${escapeHtml(heartbeat.current_phase)}</span>
-          </div>
-          <div class="meta" style="margin-top:8px">
-            <span>started ${formatEpoch(heartbeat.started_at_unix_seconds)}</span>
-            <span>last ${formatEpoch(heartbeat.last_heartbeat_unix_seconds)}</span>
-            <span>${escapeHtml(heartbeat.current_region_id ?? "no region")}</span>
-          </div>
-          <div class="meta" style="margin-top:8px">
-            <span>${escapeHtml(heartbeat.last_error ?? "no error")}</span>
-            <span>${escapeHtml(heartbeat.version)}</span>
-          </div>
-        </div>`;
-      $("refresh-status").textContent = message;
-    }
-
-    async function openPassiveHeartbeatList(staleOnly, message) {
-      const suffix = staleOnly ? "&stale_only=true" : "";
-      const heartbeats = await api(`/v1/passive/worker/heartbeats?limit=12${suffix}`);
-      $("passive-focus").innerHTML = heartbeats.length ? heartbeats.map((heartbeat) => `
-        <div class="card">
-          <h4>${escapeHtml(heartbeat.worker_id)}</h4>
-          <div class="meta">
-            <span>${escapeHtml(heartbeat.status)}</span>
-            <span>${escapeHtml(heartbeat.current_phase)}</span>
-            <span>${escapeHtml(heartbeat.current_region_id ?? "no region")}</span>
-          </div>
-          <div class="meta" style="margin-top:8px">
-            <span>started ${formatEpoch(heartbeat.started_at_unix_seconds)}</span>
-            <span>last ${formatEpoch(heartbeat.last_heartbeat_unix_seconds)}</span>
-            <span>${escapeHtml(heartbeat.version)}</span>
-          </div>
-          <div class="meta" style="margin-top:8px">${escapeHtml(heartbeat.last_error ?? "no error")}</div>
-        </div>`).join("") : `<div class="empty">${staleOnly ? "No stale worker heartbeats." : "No worker heartbeats."}</div>`;
-      $("refresh-status").textContent = message;
-    }
-
-    async function openPassiveWorkerDiagnostics(message, regionId = null) {
-      const regionQuery = regionId ? `&region_id=${encodeURIComponent(regionId)}` : "";
-      const diagnostics = await api(`/v1/passive/worker/diagnostics?limit=12${regionQuery}`);
-      $("passive-focus").innerHTML = `
-        <div class="card">
-          <h4>Worker Diagnostics</h4>
-          <div class="meta">
-            <span>${diagnostics.total_worker_heartbeat_count} total</span>
-            <span>${diagnostics.active_worker_heartbeat_count} active</span>
-            <span>${diagnostics.stale_worker_heartbeat_count} stale</span>
-          </div>
-          <div class="meta" style="margin-top:8px">
-            <span>${diagnostics.active_region_lease_count} active leases</span>
-            <span>${diagnostics.stale_region_lease_count} stale leases</span>
-            <span>cutoff ${formatEpoch(diagnostics.stale_cutoff_unix_seconds)}</span>
-          </div>
-          ${diagnostics.region_id ? `<div class="meta" style="margin-top:8px"><span>scope ${escapeHtml(diagnostics.region_id)}</span></div>` : ""}
-          <div class="meta" style="margin-top:8px">${escapeHtml(diagnostics.recommendation)}</div>
-          <div class="row" style="margin-top:12px">
-            ${diagnostics.stale_worker_heartbeat_count > 0 ? `<button class="secondary passive-prune-stale-heartbeats">Prune Stale Heartbeats</button>` : ""}
+          <div class="chart-delta" id="risk-delta">
+            <svg width="10" height="10" viewBox="0 0 10 10"><path d="M 5 1 L 9 7 L 1 7 Z" fill="currentColor"/></svg>
+            &#8212;
           </div>
         </div>
-        ${diagnostics.active_region_leases.length ? `
-          <div class="card">
-            <h4>Active Leases</h4>
-            <div class="list" style="margin-top:10px">
-              ${diagnostics.active_region_leases.map((lease) => `
-                <div class="card">
-                  <h4>${escapeHtml(lease.region_id)}</h4>
-                  <div class="meta">
-                    <span>${escapeHtml(lease.worker_id)}</span>
-                    <span>run ${escapeHtml(lease.run_id)}</span>
-                    <span>${lease.expires_in_seconds}s to expiry</span>
-                  </div>
-                  <div class="meta" style="margin-top:8px">
-                    <span>heartbeat lag ${lease.heartbeat_lag_seconds}s</span>
-                    <span>${formatEpoch(lease.heartbeat_at_unix_seconds)}</span>
-                    <span>${formatEpoch(lease.expires_at_unix_seconds)}</span>
-                  </div>
-                </div>`).join("")}
-            </div>
-          </div>` : ""}
-        ${diagnostics.stale_region_leases.length ? `
-          <div class="card">
-            <h4>Stale Leases</h4>
-            <div class="list" style="margin-top:10px">
-              ${diagnostics.stale_region_leases.map((lease) => `
-                <div class="card">
-                  <h4>${escapeHtml(lease.region_id)}</h4>
-                  <div class="meta">
-                    <span>${escapeHtml(lease.worker_id)}</span>
-                    <span>run ${escapeHtml(lease.run_id)}</span>
-                    <span class="${pillClass("failed")}">stale</span>
-                  </div>
-                  <div class="meta" style="margin-top:8px">
-                    <span>heartbeat lag ${lease.heartbeat_lag_seconds}s</span>
-                    <span>${formatEpoch(lease.heartbeat_at_unix_seconds)}</span>
-                    <span>${formatEpoch(lease.expires_at_unix_seconds)}</span>
-                  </div>
-                </div>`).join("")}
-            </div>
-          </div>` : ""}
-        ${diagnostics.region_metrics.length ? `
-          <div class="card">
-            <h4>Region Metrics</h4>
-            <div class="list" style="margin-top:10px">
-              ${diagnostics.region_metrics.map((metric) => `
-                <div class="card">
-                  <h4>${escapeHtml(metric.region_id)}</h4>
-                  <div class="meta">
-                    <span>${metric.run_count} runs</span>
-                    <span>${metric.event_count} events</span>
-                    <span>${metric.source_error_count} source errors</span>
-                  </div>
-                  <div class="meta" style="margin-top:8px">
-                    <span>${metric.active_lease_count} active leases</span>
-                    <span>${metric.stale_lease_count} stale leases</span>
-                    <span>${metric.active_worker_count} active workers</span>
-                    <span>${metric.stale_worker_count} stale workers</span>
-                  </div>
-                  <div class="meta" style="margin-top:8px">
-                    <span>${metric.completed_run_count} completed</span>
-                    <span>${metric.partial_run_count} partial</span>
-                    <span>${metric.failed_run_count} failed</span>
-                    <span>${escapeHtml(metric.latest_run_status ?? "no recent run")}</span>
-                  </div>
-                </div>`).join("")}
-            </div>
-          </div>` : ""}
-        ${diagnostics.source_metrics.length ? `
-          <div class="card">
-            <h4>Source Metrics</h4>
-            <div class="list" style="margin-top:10px">
-              ${diagnostics.source_metrics.map((metric) => `
-                <div class="card">
-                  <h4>${escapeHtml(metric.source)}</h4>
-                  <div class="meta">
-                    <span>${escapeHtml(metric.region_id ?? "global")}</span>
-                    <span class="${pillClass(metric.health_status === "healthy" ? "ok" : metric.health_status === "watch" ? "Warning" : "failed")}">${escapeHtml(metric.health_status ?? "unknown")}</span>
-                    <span>${metric.sample_count} samples</span>
-                    <span>${Math.round((metric.success_rate ?? 0) * 100)}% success</span>
-                    <span>${Math.round((metric.reliability_score ?? 0) * 100)}% reliable</span>
-                  </div>
-                  <div class="meta" style="margin-top:8px">
-                    <span>${metric.success_count} ok</span>
-                    <span>${metric.failure_count} fail</span>
-                    <span>${metric.consecutive_failure_count ?? 0} consecutive fail</span>
-                    <span>${metric.staleness_seconds != null ? `${formatSeconds(metric.staleness_seconds)} old` : "no staleness"}</span>
-                    <span>${metric.latest_generated_at_unix_seconds ? formatEpoch(metric.latest_generated_at_unix_seconds) : "no samples"}</span>
-                  </div>
-                  <div class="row" style="margin-top:8px">
-                    <button class="secondary passive-open-source-samples" data-source-kind="${escapeHtml(metric.source)}" data-region-id="${escapeHtml(metric.region_id ?? "")}">View Samples</button>
-                    <button class="secondary passive-preview-source-prune" data-source-kind="${escapeHtml(metric.source)}" data-region-id="${escapeHtml(metric.region_id ?? "")}">Preview Prune</button>
-                    <button class="secondary passive-prune-source-health" data-source-kind="${escapeHtml(metric.source)}" data-region-id="${escapeHtml(metric.region_id ?? "")}">Prune Old Samples</button>
-                  </div>
-                  <div class="empty">${escapeHtml(metric.recovery_hint ?? "No recovery hint.")}</div>
-                  ${metric.last_error ? `<div class="empty">${escapeHtml(metric.last_error)}</div>` : ""}
-                </div>`).join("")}
-            </div>
-          </div>` : ""}
-        ${diagnostics.stale_worker_heartbeats.length ? diagnostics.stale_worker_heartbeats.map((heartbeat) => `
-          <div class="card">
-            <h4>${escapeHtml(heartbeat.worker_id)}</h4>
-            <div class="meta">
-              <span>${escapeHtml(heartbeat.status)}</span>
-              <span>${escapeHtml(heartbeat.current_phase)}</span>
-              <span>${escapeHtml(heartbeat.current_region_id ?? "no region")}</span>
-            </div>
-            <div class="meta" style="margin-top:8px">
-              <span>started ${formatEpoch(heartbeat.started_at_unix_seconds)}</span>
-              <span>last ${formatEpoch(heartbeat.last_heartbeat_unix_seconds)}</span>
-              <span>${escapeHtml(heartbeat.version)}</span>
-            </div>
-            <div class="meta" style="margin-top:8px">${escapeHtml(heartbeat.last_error ?? "no error")}</div>
-          </div>`).join("") : `<div class="empty">No stale worker heartbeats.</div>`}`;
-      $("refresh-status").textContent = message;
-    }
-
-    async function pruneStaleHeartbeats(message) {
-      const result = await api("/v1/passive/worker/heartbeats/prune", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ older_than_seconds: 86400 }),
-      });
-      await refreshPassiveDashboardSummary();
-      await openPassiveWorkerDiagnostics(`${message}: pruned ${result.pruned_count}`);
-    }
-
-    async function pruneSourceHealthSamples(sourceKind = null, regionId = null, message = "Pruned source health samples", dryRun = false) {
-      const body = { older_than_seconds: 604800, dry_run: dryRun };
-      if (sourceKind) body.source_kind = sourceKind;
-      if (regionId) body.region_id = regionId;
-      const result = await api("/v1/passive/source-health/samples/prune", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const sourceLabel = sourceKind || "all source";
-      if (dryRun) {
-        $("refresh-status").textContent = `${message}: ${result.pruned_count} ${sourceLabel} samples would be pruned`;
-        return result;
-      }
-      await refreshPassiveDashboardSummary();
-      await openPassiveWorkerDiagnostics(
-        `${message}: pruned ${result.pruned_count} ${sourceLabel} samples`,
-        regionId,
-      );
-    }
-
-    async function openPassiveSourceSamples(sourceKind, message, regionId = null) {
-      const regionQuery = regionId ? `&region_id=${encodeURIComponent(regionId)}` : "";
-      const data = await api(`/v1/passive/source-health/samples?limit=8&source_kind=${encodeURIComponent(sourceKind)}${regionQuery}`);
-      $("passive-focus").innerHTML = data.length ? data.map((sample) => `
-        <div class="card">
-          <h4>${escapeHtml(sample.source_kind)} sample</h4>
-          <div class="meta">
-            <span class="${pillClass(sample.fetched ? "ok" : "failed")}">${sample.fetched ? "fetched" : "failed"}</span>
-            <span>${sample.observations_collected} observations</span>
-            <span>${escapeHtml(sample.region_id ?? "global")}</span>
-          </div>
-          <div class="meta" style="margin-top:8px">
-            <span>${formatEpoch(sample.generated_at_unix_seconds)}</span>
-            <span>${formatEpoch(sample.window_start_unix_seconds)} -> ${formatEpoch(sample.window_end_unix_seconds)}</span>
-          </div>
-          <div class="row" style="margin-top:8px">
-            <button class="secondary passive-preview-source-prune" data-source-kind="${escapeHtml(sample.source_kind)}" data-region-id="${escapeHtml(sample.region_id ?? "")}">Preview Prune</button>
-            <button class="secondary passive-prune-source-health" data-source-kind="${escapeHtml(sample.source_kind)}" data-region-id="${escapeHtml(sample.region_id ?? "")}">Prune Old ${escapeHtml(sample.source_kind)} Samples</button>
-          </div>
-          <div class="meta" style="margin-top:8px">${escapeHtml(sample.detail)}</div>
-        </div>`).join("") : `<div class="empty">No source samples available for ${escapeHtml(sourceKind)}.</div>`;
-      $("refresh-status").textContent = message;
-    }
-
-    async function openPassiveRegionRuns(regionId, message) {
-      const runs = await api(`/v1/passive/regions/runs?limit=12&region_id=${encodeURIComponent(regionId)}`);
-      $("passive-focus").innerHTML = runs.length ? runs.map((run) => `
-        <div class="card">
-          <h4>${escapeHtml(run.run_id)}</h4>
-          <div class="meta">
-            <span>${escapeHtml(run.status)}</span>
-            <span>${escapeHtml(run.origin)}</span>
-            <span>${run.event_count} events</span>
-          </div>
-          <div class="meta" style="margin-top:8px">
-            <span>${run.region_ids?.join(", ") || "no region"}</span>
-            <span>${formatEpoch(run.started_at_unix_seconds)}</span>
-            <span>${run.finished_at_unix_seconds ? formatEpoch(run.finished_at_unix_seconds) : "running"}</span>
-          </div>
-          <div class="row" style="margin-top:8px">
-            <button class="secondary passive-open-region-run" data-run-id="${escapeHtml(run.run_id)}">Open Run</button>
-          </div>
-        </div>`).join("") : `<div class="empty">No region runs available for ${escapeHtml(regionId)}.</div>`;
-      $("refresh-status").textContent = message;
-    }
-
-    async function openPassiveRegionRun(runId, message) {
-      const run = await api(`/v1/passive/regions/runs/${encodeURIComponent(runId)}`);
-      $("passive-focus").innerHTML = `
-        <div class="card">
-          <h4>Region Run</h4>
-          <div class="meta">
-            <span>${escapeHtml(run.run_id)}</span>
-            <span>${escapeHtml(run.status)}</span>
-            <span>${escapeHtml(run.origin)}</span>
-          </div>
-          <div class="meta" style="margin-top:8px">
-            <span>${run.region_ids?.join(", ") || "no region"}</span>
-            <span>${formatEpoch(run.started_at_unix_seconds)}</span>
-            <span>${run.finished_at_unix_seconds ? formatEpoch(run.finished_at_unix_seconds) : "running"}</span>
-          </div>
-          <div class="meta" style="margin-top:8px">
-            <span>${run.discovered_seed_count} discovered</span>
-            <span>${run.selected_seed_count} selected</span>
-            <span>${run.event_count} events</span>
-            <span>${run.source_errors?.length || 0} source errors</span>
-          </div>
-          ${run.source_errors?.length ? `<div class="meta" style="margin-top:8px">${escapeHtml(run.source_errors.join(" | "))}</div>` : ""}
-        </div>`;
-      $("refresh-status").textContent = message;
-    }
-
-    function remediationReadButtons(action, regionId) {
-      const paths = action?.suggested_read_paths || [];
-      return paths.map((path) => {
-        if (path.includes("/passive/worker/diagnostics")) {
-          return `<button class="secondary passive-open-worker-diagnostics" data-region-id="${escapeHtml(regionId)}">Diagnostics</button>`;
-        }
-        if (path.includes("/passive/regions/runs")) {
-          return `<button class="secondary passive-open-region-runs" data-region-id="${escapeHtml(regionId)}">Region Runs</button>`;
-        }
-        if (path.includes("/passive/regions/") && path.includes("/overview")) {
-          return `<button class="secondary passive-open-region-overview" data-region-id="${escapeHtml(regionId)}">Region Overview</button>`;
-        }
-        return "";
-      }).join("");
-    }
-
-    function readPathLabel(path) {
-      if (!path) return "Open Path";
-      if (path.includes("/v1/evidence/")) return "Evidence";
-      if (path.includes("/v1/replay/")) return "Replay";
-      if (path.includes("/passive/regions/") && path.includes("/overview")) return "Region Overview";
-      if (path.includes("/passive/worker/diagnostics")) return "Diagnostics";
-      if (path.includes("/passive/worker/heartbeats?stale_only=true")) return "Stale Heartbeats";
-      if (path.includes("/passive/worker/heartbeats")) return "Worker Heartbeats";
-      if (path.includes("/passive/map/sites")) return "Map Sites";
-      if (path.includes("/passive/map/canonical-events")) return "Map Events";
-      if (path.includes("/passive/sites/") && path.includes("/overview")) return "Site Overview";
-      if (path.includes("/passive/sites/") && path.includes("/narrative")) return "Narrative";
-      if (path.includes("/semantic-timeline")) return "Timeline";
-      if (path.includes("/passive/operational-visibility")) return "Operational Visibility";
-      return "Open Path";
-    }
-
-    function readPathButtons(paths, regionId, attentionItem) {
-      const attentionAttrs = attentionItem ? attentionItemDataAttrs(attentionItem) : "";
-      return (paths || []).slice(0, 4).map((path) => {
-        if (path.includes("/v1/evidence/")) {
-          const bundleHash = path.split("/v1/evidence/")[1]?.split("?")[0];
-          return bundleHash
-            ? `<button class="secondary passive-open-evidence" data-bundle-hash="${escapeHtml(bundleHash)}" ${attentionAttrs}>${escapeHtml(readPathLabel(path))}</button>`
-            : "";
-        }
-        if (path.includes("/v1/replay/")) {
-          const manifestHash = path.split("/v1/replay/")[1]?.split("/")[0]?.split("?")[0];
-          return manifestHash
-            ? `<button class="secondary passive-run-replay" data-manifest-hash="${escapeHtml(manifestHash)}" ${attentionAttrs}>${escapeHtml(readPathLabel(path))}</button>`
-            : "";
-        }
-        if (path.includes("/passive/regions/") && path.includes("/overview")) {
-          return `<button class="secondary passive-open-region-overview" data-region-id="${escapeHtml(regionId || "")}" ${attentionAttrs}>${escapeHtml(readPathLabel(path))}</button>`;
-        }
-        if (path.includes("/passive/worker/diagnostics")) {
-          return `<button class="secondary passive-open-worker-diagnostics" data-region-id="${escapeHtml(regionId || "")}" ${attentionAttrs}>${escapeHtml(readPathLabel(path))}</button>`;
-        }
-        if (path.includes("/passive/worker/heartbeats?stale_only=true")) {
-          return `<button class="secondary passive-open-stale-heartbeats" ${attentionAttrs}>${escapeHtml(readPathLabel(path))}</button>`;
-        }
-        if (path.includes("/passive/worker/heartbeats")) {
-          return `<button class="secondary passive-open-heartbeat-list" ${attentionAttrs}>${escapeHtml(readPathLabel(path))}</button>`;
-        }
-        return `<button class="secondary passive-open-path" data-path="${escapeHtml(path)}" ${attentionAttrs}>${escapeHtml(readPathLabel(path))}</button>`;
-      }).join("");
-    }
-
-    function renderReplayExecution(replay, manifestHash) {
-      state.lastManifestHash = manifestHash;
-      $("metric-drift").textContent = replay.drift_detected ? "Yes" : "No";
-      $("replay-diff").innerHTML = `
-        <div class="list">
-          <div class="card">
-            <h4>Replay ${escapeHtml(manifestHash.slice(0, 12))}</h4>
-            <div class="meta">
-              <span class="${pillClass(replay.drift_detected ? "failed" : "ok")}">${replay.drift_detected ? "drift detected" : "stable"}</span>
-            </div>
-          </div>
-          <div class="card">
-            <h4>Assessment</h4>
-            <pre>${escapeHtml(JSON.stringify(replay.diff.assessment, null, 2))}</pre>
-          </div>
-          <div class="card">
-            <h4>Decision</h4>
-            <pre>${escapeHtml(JSON.stringify(replay.diff.decision, null, 2))}</pre>
-          </div>
-          </div>`; 
-    }
-
-    function focusPassiveSite(siteId, statusLabel) {
-      if (!siteId || !state.viewer) return false;
-      const entity = state.passiveSiteEntityIndex[siteId];
-      if (!entity) {
-        $("refresh-status").textContent = `${statusLabel || "Site"} ${siteId.slice(0, 12)} is outside the current map region`;
-        return false;
-      }
-      applyPassiveSiteFocus(siteId, null);
-      state.viewer.selectedEntity = entity;
-      state.viewer.flyTo(entity, { duration: 1.2 });
-      $("refresh-status").textContent = `${statusLabel || "Focused site"} ${siteId.slice(0, 12)}`;
-      return true;
-    }
-
-    async function focusPassiveSiteFromAttention(siteId, regionId, statusLabel) {
-      if (focusPassiveSite(siteId, statusLabel)) return true;
-      if (!regionId) return false;
-      state.selectedPassiveRegionId = regionId;
-      state.passivePressureFilter = "all";
-      await refreshPassiveMapLayers();
-      return focusPassiveSite(siteId, statusLabel);
-    }
-
-    function openPassivePath(path, statusLabel) {
-      if (!path) return false;
-      window.open(path, "_blank", "noopener,noreferrer");
-      $("refresh-status").textContent = statusLabel || `Opened ${path}`;
-      return true;
-    }
-
-    function formatNeoDistance(distanceKm) {
-      if (distanceKm == null || Number.isNaN(distanceKm)) return "distance n/a";
-      return `${Math.round(distanceKm).toLocaleString()} km`;
-    }
-
-    function formatNeoVelocity(velocityKmS) {
-      if (velocityKmS == null || Number.isNaN(velocityKmS)) return "velocity n/a";
-      return `${velocityKmS.toFixed(1)} km/s`;
-    }
-
-    function formatNeoDiameter(minMeters, maxMeters) {
-      const min = Number.isFinite(minMeters) ? Math.round(minMeters).toLocaleString() : null;
-      const max = Number.isFinite(maxMeters) ? Math.round(maxMeters).toLocaleString() : null;
-      if (min && max) return `${min}-${max} m`;
-      if (max) return `up to ${max} m`;
-      if (min) return `${min} m+`;
-      return "diameter n/a";
-    }
-
-    function neoBriefingFeedPath(briefing) {
-      const params = new URLSearchParams();
-      if (briefing?.start_date) params.set("start_date", briefing.start_date);
-      if (briefing?.end_date) params.set("end_date", briefing.end_date);
-      const query = params.toString();
-      return query ? `/v1/briefing/neows?${query}` : "/v1/briefing/neows";
-    }
-
-    function neoBriefingItemDataAttrs(item) {
-      return `data-neo-reference-id="${escapeHtml(item.neo_reference_id ?? "")}"
-        data-neo-name="${escapeHtml(item.name ?? "")}"
-        data-neo-jpl-url="${escapeHtml(item.nasa_jpl_url ?? "")}"`;
-    }
-
-    function selectedNeoBriefingItem() {
-      const items = state.neoBriefing?.highest_priority || [];
-      if (!items.length) return null;
-      const selected = items.find((item) => item.neo_reference_id === state.selectedNeoReferenceId) || items[0];
-      state.selectedNeoReferenceId = selected.neo_reference_id;
-      return selected;
-    }
-
-    function renderNeoBriefingActionButtons(item, focusLabel) {
-      const feedPath = neoBriefingFeedPath(state.neoBriefing);
-      return `
-        <button class="secondary neo-briefing-focus" ${neoBriefingItemDataAttrs(item)}>${escapeHtml(focusLabel || "Focus on Globe")}</button>
-        ${item.nasa_jpl_url ? `<button class="secondary neo-open-path" data-path="${escapeHtml(item.nasa_jpl_url)}" ${neoBriefingItemDataAttrs(item)}>JPL Profile</button>` : ""}
-        <button class="secondary neo-open-path" data-path="${escapeHtml(feedPath)}" ${neoBriefingItemDataAttrs(item)}>Feed Window</button>`;
-    }
-
-    function renderNeoWsBriefing(data) {
-      if (!data) {
-        state.selectedNeoReferenceId = null;
-        renderEmpty($("neows-briefing"), "No NEO briefing available.");
-        return;
-      }
-
-      const items = data.highest_priority || [];
-      const selected = selectedNeoBriefingItem();
-      const feedPath = neoBriefingFeedPath(data);
-      $("neows-briefing").innerHTML = `
-        <div class="list">
-          <div class="card">
-            <h4>${data.total_objects} NEOs in window</h4>
-            <div class="meta">
-              <span class="pill">${data.hazardous_objects} hazardous</span>
-              <span>${data.start_date} -> ${data.end_date}</span>
-              <span>generated ${formatEpoch(data.generated_at_unix_seconds)}</span>
-            </div>
-            <div class="row" style="margin-top:10px">
-              <button class="secondary neo-open-path" data-path="${escapeHtml(feedPath)}">Open Feed Window</button>
-              ${selected ? `<button class="secondary neo-briefing-focus" ${neoBriefingItemDataAttrs(selected)}>Focus Selected</button>` : ""}
-            </div>
-          </div>
-          ${selected ? `
-            <div class="card neo-briefing-item neo-briefing-item-selected" ${neoBriefingItemDataAttrs(selected)}>
-              <h4>Attention Focus: ${escapeHtml(selected.name)}</h4>
-              <div class="meta">
-                <span class="${pillClass(selected.hazardous ? "Critical" : "Watch")}">${selected.hazardous ? "hazardous" : "watch"}</span>
-                <span>priority ${(selected.priority_score * 100).toFixed(0)}%</span>
-                <span>${escapeHtml(selected.close_approach_date ?? "date n/a")}</span>
-                <span>${formatNeoDiameter(selected.estimated_diameter_min_m, selected.estimated_diameter_max_m)}</span>
-              </div>
-              <div class="meta" style="margin-top:8px">
-                <span>${formatNeoDistance(selected.miss_distance_km)}</span>
-                <span>${formatNeoVelocity(selected.relative_velocity_km_s)}</span>
-                <span class="mono">${escapeHtml(selected.neo_reference_id)}</span>
-              </div>
-              <div class="meta" style="margin-top:8px">${escapeHtml(selected.briefing_summary)}</div>
-              <div class="row" style="margin-top:10px">${renderNeoBriefingActionButtons(selected, "Focus on Globe")}</div>
-            </div>` : `<div class="empty">No priority NEO objects in this window.</div>`}
-          ${items.slice(0, 3).map((item, index) => `
-            <div class="card neo-briefing-item ${selected?.neo_reference_id === item.neo_reference_id ? "neo-briefing-item-selected" : ""}" ${neoBriefingItemDataAttrs(item)}>
-              <div class="row" style="justify-content:space-between;align-items:flex-start">
-                <h4>${escapeHtml(item.name)}</h4>
-                <span class="pill ${item.hazardous ? "danger" : "warn"}">${index === 0 ? "top priority" : "read target"}</span>
-              </div>
-              <div class="meta">
-                <span>${item.hazardous ? "hazardous" : "watch"}</span>
-                <span>priority ${(item.priority_score * 100).toFixed(0)}%</span>
-                <span>${escapeHtml(item.close_approach_date ?? "date n/a")}</span>
-              </div>
-              <div class="meta" style="margin-top:8px">
-                <span>${formatNeoDistance(item.miss_distance_km)}</span>
-                <span>${formatNeoVelocity(item.relative_velocity_km_s)}</span>
-                <span>${formatNeoDiameter(item.estimated_diameter_min_m, item.estimated_diameter_max_m)}</span>
-              </div>
-              <div class="meta" style="margin-top:8px">${escapeHtml(item.briefing_summary)}</div>
-              <div class="row" style="margin-top:8px">${renderNeoBriefingActionButtons(item, selected?.neo_reference_id === item.neo_reference_id ? "Refocus Globe" : "Focus on Globe")}</div>
-            </div>
-          `).join("")}
-        </div>`;
-    }
-
-    function selectNeoBriefingItem(neoReferenceId, statusLabel) {
-      if (!neoReferenceId) return null;
-      const item = (state.neoBriefing?.highest_priority || []).find((candidate) => candidate.neo_reference_id === neoReferenceId);
-      if (!item) return null;
-      state.selectedNeoReferenceId = item.neo_reference_id;
-      renderNeoWsBriefing(state.neoBriefing);
-      if (statusLabel) {
-        $("refresh-status").textContent = `${statusLabel} ${item.name}`;
-      }
-      return item;
-    }
-
-    async function focusNeoBriefingItem(neoReferenceId, statusLabel) {
-      const item = selectNeoBriefingItem(neoReferenceId, null);
-      if (!item) return false;
-
-      if (!$("toggle-neo-layer")?.checked) {
-        $("toggle-neo-layer").checked = true;
-        await refreshAll();
-      }
-
-      const entity = state.neoEntityIndex[item.neo_reference_id];
-      if (!state.viewer || !entity) {
-        $("refresh-status").textContent = `${statusLabel || "Selected NEO"} ${item.name}`;
-        return true;
-      }
-
-      if (state.viewer.selectedEntity !== entity) {
-        state.viewer.selectedEntity = entity;
-      }
-      state.viewer.flyTo(entity, { duration: 1.2 });
-      $("refresh-status").textContent = `${statusLabel || "Focused NEO"} ${item.name}`;
-      return true;
-    }
-
-    function openPassiveEvidence(bundleHash, statusLabel) {
-      if (!bundleHash) return false;
-      window.open(`/v1/evidence/${encodeURIComponent(bundleHash)}`, "_blank", "noopener,noreferrer");
-      $("refresh-status").textContent = `${statusLabel || "Opened evidence"} ${bundleHash.slice(0, 12)}`;
-      return true;
-    }
-
-    async function runPassiveReplay(manifestHash, statusLabel) {
-      if (!manifestHash) return false;
-      $("refresh-status").textContent = "Running passive replay...";
-      const replay = await api(`/v1/replay/${encodeURIComponent(manifestHash)}/execute`);
-      renderReplayExecution(replay, manifestHash);
-      $("refresh-status").textContent = `${statusLabel || "Passive replay"} ${manifestHash.slice(0, 12)} executed`;
-      return true;
-    }
-
-    function focusPassiveCanonicalEvent(canonicalId, siteId, statusLabel) {
-      if (!canonicalId || !state.viewer) return false;
-      const entity = state.passiveEntityIndex[canonicalId];
-      if (!entity) {
-        $("refresh-status").textContent = `${statusLabel || "Canonical event"} ${canonicalId.slice(0, 12)} is outside the current map filter`;
-        return false;
-      }
-      applyPassiveSiteFocus(siteId || cesiumPropertyValue(entity?.properties?.payload)?.site_id, canonicalId);
-      state.viewer.selectedEntity = entity;
-      state.viewer.flyTo(entity, { duration: 1.2 });
-      $("refresh-status").textContent = `${statusLabel || "Focused canonical event"} ${canonicalId.slice(0, 12)}`;
-      return true;
-    }
-
-    async function focusPassiveCanonicalFromAttention(canonicalId, siteId, regionId, statusLabel) {
-      if (focusPassiveCanonicalEvent(canonicalId, siteId, statusLabel)) return true;
-      if (!regionId && state.passiveSemanticFilter === "all") return false;
-      if (regionId) state.selectedPassiveRegionId = regionId;
-      state.passivePressureFilter = "all";
-      state.passiveSemanticFilter = "all";
-      await refreshPassiveMapLayers();
-      return focusPassiveCanonicalEvent(canonicalId, siteId, statusLabel);
-    }
-
-    async function focusPassiveAttentionItem(kind, regionId, siteId, canonicalId) {
-      if (kind === "canonical_event") {
-        return focusPassiveCanonicalFromAttention(
-          canonicalId,
-          siteId,
-          regionId,
-          "Focused canonical event",
-        );
-      }
-      if (kind === "site") {
-        return focusPassiveSiteFromAttention(siteId, regionId, "Focused site");
-      }
-      if (kind === "region") {
-        return openPassiveRegionOverview(regionId, "Opened region");
-      }
-      return false;
-    }
-
-    async function openPassiveRegionOverview(regionId, statusLabel) {
-      if (!regionId) return false;
-      state.selectedPassiveRegionId = regionId;
-      let regionEntity = state.viewer?.entities?.getById?.(`passive-region-${regionId}`);
-      if (!regionEntity) {
-        state.passivePressureFilter = "all";
-        await refreshPassiveMapLayers();
-        regionEntity = state.viewer?.entities?.getById?.(`passive-region-${regionId}`);
-      }
-      if (!regionEntity) {
-        $("refresh-status").textContent = `${statusLabel || "Region"} ${regionId} is outside the current map data`;
-        return false;
-      }
-      await handlePassiveSelection(regionEntity);
-      $("refresh-status").textContent = `${statusLabel || "Opened region"} ${regionId}`;
-      return true;
-    }
-
-      function formatRelative(epochSeconds) {
-        if (!epochSeconds) return "n/a";
-        const diffS = Math.round(Date.now() / 1000 - epochSeconds);
-        if (diffS < 60) return `${diffS}s ago`;
-        if (diffS < 3600) return `${Math.round(diffS / 60)}m ago`;
-        if (diffS < 86400) return `${Math.round(diffS / 3600)}h ago`;
-        return `${Math.round(diffS / 86400)}d ago`;
-      }
-
-      function trendArrow(classification) {
-        if (!classification) return "";
-        const c = String(classification).toLowerCase();
-        if (c === "spike" || c === "critical") return "⬆ ";
-        if (c === "increase" || c === "high") return "↗ ";
-        if (c === "decrease") return "↘ ";
-        if (c === "stable") return "→ ";
-        return "";
-      }
-
-      function suggestAction(entry) {
-        const delta = (entry.risk_delta?.classification || "").toLowerCase();
-        const risk = entry.risk_score || 0;
-        if (risk > 0.85 || delta === "spike" || delta === "critical") return "ESCALATE";
-        if (delta === "increase" || delta === "high") return "MONITOR";
-        if (delta === "stable" || delta === "decrease") return "IGNORE";
-        return "RESPOND";
-      }
-
-      function actionPillClass(action) {
-        if (action === "ESCALATE") return "stl-action-escalate";
-        if (action === "MONITOR")  return "stl-action-monitor";
-        if (action === "IGNORE")   return "stl-action-ignore";
-        return "stl-action-respond";
-      }
-
-      function actionLabel(action) {
-        if (action === "ESCALATE") return "🔴 ESCALATE";
-        if (action === "MONITOR")  return "🟡 MONITOR";
-        if (action === "IGNORE")   return "⚪ IGNORE";
-        return "🟣 RESPOND";
-      }
-
-      function renderSemanticTimeline(timeline) {
-        const entries = timeline?.entries || [];
-        if (!entries.length) {
-          const ctx = timeline?.scope_id ? `for ${escapeHtml(timeline.scope_id)}` : "";
-          return `<div class="card"><h4>Semantic Timeline</h4><div class="stl-empty"><span class="stl-empty-icon">○</span><span>No events recorded ${ctx}</span><span>Events will appear when passive scans detect activity in this region.</span></div></div>`;
-        }
-        const dominantCls = riskDeltaClass(timeline.dominant_status);
-        const nowS = Math.round(Date.now() / 1000);
-        return `
-          <div class="card">
-            <h4>Semantic Timeline</h4>
-            <div class="meta">
-              <span>${escapeHtml(timeline.scope_id)}</span>
-              <span class="pill${dominantCls ? " " + dominantCls : ""}">${escapeHtml(timeline.dominant_status ?? "no state")}</span>
-              <span>${entries.length} event${entries.length === 1 ? "" : "s"}</span>
-            </div>
-            <div class="list" style="margin-top:10px">
-              ${entries.slice(0, 10).map((entry) => {
-                const delta = (entry.risk_delta?.classification || "").toLowerCase();
-                const cls = riskDeltaClass(entry.risk_delta?.classification);
-                const riskPct = entry.risk_score != null ? `${(entry.risk_score * 100).toFixed(0)}%` : "n/a";
-                const arrow = trendArrow(entry.risk_delta?.classification);
-                const ago = formatRelative(entry.last_observed_at_unix_seconds);
-                const firstAgo = formatRelative(entry.first_observed_at_unix_seconds);
-                const action = suggestAction(entry);
-                const isHighlight = action === "ESCALATE" || delta === "spike";
-                const isNew = entry.last_observed_at_unix_seconds && (nowS - entry.last_observed_at_unix_seconds) < 7200;
-                const badges = [
-                  isHighlight ? `<span class="stl-badge stl-badge-spike">SPIKE</span>` : "",
-                  (!isHighlight && isNew) ? `<span class="stl-badge stl-badge-new">NEW</span>` : "",
-                ].join("");
-                const hasSite = !!entry.site_id;
-                const hasCanonical = !!entry.canonical_event_id;
-                const hasReplay = !!(entry.manifest_hash);
-                const regionId = escapeHtml(entry.region_id || timeline.scope_id || "");
-                return `
-                  <div class="passive-timeline-entry${isHighlight ? " stl-highlight" : ""}"
-                       data-canonical-id="${escapeHtml(entry.canonical_event_id)}"
-                       data-site-id="${escapeHtml(entry.site_id)}"
-                       data-region-id="${regionId}"
-                       data-manifest-hash="${escapeHtml(entry.manifest_hash || "")}"
-                       style="margin-bottom:8px; padding:8px; border-radius:5px; background:rgba(255,255,255,0.03); border:1px solid var(--line,#444);">
-                    <div class="stl-entry-headline">${escapeHtml(entry.event_type)} — ${escapeHtml(entry.site_name)}${badges}</div>
-                    <div class="stl-entry-trend">
-                      <span class="pill${cls ? " " + cls : ""}"><span aria-hidden="true">${arrow}</span>${escapeHtml(entry.risk_delta?.classification ?? "stable")}</span>
-                      <span>risk ${riskPct}</span>
-                      <span>${escapeHtml(entry.status)}</span>
-                      <span>${entry.support_count} signal${entry.support_count === 1 ? "" : "s"}</span>
-                    </div>
-                    <div class="stl-entry-when" title="first seen ${firstAgo}">last ${ago} · first ${firstAgo}</div>
-                    <div class="stl-quick-actions">
-                      <span class="pill ${actionPillClass(action)}" style="font-size:11px;">${actionLabel(action)}</span>
-                      ${hasCanonical ? `<button class="stl-qa-view" data-canonical-id="${escapeHtml(entry.canonical_event_id)}" data-site-id="${escapeHtml(entry.site_id)}" data-region-id="${regionId}">View Event</button>` : ""}
-                      ${hasSite ? `<button class="stl-qa-site" data-site-id="${escapeHtml(entry.site_id)}" data-region-id="${regionId}">Open Site</button>` : ""}
-                      ${hasReplay ? `<button class="stl-qa-replay" data-manifest-hash="${escapeHtml(entry.manifest_hash)}">Replay</button>` : ""}
-                    </div>
-                  </div>
-                `;
-              }).join("")}
-            </div>
-          </div>`;
-      }
-
-    function operationalPriorityClass(priority) {
-      if (priority === "critical" || priority === "high") return "failed";
-      if (priority === "medium") return "Warning";
-      return "ok";
-    }
-
-    function visibilityStateClass(stateValue) {
-      if (stateValue === "failing") return "danger";
-      if (stateValue === "degraded" || stateValue === "pressured") return "warn";
-      return "ok";
-    }
-
-    function regionOperationalState(regionId) {
-      return (state.passiveOperationalVisibility?.regions || [])
-        .find((r) => r.region_id === regionId)?.state ?? null;
-    }
-
-    function renderRegionVisibilityCard(regionId, withRunsButton) {
-      const vis = (state.passiveOperationalVisibility?.regions || [])
-        .find((r) => r.region_id === regionId);
-      if (!vis) return "";
-      return `<div class="card">
-        <h4>Operational State</h4>
-        <div class="meta">
-          <span class="pill ${visibilityStateClass(vis.state)}">${escapeHtml(vis.state)}</span>
-          <span>${vis.drivers.active_worker_count} active workers</span>
-          <span>${vis.drivers.stale_worker_count} stale workers</span>
-          <span>${vis.drivers.active_lease_count} active leases</span>
-          <span>${vis.drivers.stale_lease_count} stale leases</span>
+        <svg class="chart-svg" viewBox="0 0 300 64" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="riskGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#FF7C6E" stop-opacity="0.45"/>
+              <stop offset="1" stop-color="#FF7C6E" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <rect x="0" y="0" width="300" height="16" fill="rgba(255,124,110,0.05)"/>
+          <rect x="0" y="16" width="300" height="24" fill="rgba(241,201,107,0.05)"/>
+          <line x1="0" y1="16" x2="300" y2="16" stroke="rgba(160,190,220,0.1)" stroke-dasharray="2 3"/>
+          <line x1="0" y1="40" x2="300" y2="40" stroke="rgba(160,190,220,0.1)" stroke-dasharray="2 3"/>
+          <path id="risk-area" d="M 0 55 L 300 55 L 300 64 L 0 64 Z" fill="url(#riskGrad)"/>
+          <path id="risk-line" d="M 0 55 L 300 55" fill="none" stroke="#FF7C6E" stroke-width="1.5"/>
+        </svg>
+        <div class="chart-x-labels">
+          <span>-72H</span><span>-48H</span><span>-24H</span><span>NOW</span>
         </div>
-        <div class="meta" style="margin-top:8px">
-          <span>${vis.drivers.run_count} runs</span>
-          <span>${vis.drivers.recent_failed_run_count} failed</span>
-          <span>${vis.drivers.recent_partial_run_count} partial</span>
-          ${vis.drivers.cadence_gap_seconds != null ? `<span>gap ${formatSeconds(vis.drivers.cadence_gap_seconds)}</span>` : ""}
-        </div>
-        ${vis.narrative ? `<div class="meta" style="margin-top:8px">${escapeHtml(vis.narrative)}</div>` : ""}
-        ${withRunsButton ? `<div class="row" style="margin-top:8px">
-          <button class="secondary passive-open-region-runs" data-region-id="${escapeHtml(regionId)}">View Region Runs</button>
-        </div>` : ""}
-      </div>`;
-    }
+      </div>
+    </div>
 
-    function renderPassiveCommandCenterPanel(commandCenter) {
-      const target = $("passive-command-center");
-      if (!target) return;
-      if (!commandCenter) { renderEmpty(target, "No command center data."); return; }
-      const highlights = commandCenter.highlights || {};
-      const topRegion = highlights.top_region;
-      const topSite = highlights.top_site;
-      const topEvent = highlights.top_event;
-      const overallState = state.passiveOperationalVisibility?.overall_state ?? null;
-      const vis = state.passiveOperationalVisibility;
-      target.innerHTML = `
-        ${overallState ? `<div class="card">
-          <h4>Fleet State</h4>
-          <div class="meta">
-            <span class="pill ${visibilityStateClass(overallState)}">${escapeHtml(overallState)}</span>
-            <span>${vis.total_regions ?? 0} regions</span>
-            <span>${vis.active_workers ?? 0} active workers</span>
-            <span>${vis.active_leases ?? 0} active leases</span>
-            ${(vis.stale_leases ?? 0) > 0 ? `<span class="pill danger">${vis.stale_leases} stale leases</span>` : ""}
-            ${(vis.stale_workers ?? 0) > 0 ? `<span class="pill warn">${vis.stale_workers} stale workers</span>` : ""}
-          </div>
-          ${vis.narrative ? `<div class="meta" style="margin-top:8px">${escapeHtml(vis.narrative)}</div>` : ""}
-        </div>` : ""}
-        ${topRegion ? `<div class="card">
-          <h4>Top Region: ${escapeHtml(topRegion.name)}</h4>
-          <div class="meta">
-            <span class="${pillClass(operationalPriorityClass(topRegion.operational_pressure_priority))}">${escapeHtml(topRegion.operational_pressure_priority)}</span>
-            <span>${escapeHtml(topRegion.dominant_status ?? "no_canonical_state")}</span>
-          </div>
-          <div class="meta" style="margin-top:8px">${escapeHtml(topRegion.narrative_summary)}</div>
-          ${renderRegionVisibilityCard(topRegion.region_id, false)}
-          <div class="row" style="margin-top:8px">
-            <button class="secondary passive-open-region-overview" data-region-id="${escapeHtml(topRegion.region_id)}">Open Region</button>
-            <button class="secondary passive-open-region-runs" data-region-id="${escapeHtml(topRegion.region_id)}">View Runs</button>
-            <button class="secondary passive-open-worker-diagnostics" data-region-id="${escapeHtml(topRegion.region_id)}">Diagnostics</button>
-          </div>
-        </div>` : `<div class="empty">No top region data.</div>`}
-        ${topSite ? `<div class="card">
-          <h4>Top Site: ${escapeHtml(topSite.name)}</h4>
-          <div class="meta">
-            <span>${escapeHtml(topSite.site_type)}</span>
-            <span>risk ${(topSite.risk_score * 100).toFixed(0)}%</span>
-            <span>${escapeHtml(topSite.risk_trend)}</span>
-            <span>${escapeHtml(topSite.top_canonical_status ?? "no_canonical_state")}</span>
-          </div>
-          <div class="row" style="margin-top:8px">
-            <button class="secondary passive-refocus-site" data-site-id="${escapeHtml(topSite.site_id)}">Focus Site</button>
-          </div>
-        </div>` : ""}
-        ${topEvent ? `<div class="card">
-          <h4>Top Event: ${escapeHtml(topEvent.event_type)}</h4>
-          <div class="meta">
-            <span>${escapeHtml(topEvent.site_name)}</span>
-            <span>${escapeHtml(topEvent.status)}</span>
-            <span>${escapeHtml(topEvent.temporal_phase)}</span>
-          </div>
-          <div class="meta" style="margin-top:8px">${escapeHtml(topEvent.operational_readout)}</div>
-          <div class="row" style="margin-top:8px">
-            <button class="secondary passive-refocus-canonical" data-canonical-id="${escapeHtml(topEvent.canonical_event_id)}" data-site-id="${escapeHtml(topEvent.site_id)}">Focus Event</button>
-          </div>
-        </div>` : ""}
-        <div class="card">
-          <h4>Summary</h4>
-          <div class="meta">${escapeHtml(commandCenter.summary)}</div>
-        </div>`;
-    }
+    <!-- EVENT COMPOSITION -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">Event Composition</div>
+        <div class="panel-count" id="event-total">&#8212;</div>
+      </div>
+      <div id="event-composition-list" style="display:flex;flex-direction:column;gap:9px">
+        <div class="loading-shimmer" style="width:100%;margin:4px 0;height:3px"></div>
+        <div class="loading-shimmer" style="width:75%;margin:4px 0;height:3px"></div>
+        <div class="loading-shimmer" style="width:55%;margin:4px 0;height:3px"></div>
+      </div>
+    </div>
 
-    function operationalTrend(timeline) {
-      const buckets = timeline?.buckets || [];
-      const activeBuckets = buckets.filter((bucket) => (bucket.run_count || bucket.source_sample_count || bucket.source_failure_count));
-      if (activeBuckets.length < 2) return "stable";
-      const recent = activeBuckets.slice(-2).reduce((sum, bucket) => sum + (bucket.pressure_score || 0), 0) / Math.min(2, activeBuckets.length);
-      const previousSlice = activeBuckets.slice(0, Math.max(1, activeBuckets.length - 2));
-      const previous = previousSlice.reduce((sum, bucket) => sum + (bucket.pressure_score || 0), 0) / previousSlice.length;
-      if (recent - previous >= 0.18) return "rising";
-      if (previous - recent >= 0.18) return "cooling";
-      return "stable";
-    }
+  </aside>
 
-    function renderOperationalTimeline(timeline) {
-      const buckets = timeline?.buckets || [];
-      const snapshot = timeline?.current_snapshot;
-      const trend = operationalTrend(timeline);
-      const visibleBuckets = buckets.slice(-8);
-      return `
-        <div class="card">
-          <h4>Operational Timeline</h4>
-          <div class="meta">
-            <span class="${pillClass(operationalPriorityClass(snapshot?.pressure_priority ?? "low"))}">now ${escapeHtml(snapshot?.pressure_priority ?? "low")}</span>
-            <span>trend ${escapeHtml(trend)}</span>
-            <span>${timeline?.window_hours ?? 0}h window</span>
-            <span>${timeline?.bucket_hours ?? 0}h buckets</span>
-          </div>
-          <div class="timeline-strip" style="margin-top:10px">
-            ${visibleBuckets.map((bucket) => `
-              <span class="${pillClass(operationalPriorityClass(bucket.pressure_priority))}" title="${escapeHtml(bucket.summary)}">
-                ${escapeHtml(bucket.pressure_priority)} ${Math.round((bucket.pressure_score || 0) * 100)}%
-              </span>`).join("") || `<span class="pill">no buckets</span>`}
-          </div>
-          <div class="meta" style="margin-top:8px">
-            ${(visibleBuckets.find((bucket) => (bucket.suggested_read_paths || []).length)?.suggested_read_paths || []).slice(0, 4).map((path) => `<span>${escapeHtml(path)}</span>`).join("") || `<span>no bucket read paths</span>`}
-          </div>
-          <div class="meta" style="margin-top:10px">
-            <span>${snapshot?.active_lease_count ?? 0} active leases</span>
-            <span>${snapshot?.stale_lease_count ?? 0} stale leases</span>
-            <span>${snapshot?.active_worker_count ?? 0} active workers</span>
-            <span>${snapshot?.stale_worker_count ?? 0} stale workers</span>
-          </div>
-          <div class="meta" style="margin-top:8px">
-            <span>last run ${escapeHtml(snapshot?.latest_run_status ?? "none")}</span>
-            <span>${formatEpoch(snapshot?.latest_run_finished_at_unix_seconds)}</span>
-          </div>
-          <div class="meta" style="margin-top:8px">${escapeHtml(snapshot?.summary ?? "No operational snapshot yet.")}</div>
-        </div>`;
-    }
+  <!-- ============================================================
+       BOTTOM — TEMPORAL STRIP
+       ============================================================ -->
+  <footer class="bottom-bar">
+    <div class="time-label">
+      <span class="time-label-kicker">T &minus; 36h</span>
+      <span class="time-label-time" id="timeline-start-time">&#8212;</span>
+      <span class="time-label-date" id="timeline-start-date">&#8212;</span>
+    </div>
 
-    function renderOperationalVisibility(data) {
-      if (!data) return `<div class="empty">No operational visibility data.</div>`;
-      const regions = data.regions || [];
-      const workers = data.worker_heartbeats || [];
-      const activeLeases = data.active_region_leases || [];
-      const staleLeases = data.stale_region_leases || [];
-      return `
-        <div class="card">
-          <h4>Overall State</h4>
-          <div class="meta">
-            <span class="pill ${visibilityStateClass(data.overall_state)}">${escapeHtml(data.overall_state ?? "healthy")}</span>
-            <span>${data.total_regions ?? regions.length} regions</span>
-            <span>${data.active_workers ?? workers.length} active workers</span>
-            <span>${data.active_leases ?? activeLeases.length} active leases</span>
-            ${(data.stale_leases ?? staleLeases.length) > 0 ? `<span class="pill danger">${data.stale_leases ?? staleLeases.length} stale leases</span>` : ""}
-            ${(data.stale_workers ?? 0) > 0 ? `<span class="pill warn">${data.stale_workers} stale workers</span>` : ""}
-          </div>
-          ${data.narrative ? `<div class="meta" style="margin-top:8px">${escapeHtml(data.narrative)}</div>` : ""}
-          <div class="row" style="margin-top:10px">
-            ${(data.panel_paths || []).slice(0, 2).map((path) => `<button class="secondary passive-open-path" data-path="${escapeHtml(path)}">Open Panel</button>`).join("")}
-          </div>
-        </div>
-        ${regions.slice(0, 5).map((region) => `
-          <div class="card">
-            <h4>${escapeHtml(region.name ?? region.region_id)}</h4>
-            <div class="meta">
-              <span class="pill ${visibilityStateClass(region.state)}">${escapeHtml(region.state ?? "healthy")}</span>
-              <span class="${pillClass(operationalPriorityClass(region.pressure_priority))}">${escapeHtml(region.pressure_priority ?? "low")}</span>
-              ${region.latest_run_status ? `<span>${escapeHtml(region.latest_run_status)}</span>` : ""}
-            </div>
-            <div class="meta" style="margin-top:8px">
-              <span>${region.drivers?.active_worker_count ?? 0} active workers</span>
-              <span>${region.drivers?.stale_worker_count ?? 0} stale workers</span>
-              <span>${region.drivers?.active_lease_count ?? 0} active leases</span>
-              <span>${region.drivers?.stale_lease_count ?? 0} stale leases</span>
-            </div>
-            <div class="meta" style="margin-top:8px">
-              <span>${region.drivers?.run_count ?? 0} runs</span>
-              <span>${region.drivers?.recent_failed_run_count ?? 0} failed</span>
-              <span>${region.drivers?.recent_partial_run_count ?? 0} partial</span>
-              ${region.drivers?.cadence_gap_seconds != null ? `<span>gap ${escapeHtml(formatSeconds(region.drivers.cadence_gap_seconds))}</span>` : ""}
-            </div>
-            ${region.narrative ? `<div class="meta" style="margin-top:8px">${escapeHtml(region.narrative)}</div>` : ""}
-            <div class="row" style="margin-top:8px">
-              <button class="secondary passive-open-worker-diagnostics" data-region-id="${escapeHtml(region.region_id)}">Diagnostics</button>
-              <button class="secondary passive-open-region-runs" data-region-id="${escapeHtml(region.region_id)}">Runs</button>
-            </div>
-          </div>`).join("") || `<div class="empty">No regions in this scope.</div>`}
-        ${workers.slice(0, 3).map((hb) => `
-          <button class="secondary passive-open-heartbeat" data-worker-id="${escapeHtml(hb.worker_id)}" style="text-align:left">
-            <span class="meta">
-              <span>${escapeHtml(hb.worker_id.slice(0, 20))}</span>
-              <span>${escapeHtml(hb.status)}</span>
-              <span>${escapeHtml(hb.current_phase)}</span>
-              <span>${formatEpoch(hb.last_heartbeat_unix_seconds)}</span>
-            </span>
-          </button>`).join("")}
-        ${staleLeases.slice(0, 3).map((lease) => `
-          <div class="card">
-            <h4>${escapeHtml(lease.region_id)}</h4>
-            <div class="meta">
-              <span class="pill danger">stale lease</span>
-              <span>${escapeHtml(lease.worker_id.slice(0, 20))}</span>
-              <span>${lease.heartbeat_lag_seconds}s lag</span>
-            </div>
-          </div>`).join("")}`;
-    }
+    <div class="timeline-container" id="timeline">
+      <div class="timeline-track"></div>
+      <div class="future-window" style="left: 60%; right: 0;"></div>
 
-    function dashboardSemanticFilterButtons(activeFilter) {
-      const filters = [
-        { value: "all", label: "All" },
-        { value: "new", label: "New" },
-        { value: "recurring", label: "Recurring" },
-        { value: "escalating", label: "Escalating" },
-        { value: "cooling", label: "Cooling" },
-      ];
-      return filters.map((filter) => `
-        <button class="${activeFilter === filter.value ? "" : "secondary "}passive-semantic-filter" data-filter="${filter.value}">
-          ${filter.label}
-          </button>`).join("");
+      <!-- Static ticks -->
+      <div class="timeline-tick" style="left: 16.6%"><div class="timeline-tick-label">-30H</div></div>
+      <div class="timeline-tick" style="left: 33.3%"><div class="timeline-tick-label">-24H</div></div>
+      <div class="timeline-tick" style="left: 50%"><div class="timeline-tick-label">-12H</div></div>
+      <div class="timeline-tick" style="left: 75%"><div class="timeline-tick-label">+12H</div></div>
+      <div class="timeline-tick" style="left: 91.6%"><div class="timeline-tick-label">+24H</div></div>
+
+      <!-- Events populated by JS -->
+      <div id="timeline-events"></div>
+
+      <!-- Now marker at 60% -->
+      <div class="now-marker" style="left: 60%"></div>
+    </div>
+
+    <div class="time-label right">
+      <span class="time-label-kicker">T + 36h</span>
+      <span class="time-label-time" id="timeline-end-time">&#8212;</span>
+      <span class="time-label-date" id="timeline-end-date">&#8212;</span>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+/* ============================================================
+   OPERATIONAL GLOBE — Three.js r128
+   ============================================================ */
+
+const canvas = document.getElementById('globe-canvas');
+const container = canvas.parentElement;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(
+  35,
+  container.clientWidth / container.clientHeight,
+  0.1, 1000
+);
+camera.position.set(0, 0.2, 4.2);
+
+const renderer = new THREE.WebGLRenderer({
+  canvas: canvas,
+  antialias: true,
+  alpha: true
+});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(container.clientWidth, container.clientHeight);
+renderer.setClearColor(0x000000, 0);
+
+// --- Globe sphere ---
+const globeGeo = new THREE.SphereGeometry(1.5, 96, 96);
+const globeMat = new THREE.MeshBasicMaterial({
+  color: 0x0a1825,
+  transparent: true,
+  opacity: 0.85
+});
+const globe = new THREE.Mesh(globeGeo, globeMat);
+scene.add(globe);
+
+// --- Wireframe overlay ---
+const wireGeo = new THREE.SphereGeometry(1.505, 48, 32);
+const wireMat = new THREE.MeshBasicMaterial({
+  color: 0x4FE0D0,
+  wireframe: true,
+  transparent: true,
+  opacity: 0.09
+});
+const wireframe = new THREE.Mesh(wireGeo, wireMat);
+scene.add(wireframe);
+
+// --- Atmospheric glow ---
+const glowGeo = new THREE.SphereGeometry(1.58, 64, 64);
+const glowMat = new THREE.ShaderMaterial({
+  uniforms: {},
+  vertexShader: `
+    varying vec3 vNormal;
+    varying vec3 vPos;
+    void main() {
+      vNormal = normalize(normalMatrix * normal);
+      vPos = position;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    varying vec3 vNormal;
+    varying vec3 vPos;
+    void main() {
+      float intensity = pow(0.7 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.5);
+      vec3 color = mix(vec3(0.31, 0.88, 0.82), vec3(0.61, 0.55, 1.0), smoothstep(-1.0, 1.0, vPos.y));
+      gl_FragColor = vec4(color, 1.0) * intensity * 0.65;
+    }
+  `,
+  blending: THREE.AdditiveBlending,
+  side: THREE.BackSide,
+  transparent: true
+});
+const glow = new THREE.Mesh(glowGeo, glowMat);
+scene.add(glow);
+
+// --- Utility: lat/lng to Three.js Vector3 ---
+function latLngToVec3(lat, lng, r) {
+  const phi   = (90 - lat) * (Math.PI / 180);
+  const theta = (lng + 180) * (Math.PI / 180);
+  return new THREE.Vector3(
+    -r * Math.sin(phi) * Math.cos(theta),
+     r * Math.cos(phi),
+     r * Math.sin(phi) * Math.sin(theta)
+  );
+}
+
+// --- Continental landmass dots (procedural) ---
+function createLandmassDots() {
+  const group = new THREE.Group();
+  const landmasses = [
+    { lat: [35,  60], lng: [-10,  40], density: 0.55 },
+    { lat: [-35, 35], lng: [-18,  50], density: 0.4  },
+    { lat: [10,  70], lng: [ 40, 140], density: 0.45 },
+    { lat: [15,  70], lng: [-170,-55], density: 0.4  },
+    { lat: [-55, 12], lng: [-82, -35], density: 0.45 },
+    { lat: [-40,-10], lng: [112, 155], density: 0.5  },
+  ];
+  const dotGeo = new THREE.SphereGeometry(0.007, 6, 6);
+  const dotMat = new THREE.MeshBasicMaterial({ color: 0x3a5d7a, transparent: true, opacity: 0.6 });
+  for (const lm of landmasses) {
+    const count = Math.floor((lm.lat[1]-lm.lat[0]) * (lm.lng[1]-lm.lng[0]) * lm.density * 0.15);
+    for (let i = 0; i < count; i++) {
+      if (Math.random() > 0.6) continue;
+      const lat = lm.lat[0] + Math.random() * (lm.lat[1] - lm.lat[0]);
+      const lng = lm.lng[0] + Math.random() * (lm.lng[1] - lm.lng[0]);
+      const dot = new THREE.Mesh(dotGeo, dotMat);
+      dot.position.copy(latLngToVec3(lat, lng, 1.51));
+      group.add(dot);
+    }
+  }
+  return group;
+}
+
+const landmassDots = createLandmassDots();
+scene.add(landmassDots);
+
+// --- Lat / longitude grid lines ---
+function createGrid() {
+  const group = new THREE.Group();
+  const mat = new THREE.LineBasicMaterial({ color: 0x4FE0D0, transparent: true, opacity: 0.08 });
+  for (let lat = -60; lat <= 60; lat += 30) {
+    const pts = [];
+    for (let lng = 0; lng <= 360; lng += 4) pts.push(latLngToVec3(lat, lng, 1.51));
+    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
+  }
+  for (let lng = 0; lng < 360; lng += 30) {
+    const pts = [];
+    for (let lat = -90; lat <= 90; lat += 4) pts.push(latLngToVec3(lat, lng, 1.51));
+    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
+  }
+  return group;
+}
+scene.add(createGrid());
+
+// --- Equator highlight ---
+(function() {
+  const pts = [];
+  for (let lng = 0; lng <= 360; lng += 2) pts.push(latLngToVec3(0, lng, 1.512));
+  scene.add(new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color: 0x4FE0D0, transparent: true, opacity: 0.25 })
+  ));
+})();
+
+// --- Site rendering ---
+const siteColors = { critical: 0xFF7C6E, elevated: 0xF1C96B, active: 0x4FE0D0, healthy: 0x8EE59B };
+const siteMeshes = [];
+
+function addSiteToGlobe(site) {
+  const pos   = latLngToVec3(site.lat, site.lng, 1.515);
+  const color = siteColors[site.level] || siteColors.active;
+  const size  = site.level === 'critical' ? 0.025 : site.level === 'elevated' ? 0.02 : 0.014;
+
+  const dot = new THREE.Mesh(
+    new THREE.SphereGeometry(size, 10, 10),
+    new THREE.MeshBasicMaterial({ color })
+  );
+  dot.position.copy(pos);
+  scene.add(dot);
+  siteMeshes.push({ mesh: dot, level: site.level, basePos: pos.clone() });
+
+  // Halo ring
+  const halo = new THREE.Mesh(
+    new THREE.RingGeometry(size * 1.8, size * 2.2, 24),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5, side: THREE.DoubleSide })
+  );
+  halo.position.copy(pos);
+  halo.lookAt(0, 0, 0);
+  scene.add(halo);
+
+  // Beam + pulse for critical / elevated
+  if (site.level === 'critical' || site.level === 'elevated') {
+    const dir        = pos.clone().normalize();
+    const beamLength = site.level === 'critical' ? 0.3 : 0.18;
+    const beam = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.003, 0.008, beamLength, 8, 1, true),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5, side: THREE.DoubleSide })
+    );
+    beam.position.copy(pos.clone().add(dir.clone().multiplyScalar(beamLength / 2)));
+    beam.lookAt(pos.clone().multiplyScalar(2));
+    beam.rotateX(Math.PI / 2);
+    scene.add(beam);
+
+    const pulse = new THREE.Mesh(
+      new THREE.RingGeometry(size * 2, size * 2.3, 32),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, side: THREE.DoubleSide })
+    );
+    pulse.position.copy(pos);
+    pulse.lookAt(0, 0, 0);
+    scene.add(pulse);
+    siteMeshes.push({ mesh: pulse, pulse: true, basePos: pos.clone(), level: site.level });
+  }
+}
+
+// --- Default fallback sites (used if API returns nothing) ---
+const defaultSites = [
+  { lat: 38.71, lng: -9.14, level: 'active',   label: 'Lisbon Node' },
+  { lat: 41.15, lng: -8.61, level: 'active',   label: 'Porto Grid' },
+  { lat: 40.41, lng: -3.70, level: 'elevated', label: 'Madrid Cluster' },
+  { lat: 48.85, lng:  2.35, level: 'healthy',  label: 'Paris Node' },
+  { lat: 51.50, lng: -0.12, level: 'active',   label: 'London Ops' },
+  { lat: 52.52, lng: 13.40, level: 'healthy',  label: 'Berlin Hub' },
+  { lat: 40.63, lng:-73.93, level: 'healthy',  label: 'NY East' },
+  { lat: 35.68, lng:139.69, level: 'healthy',  label: 'Tokyo Main' },
+];
+
+defaultSites.forEach(addSiteToGlobe);
+
+// --- Arc connections ---
+function createArc(startLat, startLng, endLat, endLng, color) {
+  const start = latLngToVec3(startLat, startLng, 1.51);
+  const end   = latLngToVec3(endLat,   endLng,   1.51);
+  const mid   = start.clone().add(end).multiplyScalar(0.5);
+  mid.normalize().multiplyScalar(mid.length() + 0.35);
+  const curve = new THREE.QuadraticBezierCurve3(start, mid, end);
+  const geo   = new THREE.BufferGeometry().setFromPoints(curve.getPoints(60));
+  return new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.5 }));
+}
+
+scene.add(createArc(38.71, -9.14, 40.41, -3.70, 0x4FE0D0));
+scene.add(createArc(40.41, -3.70, 48.85,  2.35, 0xF1C96B));
+scene.add(createArc(51.50, -0.12, 48.85,  2.35, 0x4FE0D0));
+
+// --- Orbital ring + satellite ---
+(function() {
+  const orbit = new THREE.Mesh(
+    new THREE.RingGeometry(2.0, 2.003, 128),
+    new THREE.MeshBasicMaterial({ color: 0x9B8CFF, transparent: true, opacity: 0.25, side: THREE.DoubleSide })
+  );
+  orbit.rotation.x = Math.PI * 0.55;
+  orbit.rotation.y = Math.PI * 0.15;
+  scene.add(orbit);
+
+  const satellite = new THREE.Mesh(
+    new THREE.SphereGeometry(0.018, 8, 8),
+    new THREE.MeshBasicMaterial({ color: 0x9B8CFF })
+  );
+  scene.add(satellite);
+  window.__satellite = { mesh: satellite, orbit };
+})();
+
+// --- Particle field (stars) ---
+(function() {
+  const count     = 400;
+  const geometry  = new THREE.BufferGeometry();
+  const positions = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const r     = 8 + Math.random() * 4;
+    const theta = Math.random() * Math.PI * 2;
+    const phi   = Math.acos(2 * Math.random() - 1);
+    positions[i*3]   = r * Math.sin(phi) * Math.cos(theta);
+    positions[i*3+1] = r * Math.sin(phi) * Math.sin(theta);
+    positions[i*3+2] = r * Math.cos(phi);
+  }
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  scene.add(new THREE.Points(geometry, new THREE.PointsMaterial({
+    color: 0x9EB3C8, size: 0.025, transparent: true, opacity: 0.6
+  })));
+})();
+
+// --- Animation loop ---
+const clock = new THREE.Clock();
+let frames = 0, lastFpsUpdate = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+
+  globe.rotation.y       += 0.0008;
+  wireframe.rotation.y   += 0.0008;
+  landmassDots.rotation.y += 0.0008;
+
+  siteMeshes.forEach(s => {
+    if (s.pulse) {
+      const scale = 1 + Math.sin(t * 2.5 + (s.basePos ? s.basePos.x * 10 : 0)) * 0.35;
+      s.mesh.scale.set(scale, scale, scale);
+      s.mesh.material.opacity = 0.6 - Math.abs(Math.sin(t * 2.5)) * 0.4;
+    }
+  });
+
+  if (window.__satellite) {
+    const r     = 2.0;
+    const angle = t * 0.12;
+    const x = Math.cos(angle) * r;
+    const y = Math.sin(angle) * r * 0.3;
+    const z = Math.sin(angle) * r;
+    window.__satellite.mesh.position.set(x, y, z);
+    window.__satellite.mesh.position.applyAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI * 0.55);
+    window.__satellite.mesh.position.applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI * 0.15);
+  }
+
+  camera.position.x = Math.sin(t * 0.1) * 0.08;
+  camera.position.y = 0.2 + Math.cos(t * 0.13) * 0.04;
+  camera.lookAt(0, 0, 0);
+
+  renderer.render(scene, camera);
+
+  frames++;
+  if (t - lastFpsUpdate > 1) {
+    const fpsel = document.getElementById('fps');
+    if (fpsel) fpsel.textContent = frames;
+    frames = 0;
+    lastFpsUpdate = t;
+  }
+}
+animate();
+
+// --- Resize handling ---
+window.addEventListener('resize', () => {
+  camera.aspect = container.clientWidth / container.clientHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(container.clientWidth, container.clientHeight);
+});
+
+// --- Mouse parallax ---
+let targetRotX = 0, targetRotY = 0;
+container.addEventListener('mousemove', e => {
+  const rect = container.getBoundingClientRect();
+  targetRotY = (e.clientX - rect.left) / rect.width  - 0.5;
+  targetRotX = -((e.clientY - rect.top)  / rect.height - 0.5);
+});
+
+(function applyParallax() {
+  requestAnimationFrame(applyParallax);
+  camera.position.x += (targetRotY * 0.3 - camera.position.x) * 0.05;
+  camera.position.y += (0.2 + targetRotX * 0.3 - camera.position.y) * 0.05;
+})();
+
+// --- Chip interactions ---
+document.querySelectorAll('.chip-group').forEach(group => {
+  group.querySelectorAll('.chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      group.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+    });
+  });
+});
+
+// --- Legend toggles ---
+document.querySelectorAll('.legend-toggle').forEach(t => {
+  t.addEventListener('click', () => t.classList.toggle('on'));
+});
+
+// --- Simulated telemetry drift ---
+setInterval(() => {
+  const lat = (38.7139 + (Math.random() - 0.5) * 0.0004).toFixed(4);
+  const lon = (-9.1400 + (Math.random() - 0.5) * 0.0004).toFixed(4);
+  const latEl = document.getElementById('tel-lat');
+  const lonEl = document.getElementById('tel-lon');
+  if (latEl) latEl.textContent = lat + '\u00b0N';
+  if (lonEl) lonEl.textContent = lon + '\u00b0';
+}, 2000);
+
+/* ============================================================
+   API INTEGRATION
+   ============================================================ */
+
+const API = {
+  async get(path) {
+    const res = await fetch(path);
+    const json = await res.json();
+    if (!res.ok) throw new Error((json.error && json.error.message) || 'HTTP ' + res.status);
+    return json.data !== undefined ? json.data : json;
+  }
+};
+
+function timeAgo(isoStr) {
+  if (!isoStr) return '\u2014';
+  const diff = Math.floor((Date.now() - new Date(isoStr)) / 1000);
+  if (diff < 60)  return diff + 's ago';
+  if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+  return Math.floor(diff / 86400) + 'd ago';
+}
+
+function levelClass(level) {
+  const l = (level || '').toLowerCase();
+  if (l === 'critical') return 'critical';
+  if (l === 'elevated') return 'elevated';
+  if (l === 'resolved' || l === 'healthy') return 'resolved';
+  return 'active';
+}
+
+function priorityClass(idx) {
+  if (idx === 0) return 'p1';
+  if (idx === 1) return 'p1';
+  if (idx <= 3)  return 'p2';
+  return 'p3';
+}
+
+// --- What Changed ---
+async function refreshWhatChanged() {
+  try {
+    const data = await API.get('/v1/passive/map/canonical-events');
+    const events = Array.isArray(data) ? data : (data.events || data.items || []);
+    const list = document.getElementById('what-changed-list');
+    const count = document.getElementById('changes-count');
+    if (!list) return;
+    if (!events.length) {
+      list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">No recent events.</div>';
+      if (count) count.textContent = '0';
+      return;
+    }
+    if (count) count.textContent = events.length + ' new';
+    list.innerHTML = events.slice(0, 7).map(ev => {
+      const cls = levelClass(ev.level || ev.severity);
+      const typeLabel = (ev.event_type || ev.kind || 'event').toUpperCase().replace(/_/g, ' ');
+      const titleText = ev.title || ev.summary || ev.description || 'Unnamed event';
+      const when = timeAgo(ev.created_at || ev.timestamp);
+      return '<div class="change-item">'
+        + '<div class="change-marker ' + cls + '"></div>'
+        + '<div class="change-body">'
+        + '<div class="change-meta">'
+        + '<span class="change-type">' + typeLabel + '</span>'
+        + '<span class="change-time">' + when + '</span>'
+        + '</div>'
+        + '<div class="change-title">' + titleText + '</div>'
+        + '</div></div>';
+    }).join('');
+  } catch (_) { /* leave loading state */ }
+}
+
+// --- Narrative ---
+async function refreshNarrative() {
+  try {
+    const data = await API.get('/v1/passive/command-center/summary');
+    const narEl = document.getElementById('narrative-text');
+    const metaEl = document.getElementById('narrative-meta');
+    const verEl  = document.getElementById('narrative-version');
+    if (!narEl) return;
+    const summary = data.summary || data.narrative || data.description;
+    if (summary) {
+      narEl.textContent = summary;
+      narEl.style.color = '';
+    }
+    if (metaEl) {
+      const drivers = data.driver_count || (data.drivers && data.drivers.length) || 0;
+      const sources = data.source_count || (data.sources && data.sources.length) || 0;
+      const conf    = data.confidence != null ? data.confidence.toFixed(2) : '\u2014';
+      metaEl.innerHTML =
+        '<span>DRIVERS \u00b7 ' + drivers + '</span>' +
+        '<span>SOURCES \u00b7 ' + sources + '</span>' +
+        '<span>CONFIDENCE \u00b7 ' + conf + '</span>';
+    }
+    if (verEl && data.version) verEl.textContent = 'v' + data.version;
+  } catch (_) { /* leave loading */ }
+}
+
+// --- Source Health ---
+async function refreshSourceHealth() {
+  try {
+    const data = await API.get('/v1/passive/operational-visibility');
+    const grid  = document.getElementById('source-health-list');
+    const cnt   = document.getElementById('source-count');
+    if (!grid) return;
+    const sources = data.sources || data.feeds || data.source_health || [];
+    if (!sources.length) {
+      grid.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">No source data.</div>';
+      return;
+    }
+    const healthy = sources.filter(s => (s.score || s.health || 0) >= 75).length;
+    if (cnt) cnt.textContent = healthy + ' / ' + sources.length;
+    grid.innerHTML = sources.map(s => {
+      const score  = Math.round(s.score || s.health || 0);
+      const name   = (s.name || s.source_id || 'SOURCE').toUpperCase().replace(/_/g, '-');
+      const cls    = score >= 80 ? 'healthy' : score >= 50 ? 'degraded' : 'failing';
+      return '<div class="source-row">'
+        + '<div class="source-name">' + name.substring(0, 12) + '</div>'
+        + '<div class="source-bar"><div class="source-bar-fill ' + cls + '" style="width:' + score + '%"></div></div>'
+        + '<div class="source-value">' + score + '</div>'
+        + '</div>';
+    }).join('');
+    // Update sys-status too
+    const sysEl = document.getElementById('sys-sources');
+    if (sysEl) sysEl.textContent = healthy + ' / ' + sources.length + ' sources';
+  } catch (_) {
+    // Fallback: show default source names
+    const grid = document.getElementById('source-health-list');
+    if (grid) grid.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">Source data unavailable.</div>';
+  }
+}
+
+// --- Provenance ---
+async function refreshProvenance() {
+  try {
+    const data  = await API.get('/v1/ingest/batches');
+    const list  = document.getElementById('provenance-list');
+    if (!list) return;
+    const batches = Array.isArray(data) ? data : (data.batches || data.items || []);
+    if (!batches.length) {
+      list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">No ingest batches yet.</div>';
+      return;
+    }
+    list.innerHTML = batches.slice(0, 3).map(b => {
+      const id   = b.batch_id || b.id || 'unknown';
+      const kind = (b.source || b.kind || 'INGEST').toUpperCase();
+      const when = timeAgo(b.created_at || b.ingested_at);
+      return '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed var(--line);cursor:pointer;">'
+        + '<div>'
+        + '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);letter-spacing:0.08em;">' + kind + '</div>'
+        + '<div style="font-size:12px;color:var(--text-primary);margin-top:2px;">' + id.substring(0, 24) + '</div>'
+        + '</div>'
+        + '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);align-self:center;">' + when + '</div>'
+        + '</div>';
+    }).join('');
+  } catch (_) { /* leave */ }
+}
+
+// --- Op Picture ---
+async function refreshOpPicture() {
+  try {
+    const [regData, siteData, evData] = await Promise.all([
+      API.get('/v1/passive/map/regions'),
+      API.get('/v1/passive/map/sites'),
+      API.get('/v1/passive/map/canonical-events'),
+    ]);
+    const regions  = Array.isArray(regData)  ? regData  : (regData.regions   || regData.items   || []);
+    const sites    = Array.isArray(siteData)  ? siteData : (siteData.sites    || siteData.items  || []);
+    const events   = Array.isArray(evData)    ? evData   : (evData.events     || evData.items    || []);
+
+    const activeRegions = regions.filter(r => r.active || r.status === 'active').length;
+    const elevSites     = sites.filter(s => {
+      const l = (s.level || s.status || '').toLowerCase();
+      return l === 'critical' || l === 'elevated';
+    }).length;
+    const liveEvents = events.length;
+
+    const opR  = document.getElementById('op-regions');
+    const opS  = document.getElementById('op-sites');
+    const opEv = document.getElementById('op-events');
+    const opMsg = document.getElementById('op-message');
+
+    if (opR)  opR.textContent  = activeRegions || regions.length;
+    if (opS)  opS.textContent  = elevSites;
+    if (opEv) opEv.textContent = liveEvents;
+    if (opMsg) {
+      if (liveEvents === 0 && sites.length === 0) {
+        opMsg.innerHTML = 'No active sites or events. Awaiting data ingestion.';
+      } else {
+        opMsg.innerHTML = '<strong>' + elevSites + ' site' + (elevSites === 1 ? '' : 's') + '</strong> elevated &middot; '
+          + liveEvents + ' event' + (liveEvents === 1 ? '' : 's') + ' live across '
+          + regions.length + ' region' + (regions.length === 1 ? '' : 's') + '.';
       }
-
-    function dashboardPressureFilterButtons(activeFilter) {
-      const filters = [
-        { value: "all", label: "All" },
-        { value: "low", label: "Low" },
-        { value: "medium", label: "Medium" },
-        { value: "high", label: "High" },
-        { value: "critical", label: "Critical" },
-      ];
-        return filters.map((filter) => `
-        <button class="${activeFilter === filter.value ? "" : "secondary "}passive-pressure-filter" data-filter="${filter.value}">
-          ${filter.label}
-          </button>`).join("");
     }
 
-    function dashboardAttentionKindButtons(activeFilter) {
-      const filters = [
-        { value: "all", label: "All" },
-        { value: "maintenance", label: "Maintenance" },
-        { value: "canonical_event", label: "Events" },
-        { value: "site", label: "Sites" },
-        { value: "region", label: "Regions" },
-      ];
-      return filters.map((filter) => `
-        <button class="${activeFilter === filter.value ? "" : "secondary "}passive-attention-kind-filter" data-filter="${filter.value}">
-          ${filter.label}
-        </button>`).join("");
-    }
-
-    function dashboardAttentionPriorityButtons(activeFilter) {
-      const filters = [
-        { value: "all", label: "All" },
-        { value: "medium", label: "Medium+" },
-        { value: "high", label: "High+" },
-        { value: "critical", label: "Critical" },
-      ];
-      return filters.map((filter) => `
-        <button class="${activeFilter === filter.value ? "" : "secondary "}passive-attention-priority-filter" data-filter="${filter.value}">
-          ${filter.label}
-        </button>`).join("");
-    }
-
-    function updatePassiveMapSummary(region, sites, canonicalEvents, visibleRegionCount) {
-      const focusedEvent = state.selectedPassiveCanonicalEventId
-        ? canonicalEvents.find((event) => event.canonical_event_id === state.selectedPassiveCanonicalEventId)
-        : null;
-      const focusedSite = state.selectedPassiveSiteId
-        ? sites.find((site) => site.site_id === state.selectedPassiveSiteId)
-        : null;
-      const highlightedSiteIds = new Set(
-        canonicalEvents
-          .map((event) => event.site_id)
-          .filter(Boolean)
-      );
-      const operationalTimeline = state.selectedPassiveOperationalTimeline;
-      const operationalSnapshot = operationalTimeline?.current_snapshot;
-      state.passiveMapSummary = {
-        visibleRegionCount: visibleRegionCount ?? 0,
-        visibleSiteCount: sites.length,
-        visibleCanonicalEventCount: canonicalEvents.length,
-        highlightedSiteCount: highlightedSiteIds.size,
-        selectedRegionId: state.selectedPassiveRegionId,
-        selectedRegionName: region?.name ?? null,
-        selectedSiteId: state.selectedPassiveSiteId,
-        selectedSiteName: focusedSite?.name ?? null,
-        selectedEventId: state.selectedPassiveCanonicalEventId,
-        selectedEventType: focusedEvent?.event_type ?? null,
-        selectedEventStatus: focusedEvent?.status ?? null,
-        operationalTrend: operationalTrend(operationalTimeline),
-        operationalPriority: operationalSnapshot?.pressure_priority ?? null,
-      };
-      return state.passiveMapSummary;
-    }
-
-    function renderPassiveCommandContext(maintenance, commandCenter) {
-      const summary = state.passiveMapSummary || {
-        visibleRegionCount: 0,
-        visibleSiteCount: 0,
-        visibleCanonicalEventCount: 0,
-        highlightedSiteCount: 0,
-        selectedRegionId: state.selectedPassiveRegionId,
-        selectedRegionName: null,
-        selectedSiteId: state.selectedPassiveSiteId,
-        selectedSiteName: null,
-        selectedEventId: state.selectedPassiveCanonicalEventId,
-        selectedEventType: null,
-        selectedEventStatus: null,
-        operationalTrend: state.selectedPassiveOperationalTimeline ? operationalTrend(state.selectedPassiveOperationalTimeline) : null,
-        operationalPriority: state.selectedPassiveOperationalTimeline?.current_snapshot?.pressure_priority ?? null,
-      };
-      const semanticFilter = state.passiveSemanticFilter || "all";
-      const pressureFilter = state.passivePressureFilter || "all";
-      const highlights = commandCenter?.highlights || {};
-      const topRegion = highlights.top_region || null;
-      const topSite = highlights.top_site || null;
-      const topEvent = highlights.top_event || null;
-      const operatorPaths = commandCenter?.operator_paths || [];
-      const focusPaths = commandCenter?.focus_paths || [];
-      return `
-        <div class="card">
-          <h4>Command Context</h4>
-          <div class="meta">
-            <span class="pill">${escapeHtml(semanticFilter === "all" ? "semantics all" : `semantics ${semanticFilter}`)}</span>
-            <span class="pill">${escapeHtml(pressureFilter === "all" ? "pressure all" : `pressure ${pressureFilter}`)}</span>
-            <span>${escapeHtml(summary.selectedRegionName ?? summary.selectedRegionId ?? "no selected region")}</span>
-          </div>
-          <div class="meta" style="margin-top:8px">
-            <span>${summary.visibleRegionCount ?? 0} visible regions</span>
-            <span>${summary.visibleSiteCount ?? 0} visible sites</span>
-            <span>${summary.visibleCanonicalEventCount ?? 0} visible canonical events</span>
-            <span>${summary.highlightedSiteCount ?? 0} highlighted sites</span>
-          </div>
-          <div class="meta" style="margin-top:8px">
-            <span>site ${escapeHtml(summary.selectedSiteName ?? summary.selectedSiteId ?? "none")}</span>
-            <span>${summary.selectedEventType ? `${escapeHtml(summary.selectedEventType)} ${escapeHtml(summary.selectedEventStatus ?? "")}` : "no focused phenomenon"}</span>
-          </div>
-          <div class="meta" style="margin-top:8px">
-            <span>ops ${escapeHtml(summary.operationalTrend ?? "n/a")}</span>
-            <span>now ${escapeHtml(summary.operationalPriority ?? "n/a")}</span>
-            <span>${maintenance?.stale_heartbeat_count ?? 0} stale heartbeat candidates</span>
-            <span>${maintenance?.source_health_prune_candidate_count ?? 0} source prune candidates</span>
-          </div>
-          <div class="meta" style="margin-top:8px">
-            <span>top_region ${escapeHtml(topRegion?.name ?? "none")}</span>
-            <span>top_site ${escapeHtml(topSite?.name ?? "none")}</span>
-            <span>top_event ${escapeHtml(topEvent?.event_type ?? "none")}</span>
-          </div>
-          ${commandCenter?.summary ? `<div class="meta" style="margin-top:8px"><span>${escapeHtml(commandCenter.summary)}</span></div>` : ""}
-          ${topEvent?.operational_readout ? `<div class="meta" style="margin-top:8px"><span>${escapeHtml(topEvent.operational_readout)}</span></div>` : ""}
-          <div class="meta" style="margin-top:8px">
-            <span>Operator Paths</span>
-            ${operatorPaths.slice(0, 3).map((path) => `<span>${escapeHtml(path)}</span>`).join("") || `<span>none</span>`}
-          </div>
-          <div class="meta" style="margin-top:8px">
-            <span>Focus Paths</span>
-            ${focusPaths.slice(0, 3).map((path) => `<span>${escapeHtml(path)}</span>`).join("") || `<span>none</span>`}
-          </div>
-          <div class="row" style="margin-top:10px">
-            ${semanticFilter !== "all" ? `<button class="secondary passive-reset-semantic-filter">Show All Semantics</button>` : ""}
-            ${pressureFilter !== "all" ? `<button class="secondary passive-reset-pressure-filter">Show All Pressure</button>` : ""}
-            ${summary.selectedEventId ? `<button class="secondary passive-refocus-canonical" data-canonical-id="${escapeHtml(summary.selectedEventId)}" data-site-id="${escapeHtml(summary.selectedSiteId ?? "")}">Focus Selected Event</button>` : ""}
-            ${summary.selectedSiteId ? `<button class="secondary passive-refocus-site" data-site-id="${escapeHtml(summary.selectedSiteId)}">Focus Selected Site</button>` : ""}
-            ${summary.selectedRegionId ? `<button class="secondary passive-open-region-overview" data-region-id="${escapeHtml(summary.selectedRegionId)}">Open Selected Region</button>` : ""}
-            ${topEvent?.canonical_event_id ? `<button class="secondary passive-refocus-canonical" data-canonical-id="${escapeHtml(topEvent.canonical_event_id)}" data-site-id="${escapeHtml(topEvent.site_id ?? "")}">Focus Top Event</button>` : ""}
-            ${topSite?.site_id ? `<button class="secondary passive-refocus-site" data-site-id="${escapeHtml(topSite.site_id)}">Focus Top Site</button>` : ""}
-            ${topRegion?.region_id ? `<button class="secondary passive-open-region-overview" data-region-id="${escapeHtml(topRegion.region_id)}">Open Top Region</button>` : ""}
-          </div>
-        </div>`;
-    }
-
-    function refreshPassiveDashboardSurface() {
-      if (state.passiveDashboardSummary && state.passiveMaintenanceSummary) {
-        renderPassiveDashboard(
-          state.passiveDashboardSummary,
-          state.passiveMaintenanceSummary,
-          state.passiveCommandCenterSummary,
-        );
-      }
-    }
-
-    function attentionItemDataAttrs(item) {
-      return `data-attention-item-id="${escapeHtml(item.item_id ?? "")}"
-        data-attention-kind="${escapeHtml(item.kind ?? "")}"
-        data-attention-priority="${escapeHtml(item.priority ?? "")}"
-        data-attention-title="${escapeHtml(item.title ?? "")}"
-        data-attention-reason="${escapeHtml(item.reason ?? "")}"
-        data-attention-action-label="${escapeHtml(item.primary_action_label ?? "")}"
-        data-region-id="${escapeHtml(item.region_id ?? "")}"
-        data-site-id="${escapeHtml(item.site_id ?? "")}"
-        data-canonical-id="${escapeHtml(item.canonical_event_id ?? "")}"`;
-    }
-
-    function setPassiveSelectedAttentionFromDataset(dataset) {
-      if (!dataset?.attentionItemId) return false;
-      state.passiveSelectedAttention = {
-        item_id: dataset.attentionItemId,
-        kind: dataset.attentionKind || null,
-        priority: dataset.attentionPriority || null,
-        title: dataset.attentionTitle || null,
-        reason: dataset.attentionReason || null,
-        primary_action_label: dataset.attentionActionLabel || null,
-        region_id: dataset.regionId || null,
-        site_id: dataset.siteId || null,
-        canonical_event_id: dataset.canonicalId || null,
-      };
-      refreshPassiveDashboardSurface();
-      return true;
-    }
-
-    function selectedPassiveAttentionItem() {
-      const attention = state.passiveSelectedAttention;
-      if (!attention?.item_id) return null;
-      const queue = state.passiveCommandCenterSummary?.attention_queue || [];
-      return queue.find((item) => item.item_id === attention.item_id) || attention;
-    }
-
-    function renderPassiveAttentionPrimaryAction(item) {
-      if (!item) return "";
-      if (item.kind === "maintenance" && item.item_id?.includes("prune-stale-heartbeats")) {
-        return `<button class="secondary passive-prune-stale-heartbeats" ${attentionItemDataAttrs(item)}>${escapeHtml(item.primary_action_label ?? "Prune Heartbeats")}</button>`;
-      }
-      if (item.kind === "maintenance" && item.item_id?.includes("prune-source-health-samples")) {
-        return `<button class="secondary passive-preview-source-prune" data-source-kind="" ${attentionItemDataAttrs(item)}>${escapeHtml(item.primary_action_label ?? "Preview Prune")}</button>`;
-      }
-      if (item.kind === "canonical_event" && item.canonical_event_id) {
-        return `<button class="secondary passive-refocus-canonical" ${attentionItemDataAttrs(item)}>${escapeHtml(item.primary_action_label ?? "Focus Event")}</button>`;
-      }
-      if (item.kind === "site" && item.site_id) {
-        return `<button class="secondary passive-refocus-site" ${attentionItemDataAttrs(item)}>${escapeHtml(item.primary_action_label ?? "Focus Site")}</button>`;
-      }
-      if (item.kind === "region" && item.region_id) {
-        return `<button class="secondary passive-open-region-overview" ${attentionItemDataAttrs(item)}>${escapeHtml(item.primary_action_label ?? "Open Region")}</button>`;
-      }
-      return "";
-    }
-
-    function renderPassiveSelectedAttentionContext() {
-      const attention = selectedPassiveAttentionItem();
-      if (!attention?.item_id) return "";
-      const targetSummary = [
-        attention.region_id ? `region ${attention.region_id}` : "",
-        attention.site_id ? `site ${attention.site_id}` : "",
-        attention.canonical_event_id ? `event ${attention.canonical_event_id}` : "",
-      ].filter(Boolean).join(" • ");
-      const primaryAction = renderPassiveAttentionPrimaryAction(attention);
-      const quickActions = [
-        attention.canonical_event_id ? `<button class="secondary passive-refocus-canonical" ${attentionItemDataAttrs(attention)}>Focus Event</button>` : "",
-        attention.site_id ? `<button class="secondary passive-refocus-site" ${attentionItemDataAttrs(attention)}>Focus Site</button>` : "",
-        attention.region_id ? `<button class="secondary passive-open-region-overview" ${attentionItemDataAttrs(attention)}>Open Region</button>` : "",
-      ].filter(Boolean).join("");
-      const readActions = (attention.confirmation_read_paths || []).length
-        ? readPathButtons(attention.confirmation_read_paths, attention.region_id, attention)
-        : "";
-      return `
-        <div class="card passive-selected-attention-context">
-          <h4>Selected Attention</h4>
-          <div class="meta">
-            <span class="${pillClass(attention.priority === "critical" || attention.priority === "high" ? "failed" : attention.priority === "medium" ? "Warning" : "ok")}">${escapeHtml(attention.priority ?? "low")}</span>
-            <span>${escapeHtml(attention.kind ?? "unknown")}</span>
-            <span>${escapeHtml(attention.title ?? "Untitled")}</span>
-          </div>
-          <div class="meta" style="margin-top:8px">
-            <span>${escapeHtml(attention.reason ?? "No operational reason provided.")}</span>
-          </div>
-          ${targetSummary ? `<div class="meta" style="margin-top:8px"><span>${escapeHtml(targetSummary)}</span></div>` : ""}
-          ${attention.primary_action_label ? `<div class="meta" style="margin-top:8px"><span>action ${escapeHtml(attention.primary_action_label)}</span></div>` : ""}
-          ${primaryAction ? `<div class="row passive-selected-attention-actions" style="margin-top:10px">${primaryAction}</div>` : ""}
-          ${quickActions ? `<div class="row passive-selected-attention-actions" style="margin-top:8px">${quickActions}</div>` : ""}
-          ${readActions ? `<div class="row passive-selected-attention-read-actions" style="margin-top:8px">${readActions}</div>` : ""}
-          <div class="row" style="margin-top:8px">
-            <button class="secondary passive-clear-selected-attention">Clear Selection</button>
-          </div>
-        </div>`;
-    }
-    function renderPassiveAttentionQueue(commandCenter) {
-      const queue = commandCenter?.attention_queue || [];
-      const kindFilter = state.passiveAttentionKindFilter || "all";
-      const priorityFilter = state.passiveAttentionPriorityFilter || "all";
-      const attentionMapActive = state.passiveAttentionMapMode ? "on" : "off";
-      return `
-        <div class="card">
-          <h4>Attention Queue</h4>
-          <div class="meta">
-            <span class="pill">${escapeHtml(kindFilter === "all" ? "attention all" : `attention ${kindFilter}`)}</span>
-            <span class="pill">${escapeHtml(priorityFilter === "all" ? "priority all" : `priority ${priorityFilter}+`)}</span>
-          </div>
-          <div class="row" style="margin-top:10px">${dashboardAttentionKindButtons(kindFilter)}</div>
-          <div class="row" style="margin-top:10px">${dashboardAttentionPriorityButtons(priorityFilter)}</div>
-          <div class="row" style="margin-top:10px">
-            <button class="${state.passiveAttentionMapMode ? "" : "secondary "}passive-toggle-attention-map">Attention Map ${attentionMapActive}</button>
-            ${kindFilter !== "all" ? `<button class="secondary passive-reset-attention-kind-filter">Show All Attention</button>` : ""}
-            ${priorityFilter !== "all" ? `<button class="secondary passive-reset-attention-priority-filter">Show All Priorities</button>` : ""}
-          </div>
-          <div class="list" style="margin-top:10px">
-            ${queue.length ? queue.slice(0, 6).map((item) => `
-              <div class="card ${item.kind !== "maintenance" ? "passive-attention-item-card" : ""} ${state.passiveSelectedAttention?.item_id === item.item_id ? "passive-attention-item-selected" : ""}" ${attentionItemDataAttrs(item)}>
-                <div class="meta">
-                  <span class="${pillClass(item.priority === "critical" || item.priority === "high" ? "failed" : item.priority === "medium" ? "Warning" : "ok")}">${escapeHtml(item.priority ?? "low")}</span>
-                  <span>${escapeHtml(item.kind ?? "unknown")}</span>
-                  <span>${escapeHtml(item.title ?? "Untitled")}</span>
-                </div>
-                <div class="meta" style="margin-top:8px">
-                  <span>${escapeHtml(item.reason ?? "No reason provided.")}</span>
-                </div>
-                ${(item.region_id || item.site_id || item.canonical_event_id) ? `<div class="meta" style="margin-top:8px">
-                  ${item.region_id ? `<span>region ${escapeHtml(item.region_id)}</span>` : ""}
-                  ${item.site_id ? `<span>site ${escapeHtml(item.site_id)}</span>` : ""}
-                  ${item.canonical_event_id ? `<span>event ${escapeHtml(item.canonical_event_id)}</span>` : ""}
-                </div>` : ""}
-              <div class="row" style="margin-top:8px">
-                ${renderPassiveAttentionPrimaryAction(item)}
-              </div>
-              ${(item.confirmation_read_paths || []).length ? `<div class="row" style="margin-top:8px">${readPathButtons(item.confirmation_read_paths, item.region_id, item)}</div>` : ""}
-              ${(item.confirmation_read_paths || []).length ? `<div class="meta" style="margin-top:8px">${(item.confirmation_read_paths || []).slice(0, 3).map((path) => `<span>${escapeHtml(path)}</span>`).join("")}</div>` : ""}
-            </div>
-          `).join("") : `<div class="empty">No operational attention items.</div>`}
-          </div>
-        </div>`;
-    }
-
-    function clearPassiveSelectedAttention(statusLabel) {
-      state.passiveSelectedAttention = null;
-      refreshPassiveDashboardSurface();
-      const selectedContext = $("passive-focus")?.querySelector(".passive-selected-attention-context");
-      if (selectedContext) {
-        selectedContext.remove();
-      }
-      if (statusLabel) {
-        $("refresh-status").textContent = statusLabel;
-      }
-    }
-
-    async function handlePassiveRefocusCanonicalButton(button, statusLabel) {
-      setPassiveSelectedAttentionFromDataset(button.dataset);
-      await focusPassiveCanonicalFromAttention(
-        button.dataset.canonicalId,
-        button.dataset.siteId,
-        button.dataset.regionId,
-        statusLabel || "Focused canonical event",
-      );
-    }
-
-    async function handlePassiveRefocusSiteButton(button, statusLabel) {
-      setPassiveSelectedAttentionFromDataset(button.dataset);
-      await focusPassiveSiteFromAttention(
-        button.dataset.siteId,
-        button.dataset.regionId,
-        statusLabel || "Focused site",
-      );
-    }
-
-    function handlePassiveOpenPathButton(button, statusLabel, syncAttention) {
-      if (syncAttention !== false) {
-        setPassiveSelectedAttentionFromDataset(button.dataset);
-      }
-      openPassivePath(button.dataset.path, statusLabel || "Opened read path");
-    }
-
-    function handlePassiveOpenEvidenceButton(button, statusLabel, syncAttention) {
-      if (syncAttention !== false) {
-        setPassiveSelectedAttentionFromDataset(button.dataset);
-      }
-      openPassiveEvidence(button.dataset.bundleHash, statusLabel || "Opened evidence");
-    }
-
-    async function handlePassiveRunReplayButton(button, statusLabel, syncAttention) {
-      if (syncAttention !== false) {
-        setPassiveSelectedAttentionFromDataset(button.dataset);
-      }
-      button.disabled = true;
-      try {
-        await runPassiveReplay(button.dataset.manifestHash, statusLabel || "Passive replay");
-      } catch (error) {
-        $("refresh-status").textContent = error.message;
-      } finally {
-        button.disabled = false;
-      }
-    }
-
-    async function handlePassiveOpenRegionOverviewButton(button, statusLabel, syncAttention) {
-      if (syncAttention !== false) {
-        setPassiveSelectedAttentionFromDataset(button.dataset);
-      }
-      await openPassiveRegionOverview(button.dataset.regionId, statusLabel || "Opened region");
-    }
-
-    function passiveAttentionSets() {
-      const queue = state.passiveCommandCenterSummary?.attention_queue || [];
-      const regionIds = new Set();
-      const siteIds = new Set();
-      const canonicalIds = new Set();
-      queue.forEach((item) => {
-        if (item.region_id) regionIds.add(item.region_id);
-        if (item.site_id) siteIds.add(item.site_id);
-        if (item.canonical_event_id) canonicalIds.add(item.canonical_event_id);
-      });
-      return {
-        regionIds,
-        siteIds,
-        canonicalIds,
-        hasMapTargets: regionIds.size > 0 || siteIds.size > 0 || canonicalIds.size > 0,
-      };
-    }
-
-    function attentionModeAppliesToSite(site, attentionSets) {
-      if (!state.passiveAttentionMapMode || !attentionSets.hasMapTargets) return true;
-      if (!attentionSets.siteIds.size && !attentionSets.canonicalIds.size) return true;
-      return Boolean(site.site_id && attentionSets.siteIds.has(site.site_id));
-    }
-
-    function attentionModeAppliesToEvent(event, attentionSets) {
-      if (!state.passiveAttentionMapMode || !attentionSets.hasMapTargets) return true;
-      if (!attentionSets.canonicalIds.size && !attentionSets.siteIds.size) return true;
-      return attentionSets.canonicalIds.has(event.canonical_event_id)
-        || Boolean(event.site_id && attentionSets.siteIds.has(event.site_id));
-    }
-
-    function renderPassiveDashboard(data, maintenance, commandCenter) {
-      const health = data.worker_health || {};
-      const sourceHealth = data.source_health || [];
-      const ops = data.operations || {};
-      const maintenanceActions = maintenance.suggested_actions || [];
-      const topRegions = data.top_regions || [];
-      const filteredTopRegions = topRegions.filter(matchesPassivePressureFilter);
-      const topEvents = data.top_canonical_events || [];
-      const topSites = data.top_sites || [];
-      const semanticTimeline = data.semantic_timeline || [];
-      $("passive-dashboard").innerHTML = `
-            ${renderPassiveCommandContext(maintenance, commandCenter)}
-            ${renderPassiveAttentionQueue(commandCenter)}
-            <div class="card">
-              <h4>Autonomous Observation</h4>
-            <div class="meta">
-              <span class="${pillClass(health.status === "healthy" ? "ok" : "Warning")}">${health.status ?? "unknown"}</span>
-              <span>${ops.enabled_region_count ?? 0} active regions</span>
-              <span>${ops.seed_count ?? 0} seeds</span>
-              <span>${ops.elevated_seed_count ?? 0} elevated</span>
-            </div>
-            <div class="meta" style="margin-top:8px">
-              <span>Active Leases: ${health.active_region_lease_count ?? ops.active_region_lease_count ?? 0}</span>
-              <span>Worker Heartbeats: ${health.worker_heartbeat_count ?? ops.worker_heartbeat_count ?? 0}</span>
-              <span>Active Workers: ${health.active_worker_count ?? 0}</span>
-              <span>Stale Workers: ${health.stale_worker_count ?? 0}</span>
-            </div>
-            <div class="meta" style="margin-top:8px">
-              <span>Stale Leases: ${ops.stale_region_lease_count ?? 0}</span>
-              <span>Stale Heartbeats: ${ops.stale_worker_heartbeat_count ?? 0}</span>
-            </div>
-            <div class="row" style="margin-top:10px">
-              <button class="secondary passive-open-worker-diagnostics">Worker Diagnostics</button>
-              <button class="secondary passive-open-heartbeat-list">View Heartbeats</button>
-              ${(ops.stale_worker_heartbeat_count ?? 0) > 0 ? `<button class="secondary passive-open-stale-heartbeats">View Stale Heartbeats</button>` : ""}
-            </div>
-            <div class="row" style="margin-top:10px">${dashboardPressureFilterButtons(state.passivePressureFilter || "all")}</div>
-            <div class="meta" style="margin-top:8px">
-              <span>Running Regions:</span>
-              <span>${(health.running_region_ids || []).length ? (health.running_region_ids || []).slice(0, 5).map((regionId) => escapeHtml(regionId)).join(", ") : "none"}</span>
-            </div>
-            <div class="list" style="margin-top:10px">
-              ${((ops.active_region_leases || []).slice(0, 3).map((lease) => `
-                <button class="secondary passive-open-lease" data-region-id="${escapeHtml(lease.region_id)}" style="text-align:left">
-                  <span class="meta">
-                    <span>${escapeHtml(lease.region_id)}</span>
-                    <span>${escapeHtml(lease.worker_id)}</span>
-                    <span>${formatEpoch(lease.expires_at_unix_seconds)}</span>
-                  </span>
-                </button>`)).join("") || `<div class="empty">No active leases.</div>`}
-            </div>
-            <div class="list" style="margin-top:10px">
-              ${((ops.worker_heartbeats || []).slice(0, 3).map((heartbeat) => `
-                <button class="secondary passive-open-heartbeat" data-worker-id="${escapeHtml(heartbeat.worker_id)}" style="text-align:left">
-                  <span class="meta">
-                    <span>${escapeHtml(heartbeat.worker_id)}</span>
-                    <span>${escapeHtml(heartbeat.status)}</span>
-                    <span>${escapeHtml(heartbeat.current_phase)}</span>
-                    <span>${formatEpoch(heartbeat.last_heartbeat_unix_seconds)}</span>
-                  </span>
-                </button>`)).join("") || `<div class="empty">No worker heartbeats.</div>`}
-            </div>
-              <div class="meta" style="margin-top:8px">${data.narrative}</div>
-            </div>
-            <div class="card">
-              <h4>Maintenance</h4>
-              <div class="meta">
-                <span>${maintenance.stale_heartbeat_count ?? 0} stale heartbeat candidates</span>
-                <span>${maintenance.source_health_prune_candidate_count ?? 0} source prune candidates</span>
-              </div>
-              <div class="meta" style="margin-top:8px">
-                <span>heartbeat retention ${formatSeconds(maintenance.heartbeat_retention_seconds ?? 0)}</span>
-                <span>source retention ${formatSeconds(maintenance.source_retention_seconds ?? 0)}</span>
-              </div>
-              <div class="row" style="margin-top:10px">
-                ${(maintenance.stale_heartbeat_count ?? 0) > 0 ? `<button class="secondary passive-prune-stale-heartbeats">Prune Stale Heartbeats</button>` : `<button class="secondary passive-open-worker-diagnostics">Diagnostics</button>`}
-                ${(maintenance.source_health_prune_candidate_count ?? 0) > 0 ? `<button class="secondary passive-preview-source-prune" data-source-kind="" data-region-id="">Preview Global Source Prune</button>` : `<button class="secondary passive-open-worker-diagnostics">No Source Prune Needed</button>`}
-              </div>
-              ${maintenanceActions.length ? `<div class="meta" style="margin-top:8px">${maintenanceActions.slice(0, 3).map((action) => `<span>${escapeHtml(action.title)}</span>`).join("")}</div>` : ""}
-              ${maintenanceActions.length ? `<div class="meta" style="margin-top:8px">${maintenanceActions.flatMap((action) => action.confirmation_read_paths || []).slice(0, 4).map((path) => `<span>${escapeHtml(path)}</span>`).join("")}</div>` : ""}
-            </div>
-            <div class="card">
-              <h4>Source Health</h4>
-              <div class="list" style="margin-top:10px">
-                ${sourceHealth.length ? sourceHealth.slice(0, 5).map((source) => `
-                  <div class="meta">
-                    <span>${escapeHtml(source.source)}</span>
-                    <span class="${pillClass(source.health_status === "healthy" ? "ok" : source.health_status === "watch" ? "Warning" : "failed")}">${escapeHtml(source.health_status ?? "unknown")}</span>
-                    <span>${Math.round((source.reliability_score ?? 0) * 100)}% reliable</span>
-                    <span>${source.success_count ?? 0} ok</span>
-                    <span>${source.failure_count ?? 0} fail</span>
-                    <span>${source.consecutive_failure_count ?? 0} consecutive fail</span>
-                  </div>
-                  <div class="meta" style="margin-top:8px">
-                    <span>${source.staleness_seconds != null ? `${formatSeconds(source.staleness_seconds)} old` : "no staleness"}</span>
-                    <span>${source.latest_generated_at_unix_seconds ? formatEpoch(source.latest_generated_at_unix_seconds) : "no samples"}</span>
-                  </div>
-                  <div class="row" style="margin-top:8px">
-                    <button class="secondary passive-open-source-samples" data-source-kind="${escapeHtml(source.source)}" data-region-id="${escapeHtml(source.region_id ?? "")}">View Samples</button>
-                  </div>
-                  <div class="empty">${escapeHtml(source.recovery_hint ?? "No recovery hint.")}</div>
-                  ${source.last_error ? `<div class="empty">${escapeHtml(source.last_error)}</div>` : ""}`).join("") : `<div class="empty">No source health yet.</div>`}
-              </div>
-            </div>
-            <div class="card">
-              <h4>Top Regions</h4>
-              <div class="list" style="margin-top:10px">
-                ${filteredTopRegions.length ? filteredTopRegions.slice(0, 3).map((region) => `
-                  <button class="secondary passive-open-worker-diagnostics" data-region-id="${escapeHtml(region.region_id)}" style="text-align:left">
-                    <span class="meta">
-                      <span>${escapeHtml(region.name)}</span>
-                      <span>${escapeHtml(region.operational_pressure_priority ?? "low")}</span>
-                      <span>${region.recent_failed_run_count ?? 0} failed</span>
-                      <span>${region.recent_lease_loss_count ?? 0} lease loss</span>
-                    </span>
-                  </button>`).join("") : `<div class="empty">No regions in this pressure filter.</div>`}
-              </div>
-            </div>
-            <div class="card">
-              <h4>Semantic Strip</h4>
-              <div class="row" style="margin-top:10px">${dashboardSemanticFilterButtons(data.semantic_filter ?? "all")}</div>
-              <div class="list" style="margin-top:10px">
-                ${semanticTimeline.length ? semanticTimeline.slice(0, 5).map((entry) => `
-                  <button class="secondary passive-strip-entry" data-canonical-id="${escapeHtml(entry.canonical_event_id)}" data-site-id="${escapeHtml(entry.site_id)}" style="text-align:left">
-                    <span class="meta">
-                      <span>${entry.status}</span>
-                      <span>${entry.event_type}</span>
-                      <span>${entry.site_name}</span>
-                      <span>${entry.support_count} signals</span>
-                      ${renderRiskDeltaPill(entry.risk_delta.classification)}
-                      <span>${formatEpoch(entry.last_observed_at_unix_seconds)}</span>
-                    </span>
-                  </button>`).join("") : `<div class="empty">No semantic entries in this filter.</div>`}
-              </div>
-            </div>
-            <div class="card">
-              <h4>Top Passive Events</h4>
-              <div class="list" style="margin-top:10px">
-              ${topEvents.length ? topEvents.slice(0, 3).map((event) => `
-                <div class="card">
-                  <div class="meta">
-                    <span class="${pillClass(event.severity === "critical" || event.severity === "high" ? "failed" : "ok")}">${escapeHtml(event.severity)}</span>
-                    ${renderRiskDeltaPill(event.risk_delta?.classification)}
-                    <span>${escapeHtml(event.event_type)}</span>
-                    <span>${escapeHtml(event.site_name)}</span>
-                  </div>
-                  <div class="meta" style="margin-top:6px">
-                    <span>${escapeHtml(event.status)}</span>
-                    <span>${event.support_count} signals</span>
-                    <span>risk ${(event.risk_score * 100).toFixed(0)}%</span>
-                  </div>
-                  <div class="row" style="margin-top:8px">
-                    <button class="secondary passive-refocus-canonical" data-canonical-id="${escapeHtml(event.canonical_event_id)}" data-site-id="${escapeHtml(event.site_id)}">Focus Event</button>
-                  </div>
-                </div>`).join("") : `<div class="empty">No passive events yet.</div>`}
-            </div>
-          </div>
-          <div class="card">
-            <h4>Top Sites</h4>
-            <div class="list" style="margin-top:10px">
-                ${topSites.length ? topSites.slice(0, 3).map((site) => `
-                  <div class="meta">
-                    <span>${site.name}</span>
-                    <span>${site.site_type}</span>
-                    <span>risk ${(site.risk_score * 100).toFixed(0)}%</span>
-                    <span>${site.risk_trend}</span>
-                    <span>${site.top_canonical_status ?? "no_canonical_state"}</span>
-                  </div>`).join("") : `<div class="empty">No observed sites yet.</div>`}
-            </div>
-          </div>`;
-    }
-
-      function passiveStatusColor(status) {
-        if (status === "escalating") return Cesium.Color.RED;
-        if (status === "new") return Cesium.Color.ORANGE;
-        if (status === "recurring") return Cesium.Color.YELLOW;
-        if (status === "cooling") return Cesium.Color.CYAN;
-        return Cesium.Color.LIME;
-      }
-
-    function initGlobe() {
-      if (state.viewer || typeof Cesium === "undefined") return;
-      state.viewer = new Cesium.Viewer("cesium-globe", {
-        animation: false,
-        timeline: false,
-        baseLayerPicker: false,
-        geocoder: false,
-        sceneModePicker: false,
-        homeButton: false,
-        navigationHelpButton: false,
-        fullscreenButton: false,
-        infoBox: false,
-        selectionIndicator: false,
-        shouldAnimate: true,
-        imageryProvider: new Cesium.OpenStreetMapImageryProvider({
-          url: "https://tile.openstreetmap.org/"
-        }),
-      });
-      state.viewer.scene.globe.enableLighting = true;
-      state.viewer.scene.skyAtmosphere.show = true;
-      state.viewer.clock.multiplier = 20;
-      state.viewer.camera.flyHome(0);
-      state.viewer.selectedEntityChanged.addEventListener((entity) => {
-        void handlePassiveSelection(entity);
-      });
-      state.globeReady = true;
-    }
-
-    function clearGlobeEntities() {
-      if (!state.viewer) return;
-      state.globeEntities.forEach((entity) => state.viewer.entities.remove(entity));
-      state.globeEntities = [];
-      state.neoEntityIndex = {};
-    }
-
-    function clearPassiveMapEntities() {
-      if (!state.viewer) return;
-      state.passiveGlobeEntities.forEach((entity) => state.viewer.entities.remove(entity));
-      state.passiveGlobeEntities = [];
-      state.passiveFocusOverlayEntities.forEach((entity) => state.viewer.entities.remove(entity));
-      state.passiveFocusOverlayEntities = [];
-      state.passiveEntityIndex = {};
-      state.passiveSiteEntityIndex = {};
-      state.passiveSiteEventIndex = {};
-    }
-
-    function cartesianFromState(orbitalState) {
-      if (!orbitalState?.position_km) return null;
-      return new Cesium.Cartesian3(
-        orbitalState.position_km.x * 1000,
-        orbitalState.position_km.y * 1000,
-        orbitalState.position_km.z * 1000
-      );
-    }
-
-    function updateGlobe(objectTimeline, eventsTimeline, neoBriefing, closeApproaches) {
-      if (!state.globeReady) return;
-      clearGlobeEntities();
-      const checkpoints = objectTimeline?.checkpoints ?? [];
-      const positions = checkpoints
-        .map((checkpoint) => cartesianFromState(checkpoint.predicted_state))
-        .filter(Boolean);
-
-      if (positions.length) {
-        const track = state.viewer.entities.add({
-          id: "sss-track",
-          polyline: {
-            positions,
-            width: 3,
-            material: Cesium.Color.AQUA,
-          },
-        });
-        state.globeEntities.push(track);
-
-        checkpoints.forEach((checkpoint, index) => {
-          const position = cartesianFromState(checkpoint.predicted_state);
-          if (!position) return;
-          const point = state.viewer.entities.add({
-            id: `sss-checkpoint-${index}`,
-            position,
-            point: {
-              pixelSize: index === checkpoints.length - 1 ? 12 : 8,
-              color: index === checkpoints.length - 1 ? Cesium.Color.GOLD : Cesium.Color.LIME,
-              outlineColor: Cesium.Color.BLACK,
-              outlineWidth: 1,
-            },
-            label: {
-              text: `t+${checkpoint.offset_hours}h`,
-              font: "12px sans-serif",
-              pixelOffset: new Cesium.Cartesian2(0, -18),
-              fillColor: Cesium.Color.WHITE,
-              showBackground: true,
-              backgroundColor: Cesium.Color.fromAlpha(Cesium.Color.BLACK, 0.55),
-            },
+    // Update globe with real site data
+    if (sites.length > 0) {
+      sites.forEach(s => {
+        if (s.lat != null && s.lng != null) {
+          addSiteToGlobe({
+            lat:   parseFloat(s.lat),
+            lng:   parseFloat(s.lng),
+            level: (s.level || s.status || 'active').toLowerCase(),
+            label: s.name || s.site_id || 'Site',
           });
-          state.globeEntities.push(point);
-        });
-      }
-
-      const futureEvents = (eventsTimeline?.buckets ?? []).flatMap((bucket) => bucket.events ?? []);
-      futureEvents.forEach((event, index) => {
-        const predictedState = event.prediction?.predicted_state;
-        const position = cartesianFromState(predictedState);
-        if (!position) return;
-        const marker = state.viewer.entities.add({
-          id: `sss-event-${index}`,
-          position,
-          billboard: {
-            image: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='10' fill='%23ff8e7c' /%3E%3C/svg%3E",
-            width: 12,
-            height: 12,
-          },
-          label: {
-            text: event.event_type,
-            font: "11px sans-serif",
-            pixelOffset: new Cesium.Cartesian2(0, 18),
-            fillColor: Cesium.Color.fromCssColorString("#ffcfbf"),
-            showBackground: true,
-            backgroundColor: Cesium.Color.fromAlpha(Cesium.Color.BLACK, 0.55),
-          },
-        });
-        state.globeEntities.push(marker);
-      });
-
-      if ($("toggle-neo-layer")?.checked) {
-        (neoBriefing?.highest_priority ?? []).forEach((neo, index) => {
-          const selectedNeo = state.selectedNeoReferenceId === neo.neo_reference_id;
-          const position = Cesium.Cartesian3.fromRadians(
-            (index + 1) * 0.85,
-            0.32 - (index * 0.11),
-            9_000_000 + (index * 700_000),
-          );
-          const neoEntity = state.viewer.entities.add({
-            id: `sss-neo-${index}`,
-            name: neo.name,
-            position,
-            point: {
-              pixelSize: selectedNeo ? (neo.hazardous ? 18 : 14) : (neo.hazardous ? 14 : 10),
-              color: neo.hazardous ? Cesium.Color.ORANGERED : Cesium.Color.CORNFLOWERBLUE,
-              outlineColor: selectedNeo ? Cesium.Color.WHITE : Cesium.Color.BLACK,
-              outlineWidth: selectedNeo ? 3 : 1,
-            },
-            label: {
-              text: `${neo.name} ${(neo.priority_score * 100).toFixed(0)}%`,
-              font: "11px sans-serif",
-              pixelOffset: new Cesium.Cartesian2(0, 18),
-              fillColor: selectedNeo ? Cesium.Color.fromCssColorString("#ffd580") : Cesium.Color.WHITE,
-              showBackground: true,
-              backgroundColor: Cesium.Color.fromAlpha(Cesium.Color.BLACK, 0.55),
-            },
-            properties: { layer: "neo-briefing", payload: neo },
-            description: `${selectedNeo ? "focused | " : ""}${neo.briefing_summary}`,
-          });
-          state.neoEntityIndex[neo.neo_reference_id] = neoEntity;
-          state.globeEntities.push(neoEntity);
-        });
-      }
-
-      if ($("toggle-close-approach-layer")?.checked) {
-        (closeApproaches?.close_approaches ?? []).slice(0, 3).forEach((approach, index) => {
-          const primaryPosition = cartesianFromState(approach.primary_state);
-          const counterpartPosition = cartesianFromState(approach.counterpart_state);
-          if (!primaryPosition || !counterpartPosition) return;
-          const line = state.viewer.entities.add({
-            id: `sss-close-approach-line-${index}`,
-            polyline: {
-              positions: [primaryPosition, counterpartPosition],
-              width: 2,
-              material: Cesium.Color.fromCssColorString("#ffb347"),
-            },
-          });
-          const marker = state.viewer.entities.add({
-            id: `sss-close-approach-marker-${index}`,
-            position: counterpartPosition,
-            point: {
-              pixelSize: 10,
-              color: Cesium.Color.fromCssColorString("#ffb347"),
-              outlineColor: Cesium.Color.BLACK,
-              outlineWidth: 1,
-            },
-            label: {
-              text: `${approach.counterpart_object_name} ${approach.miss_distance_km.toFixed(1)} km`,
-              font: "11px sans-serif",
-              pixelOffset: new Cesium.Cartesian2(0, 18),
-              fillColor: Cesium.Color.WHITE,
-              showBackground: true,
-              backgroundColor: Cesium.Color.fromAlpha(Cesium.Color.BLACK, 0.55),
-            },
-            description: approach.summary,
-          });
-          state.globeEntities.push(line, marker);
-        });
-      }
-
-      if (positions.length) {
-        state.viewer.zoomTo(state.globeEntities);
-      }
-    }
-
-    function passiveRegionColor(status, pressure = "low") {
-      if (pressure === "critical" || pressure === "high") return Cesium.Color.RED.withAlpha(0.22);
-      if (pressure === "medium") return Cesium.Color.ORANGE.withAlpha(0.20);
-      if (status === "due") return Cesium.Color.ORANGE.withAlpha(0.22);
-      if (status === "degraded") return Cesium.Color.RED.withAlpha(0.20);
-      return Cesium.Color.LIME.withAlpha(0.14);
-    }
-
-    function passiveRegionPressure(region) {
-      if (!region) return "low";
-      if ((region.stale_lease_count ?? 0) > 0 || (region.recent_lease_loss_count ?? 0) > 0 || (region.recent_failed_run_count ?? 0) > 0) {
-        return "critical";
-      }
-      if ((region.stale_worker_count ?? 0) > 0 || (region.recent_partial_run_count ?? 0) > 0 || region.status === "degraded" || (region.critical_events ?? 0) > 0 || (region.escalating_event_count ?? 0) > 0) {
-        return "high";
-      }
-      if (region.status === "due" || (region.new_event_count ?? 0) > 0) {
-        return "medium";
-      }
-      return "low";
-    }
-
-    function matchesPassivePressureFilter(region) {
-      const filter = state.passivePressureFilter || "all";
-      if (filter === "all") return true;
-      return passiveRegionPressure(region) === filter;
-    }
-
-    function passiveSiteColor(siteType) {
-      if (siteType === "solar_plant") return Cesium.Color.GOLD;
-      if (siteType === "substation") return Cesium.Color.ORANGE;
-      return Cesium.Color.CYAN;
-    }
-
-    function passiveEventColor(severity) {
-      if (severity === "critical") return Cesium.Color.RED;
-      if (severity === "high") return Cesium.Color.ORANGE;
-      if (severity === "medium") return Cesium.Color.YELLOW;
-      return Cesium.Color.LIME;
-    }
-
-    function passiveCanonicalPixelSize(event) {
-      if (event.severity === "critical") return 18;
-      if (event.severity === "high") return 15;
-      return 11;
-    }
-
-    function applyPassiveSiteFocus(siteId, canonicalEventId) {
-      state.selectedPassiveSiteId = siteId || null;
-      state.selectedPassiveCanonicalEventId = canonicalEventId || null;
-      const focusedSiteId = state.selectedPassiveSiteId;
-      const focusedCanonicalEventId = state.selectedPassiveCanonicalEventId;
-
-      state.passiveFocusOverlayEntities.forEach((entity) => state.viewer?.entities.remove(entity));
-      state.passiveFocusOverlayEntities = [];
-
-      Object.entries(state.passiveSiteEntityIndex).forEach(([candidateSiteId, entity]) => {
-        const payload = cesiumPropertyValue(entity?.properties?.payload);
-        if (!payload || !entity.point || !entity.label) return;
-        const siteColor = passiveSiteColor(payload.site_type);
-        const statusColor = payload.top_canonical_status ? passiveStatusColor(payload.top_canonical_status) : Cesium.Color.WHITE;
-        const matches = focusedSiteId && candidateSiteId === focusedSiteId;
-        const highlighted = !focusedSiteId
-          ? payload.elevated || payload.risk_score >= 0.6
-          : matches;
-        entity.point.pixelSize = (payload.risk_score >= 0.75 ? 16 : payload.risk_score >= 0.45 ? 13 : 10) + (highlighted ? 3 : 0);
-        entity.point.color = highlighted ? siteColor : Cesium.Color.fromAlpha(siteColor, 0.18);
-        entity.point.outlineColor = highlighted ? statusColor : Cesium.Color.fromAlpha(Cesium.Color.WHITE, 0.25);
-        entity.point.outlineWidth = highlighted ? 4 : 1;
-        entity.label.fillColor = highlighted ? Cesium.Color.WHITE : Cesium.Color.fromAlpha(Cesium.Color.WHITE, 0.40);
-        entity.label.showBackground = highlighted;
-      });
-
-      Object.entries(state.passiveEntityIndex).forEach(([_, entity]) => {
-        const payload = cesiumPropertyValue(entity?.properties?.payload);
-        if (!payload || !entity.point || !entity.label) return;
-        const baseColor = passiveStatusColor(payload.status);
-        const matchesSite = focusedSiteId && payload.site_id === focusedSiteId;
-        const matchesCanonical = focusedCanonicalEventId && payload.canonical_event_id === focusedCanonicalEventId;
-        const matches = matchesSite || matchesCanonical;
-        const highlighted = !focusedSiteId || matches;
-        entity.point.pixelSize = passiveCanonicalPixelSize(payload) + (matchesCanonical ? 6 : matches ? 4 : 0);
-        entity.point.color = highlighted ? baseColor : Cesium.Color.fromAlpha(baseColor, 0.18);
-        entity.point.outlineColor = matchesCanonical ? Cesium.Color.CYAN : matches ? Cesium.Color.WHITE : Cesium.Color.BLACK;
-        entity.point.outlineWidth = matchesCanonical ? 4 : matches ? 3 : 2;
-        entity.label.fillColor = highlighted ? Cesium.Color.WHITE : Cesium.Color.fromAlpha(Cesium.Color.WHITE, 0.35);
-        entity.label.showBackground = highlighted || matchesCanonical;
-      });
-
-      if (!state.viewer || !focusedSiteId) {
-        return;
-      }
-
-      const focusedSiteEntity = state.passiveSiteEntityIndex[focusedSiteId];
-      const focusedSitePosition = focusedSiteEntity?.position?.getValue?.(Cesium.JulianDate.now());
-      const siteEventEntities = state.passiveSiteEventIndex[focusedSiteId] || [];
-      if (!focusedSitePosition || !siteEventEntities.length) {
-        return;
-      }
-
-      siteEventEntities.forEach((eventEntity) => {
-        const payload = cesiumPropertyValue(eventEntity?.properties?.payload);
-        const eventPosition = eventEntity?.position?.getValue?.(Cesium.JulianDate.now());
-        if (!payload || !eventPosition) return;
-        const isFocusedCanonical = focusedCanonicalEventId && payload.canonical_event_id === focusedCanonicalEventId;
-        const connector = state.viewer.entities.add({
-          id: `passive-focus-link-${payload.canonical_event_id}`,
-          polyline: {
-            positions: [focusedSitePosition, eventPosition],
-            width: isFocusedCanonical ? 3 : 2,
-            material: isFocusedCanonical
-              ? Cesium.Color.CYAN.withAlpha(0.95)
-              : passiveStatusColor(payload.status).withAlpha(0.55),
-            clampToGround: false,
-          },
-        });
-        state.passiveFocusOverlayEntities.push(connector);
-      });
-    }
-
-    function renderPassiveMapLegend(region, sites, canonicalEvents, visibleRegionCount) {
-      const target = $("passive-map-legend");
-      if (!target) return;
-      const filter = state.passiveSemanticFilter || "all";
-      const pressureFilter = state.passivePressureFilter || "all";
-      const attentionSets = passiveAttentionSets();
-      const attentionMode = state.passiveAttentionMapMode && attentionSets.hasMapTargets;
-      const summary = updatePassiveMapSummary(region, sites, canonicalEvents, visibleRegionCount);
-      const focusedEvent = summary.selectedEventId
-        ? canonicalEvents.find((event) => event.canonical_event_id === summary.selectedEventId)
-        : null;
-      target.innerHTML = `
-        <h3>Passive Map Focus</h3>
-        <div class="legend-grid">
-          <div class="legend-row">
-            <span class="pill">${escapeHtml(filter === "all" ? "all statuses" : filter)}</span>
-            <span>${escapeHtml(region?.name ?? "No region selected")}</span>
-          </div>
-          <div class="legend-row">
-            <span>pressure filter ${escapeHtml(pressureFilter)}</span>
-            <span>${summary.visibleRegionCount ?? 0} visible regions</span>
-          </div>
-          <div class="legend-row">
-            <span class="pill">${attentionMode ? "attention map on" : "attention map off"}</span>
-            <span>${attentionSets.regionIds.size} attention regions</span>
-            <span>${attentionSets.siteIds.size} attention sites</span>
-            <span>${attentionSets.canonicalIds.size} attention events</span>
-          </div>
-          <div class="legend-row">
-            <span>${summary.highlightedSiteCount ?? 0} highlighted sites</span>
-            <span>${summary.visibleCanonicalEventCount ?? 0} canonical events</span>
-            <span>${summary.visibleSiteCount ?? 0} sites in region</span>
-          </div>
-          <div class="legend-row">
-            <span class="legend-dot" style="background:#ff4d4f"></span><span>pressure high</span>
-            <span class="legend-dot" style="background:#ff9f43"></span><span>pressure medium</span>
-            <span class="legend-dot" style="background:#8bd450"></span><span>pressure low</span>
-          </div>
-          <div class="legend-row">
-            <span class="legend-dot" style="background:#ff4d4f"></span><span>escalating</span>
-            <span class="legend-dot" style="background:#ff9f43"></span><span>new</span>
-            <span class="legend-dot" style="background:#f4d35e"></span><span>recurring</span>
-            <span class="legend-dot" style="background:#3dd6d0"></span><span>cooling</span>
-          </div>
-          <div class="legend-row">
-            <span>${escapeHtml(region?.dominant_status ?? "no dominant status")}</span>
-            <span>${region?.critical_events ?? 0} critical</span>
-            <span>${region?.escalating_event_count ?? 0} escalating</span>
-            <span>${region?.recent_failed_run_count ?? 0} failed runs</span>
-          </div>
-          <div class="legend-row">
-            <span>ops trend ${escapeHtml(summary.operationalTrend ?? "n/a")}</span>
-            <span>now ${escapeHtml(summary.operationalPriority ?? "n/a")}</span>
-            <span>${state.selectedPassiveOperationalTimeline?.current_snapshot?.stale_lease_count ?? 0} stale leases</span>
-            <span>${state.selectedPassiveOperationalTimeline?.current_snapshot?.stale_worker_count ?? 0} stale workers</span>
-          </div>
-          <div class="legend-row">
-            <span>${escapeHtml(summary.selectedSiteName ?? summary.selectedSiteId ?? "no focused site")}</span>
-            <span>${summary.selectedEventType ? `focused event ${escapeHtml(summary.selectedEventType)}` : "no focused phenomenon"}</span>
-          </div>
-          ${focusedEvent ? `<div class="legend-row"><span>chain ${escapeHtml(summary.selectedSiteName ?? focusedEvent.site_name ?? "site")} -> ${escapeHtml(focusedEvent.event_type)} -> ${focusedEvent.bundle_hashes?.length ?? 0} evidence / ${focusedEvent.manifest_hashes?.length ?? 0} replay</span></div>` : ""}
-          ${state.passiveOperationalVisibility ? `<div class="legend-row">
-            <span class="pill ${visibilityStateClass(state.passiveOperationalVisibility.overall_state)}">${escapeHtml(state.passiveOperationalVisibility.overall_state)}</span>
-            <span>${state.passiveOperationalVisibility.total_regions} regions</span>
-            <span>${state.passiveOperationalVisibility.active_workers} active workers</span>
-            ${(state.passiveOperationalVisibility.stale_leases ?? 0) > 0 ? `<span class="pill danger">${state.passiveOperationalVisibility.stale_leases} stale leases</span>` : ""}
-          </div>` : ""}
-        </div>`;
-    }
-
-    async function handlePassiveSelection(entity) {
-      const layer = cesiumPropertyValue(entity?.properties?.layer);
-      const payload = cesiumPropertyValue(entity?.properties?.payload);
-      if (layer === "neo-briefing" && payload?.neo_reference_id) {
-        selectNeoBriefingItem(payload.neo_reference_id, "Selected NEO");
-        return;
-      }
-      if (!layer || !payload) {
-        renderEmpty($("passive-focus"), "Select a passive region, site, or canonical event on the map.");
-        return;
-      }
-
-        try {
-          if (layer === "passive-region") {
-            state.selectedPassiveRegionId = payload.region_id;
-            applyPassiveSiteFocus(null, null);
-            const [overview, timeline, diagnostics, remediation, operationalTimeline] = await Promise.all([
-              api(`/v1/passive/regions/${encodeURIComponent(payload.region_id)}/overview`),
-              api(`/v1/passive/regions/${encodeURIComponent(payload.region_id)}/semantic-timeline?limit=6&window_hours=720`),
-              api(`/v1/passive/worker/diagnostics?limit=12&region_id=${encodeURIComponent(payload.region_id)}`),
-              api(`/v1/passive/regions/${encodeURIComponent(payload.region_id)}/remediation`),
-              api(`/v1/passive/regions/${encodeURIComponent(payload.region_id)}/operational-timeline?window_hours=72&bucket_hours=6&include_empty_buckets=false`),
-            ]);
-            state.selectedPassiveOperationalTimeline = operationalTimeline;
-            syncSemanticTimelinePanel(timeline, payload.region_id);
-            const regionMetric = (diagnostics.region_metrics || []).find((metric) => metric.region_id === payload.region_id) || diagnostics.region_metrics?.[0] || null;
-            const regionPressure = passiveRegionPressure(payload);
-            $("passive-focus").innerHTML = `
-              ${renderPassiveSelectedAttentionContext()}
-              <div class="card">
-                <h4>${escapeHtml(overview.region.name)}</h4>
-              <div class="meta">
-                <span class="${pillClass(overview.discovery_due ? "Warning" : "ok")}">${overview.discovery_due ? "due" : "fresh"}</span>
-                <span>${overview.seed_count} seeds</span>
-                <span>${overview.recent_event_count} recent events</span>
-                <span>${overview.critical_event_count} critical</span>
-              </div>
-              <div class="meta" style="margin-top:8px">
-                <span>${escapeHtml(payload.dominant_status ?? "no_canonical_state")}</span>
-                <span>${payload.escalating_event_count ?? 0} escalating</span>
-                <span>${payload.new_event_count ?? 0} new</span>
-                <span>${payload.cooling_event_count ?? 0} cooling</span>
-                </div>
-                <div class="meta" style="margin-top:8px">${escapeHtml(overview.narrative)}</div>
-                <div class="meta" style="margin-top:8px">
-                  <span class="${pillClass(regionPressure === "critical" || regionPressure === "high" ? "failed" : regionPressure === "medium" ? "Warning" : "ok")}">pressure ${escapeHtml(regionPressure)}</span>
-                  <span>${diagnostics.stale_region_lease_count ?? 0} stale leases</span>
-                  <span>${diagnostics.stale_worker_heartbeat_count ?? 0} stale workers</span>
-                  <span>${regionMetric?.recent_failed_run_count ?? 0} failed runs</span>
-                  <span>${regionMetric?.source_error_count ?? 0} source errors</span>
-                </div>
-                <div class="meta" style="margin-top:8px">${escapeHtml(payload.operational_summary ?? "No operational summary yet.")}</div>
-                <div class="row" style="margin-top:12px">
-                  <button class="secondary passive-open-worker-diagnostics" data-region-id="${escapeHtml(payload.region_id)}">Region Diagnostics</button>
-                  ${(diagnostics.active_region_leases || []).length ? `<button class="secondary passive-open-lease" data-region-id="${escapeHtml(payload.region_id)}">View Active Lease</button>` : ""}
-                  ${(diagnostics.stale_worker_heartbeat_count ?? 0) > 0 ? `<button class="secondary passive-open-stale-heartbeats">View Stale Heartbeats</button>` : ""}
-                  ${(diagnostics.stale_worker_heartbeat_count ?? 0) > 0 ? `<button class="secondary passive-prune-stale-heartbeats">Prune Stale Heartbeats</button>` : ""}
-                </div>
-              </div>
-              ${renderRegionProvenance(overview.provenance)}
-              <div class="card">
-                <h4>Remediation</h4>
-                <div class="meta">
-                  <span>${escapeHtml(remediation.posture ?? regionPressure)}</span>
-                  <span>${(remediation.actions || []).length} actions</span>
-                  <span>${escapeHtml(payload.operational_pressure_priority ?? regionPressure)}</span>
-                </div>
-                <div class="meta" style="margin-top:8px">${escapeHtml(remediation.summary)}</div>
-                <div class="list" style="margin-top:10px">
-                  ${(remediation.actions || []).slice(0, 4).map((action) => `
-                    <div class="card">
-                      <h4>${escapeHtml(action.title)}</h4>
-                      <div class="meta">
-                        <span>${escapeHtml(action.priority)}</span>
-                        <span>${escapeHtml(action.source)}</span>
-                      </div>
-                      <div class="meta" style="margin-top:8px">${escapeHtml(action.reason)}</div>
-                      ${action.related_sources?.length ? `<div class="row" style="margin-top:8px">
-                        ${action.related_sources.map((source) => `<button class="secondary passive-open-source-samples" data-source-kind="${escapeHtml(source)}" data-region-id="${escapeHtml(payload.region_id)}">Samples ${escapeHtml(source)}</button>`).join("")}
-                      </div>` : ""}
-                      ${action.suggested_read_paths?.length ? `<div class="row" style="margin-top:8px">${remediationReadButtons(action, payload.region_id)}</div>` : ""}
-                    </div>`).join("") || `<div class="empty">No remediation guidance available.</div>`}
-                </div>
-              </div>
-              <div class="card">
-                <h4>Top Sites</h4>
-              <div class="list" style="margin-top:10px">
-                ${(overview.top_sites || []).slice(0, 3).map((site) => `
-                  <div class="meta">
-                    <span>${escapeHtml(site.site_name)}</span>
-                    <span>risk ${site.latest_peak_risk != null ? `${(site.latest_peak_risk * 100).toFixed(0)}%` : "n/a"}</span>
-                    <span>${escapeHtml(site.risk_direction)}</span>
-                    </div>`).join("") || `<div class="empty">No regional sites summarized yet.</div>`}
-                </div>
-              </div>
-              ${renderOperationalTimeline(operationalTimeline)}
-              ${renderRegionVisibilityCard(payload.region_id, true)}
-              ${renderSemanticTimeline(timeline)}`;
-            return;
-          }
-
-          if (layer === "passive-site") {
-            if (!payload.site_id) {
-              renderEmpty($("passive-focus"), "This seed has not been linked to a passive site profile yet.");
-              return;
-            }
-            applyPassiveSiteFocus(payload.site_id, null);
-            const [overview, narrative, timeline] = await Promise.all([
-              api(`/v1/passive/sites/${encodeURIComponent(payload.site_id)}/overview?limit=10`),
-              api(`/v1/passive/sites/${encodeURIComponent(payload.site_id)}/narrative?days=30`),
-              api(`/v1/passive/sites/${encodeURIComponent(payload.site_id)}/semantic-timeline?limit=6&window_hours=720`),
-            ]);
-            $("passive-focus").innerHTML = `
-              ${renderPassiveSelectedAttentionContext()}
-              <div class="card">
-                <h4>${escapeHtml(overview.site.site.name)}</h4>
-              <div class="meta">
-                <span>${escapeHtml(payload.site_type)}</span>
-                <span>risk ${(payload.risk_score * 100).toFixed(0)}%</span>
-                <span>confidence ${(payload.confidence * 100).toFixed(0)}%</span>
-              </div>
-              <div class="meta" style="margin-top:8px">
-                <span>${escapeHtml(payload.risk_trend ?? "flat")}</span>
-                <span>${escapeHtml(payload.top_canonical_status ?? "no_canonical_state")}</span>
-              </div>
-              <div class="meta" style="margin-top:8px">${escapeHtml(narrative.narrative)}</div>
-              ${payload.risk_delta_explanation ? `<div class="meta" style="margin-top:8px">${escapeHtml(payload.risk_delta_explanation)}</div>` : ""}
-            </div>
-            ${renderNarrativeProvenance(narrative.provenance)}
-            <div class="card">
-              <h4>Recent Site Pressure</h4>
-                <div class="meta">
-                  <span>${overview.recent_events.length} recent events</span>
-                  <span>${overview.recurring_patterns.length} recurring patterns</span>
-                  <span>peak ${overview.latest_risk ? `${(overview.latest_risk.peak_risk * 100).toFixed(0)}%` : "n/a"}</span>
-                </div>
-              </div>
-              ${renderFocusedChainActions(payload)}
-              <div class="card">
-                <h4>Region Runs</h4>
-                <div class="row" style="margin-top:8px">
-                  <button class="secondary passive-open-region-runs" data-region-id="${escapeHtml(payload.region_id)}">View Region Runs</button>
-                </div>
-              </div>
-              ${renderSemanticTimeline(timeline)}`;
-            syncSemanticTimelinePanel(timeline, payload.region_id);
-            return;
-          }
-
-          if (layer === "passive-canonical-event") {
-            applyPassiveSiteFocus(payload.site_id, payload.canonical_event_id);
-            const [overview, narrative, timeline] = await Promise.all([
-              api(`/v1/passive/sites/${encodeURIComponent(payload.site_id)}/overview?limit=10`),
-              api(`/v1/passive/sites/${encodeURIComponent(payload.site_id)}/narrative?days=30`),
-              api(`/v1/passive/sites/${encodeURIComponent(payload.site_id)}/semantic-timeline?limit=6&window_hours=720`),
-            ]);
-            $("passive-focus").innerHTML = `
-              ${renderPassiveSelectedAttentionContext()}
-              <div class="card">
-                <h4>${escapeHtml(payload.event_type)} @ ${escapeHtml(payload.site_name)}</h4>
-              <div class="meta">
-                <span class="${pillClass(payload.severity === "critical" || payload.severity === "high" ? "failed" : "ok")}">${escapeHtml(payload.severity)}</span>
-                  <span>${payload.support_count} signals</span>
-                  <span>${escapeHtml(payload.status)}</span>
-                  <span>risk ${(payload.risk_score * 100).toFixed(0)}%</span>
-                  <span>confidence ${(payload.confidence * 100).toFixed(0)}%</span>
-                </div>
-                <div class="meta" style="margin-top:8px">${escapeHtml(payload.summary)}</div>
-                <div class="meta" style="margin-top:8px">${escapeHtml(payload.status_summary)}</div>
-                <div class="meta" style="margin-top:8px">${escapeHtml(payload.risk_delta.explanation)}</div>
-                <div class="meta" style="margin-top:8px">first ${formatEpoch(payload.first_observed_at_unix_seconds)} | last ${formatEpoch(payload.last_observed_at_unix_seconds)}</div>
-                <div class="row" style="margin-top:12px">${passiveActionLinks(payload.bundle_hashes, payload.manifest_hashes)}</div>
-              </div>
-            ${renderFocusedChainActions(payload)}
-            <div class="card">
-              <h4>Region Runs</h4>
-              <div class="row" style="margin-top:8px">
-                <button class="secondary passive-open-region-runs" data-region-id="${escapeHtml(payload.region_id)}">View Region Runs</button>
-              </div>
-            </div>
-            <div class="card">
-              <h4>Site Narrative</h4>
-              <div class="meta">${escapeHtml(narrative.narrative)}</div>
-                <div class="meta" style="margin-top:10px">
-                  <span>${overview.recent_events.length} recent events</span>
-                  <span>${overview.recurring_patterns.length} patterns</span>
-                  <span>${overview.risk_history_narrative.risk_direction}</span>
-                </div>
-              </div>
-              ${renderNarrativeProvenance(narrative.provenance)}
-              ${renderSemanticTimeline(timeline)}`;
-            syncSemanticTimelinePanel(timeline, payload.region_id);
-          }
-      } catch (error) {
-        renderEmpty($("passive-focus"), error.message);
-      }
-    }
-
-    async function refreshPassiveMapLayers() {
-      if (!state.globeReady) return;
-      clearPassiveMapEntities();
-      const regionData = await api("/v1/passive/map/regions");
-      const regions = regionData.regions || [];
-      const attentionSets = passiveAttentionSets();
-      const attentionMapActive = state.passiveAttentionMapMode && attentionSets.hasMapTargets;
-      const visibleRegions = regions
-        .filter(matchesPassivePressureFilter)
-        .filter((region) => {
-          if (!attentionMapActive) return true;
-          if (attentionSets.siteIds.size || attentionSets.canonicalIds.size || !attentionSets.regionIds.size) return true;
-          return attentionSets.regionIds.has(region.region_id);
-        });
-
-      if (!visibleRegions.length) {
-        state.selectedPassiveRegionId = null;
-        state.selectedPassiveSiteId = null;
-        state.selectedPassiveCanonicalEventId = null;
-        state.passiveMapSummary = {
-          visibleRegionCount: 0,
-          visibleSiteCount: 0,
-          visibleCanonicalEventCount: 0,
-          highlightedSiteCount: 0,
-          selectedRegionId: null,
-          selectedRegionName: null,
-          selectedSiteId: null,
-          selectedSiteName: null,
-          selectedEventId: null,
-          selectedEventType: null,
-          selectedEventStatus: null,
-          operationalTrend: null,
-          operationalPriority: null,
-        };
-        renderPassiveMapLegend(null, [], [], 0);
-        renderEmpty($("passive-focus"), "No passive regions match the selected pressure filter.");
-        state.selectedPassiveOperationalTimeline = null;
-        if (state.passiveDashboardSummary && state.passiveMaintenanceSummary) {
-          renderPassiveDashboard(
-            state.passiveDashboardSummary,
-            state.passiveMaintenanceSummary,
-            state.passiveCommandCenterSummary,
-          );
-        }
-        return;
-      }
-
-      visibleRegions.forEach((region) => {
-        const pressure = passiveRegionPressure(region);
-        const outlineColor = pressure === "critical"
-          ? Cesium.Color.RED
-          : pressure === "high"
-            ? Cesium.Color.ORANGE
-            : pressure === "medium"
-              ? Cesium.Color.YELLOW
-              : Cesium.Color.LIME;
-        const outlineWidth = pressure === "critical" ? 4 : pressure === "high" ? 3 : pressure === "medium" ? 2 : 1;
-        const regionEntity = state.viewer.entities.add({
-          id: `passive-region-${region.region_id}`,
-          name: region.name,
-          position: Cesium.Cartesian3.fromDegrees(
-            (region.bbox.west + region.bbox.east) / 2,
-            (region.bbox.south + region.bbox.north) / 2,
-          ),
-          rectangle: {
-            coordinates: Cesium.Rectangle.fromDegrees(
-              region.bbox.west,
-              region.bbox.south,
-              region.bbox.east,
-              region.bbox.north,
-            ),
-            material: passiveRegionColor(region.status, pressure),
-            outline: true,
-            outlineColor,
-            outlineWidth,
-          },
-          label: {
-            text: `${region.name} â€¢ ${regionOperationalState(region.region_id) ?? pressure} â€¢ ${region.status}`,
-            font: "12px sans-serif",
-            fillColor: Cesium.Color.WHITE,
-            showBackground: true,
-            backgroundColor: Cesium.Color.fromAlpha(Cesium.Color.BLACK, 0.55),
-          },
-          properties: { layer: "passive-region", payload: region },
-          description: `${region.narrative_summary} | ${region.operational_summary ?? "no operational summary"} | dominant ${region.dominant_status ?? "none"} | critical ${region.critical_events ?? 0} | escalating ${region.escalating_event_count ?? 0}`,
-        });
-        state.passiveGlobeEntities.push(regionEntity);
-      });
-
-        const currentRegionStillVisible = visibleRegions.find((region) => region.region_id === state.selectedPassiveRegionId)?.region_id;
-        const preferredAttentionRegion = attentionMapActive
-          ? visibleRegions.find((region) => attentionSets.regionIds.has(region.region_id))?.region_id
-          : null;
-        const selectedRegion = preferredAttentionRegion || currentRegionStillVisible || visibleRegions[0]?.region_id;
-        if (!selectedRegion) return;
-        state.selectedPassiveRegionId = selectedRegion;
-        const selectedRegionSummary = visibleRegions.find((region) => region.region_id === selectedRegion) || null;
-
-      const [siteData, eventData] = await Promise.all([
-        api(`/v1/passive/map/sites?region_id=${encodeURIComponent(selectedRegion)}`),
-        api(`/v1/passive/map/canonical-events?region_id=${encodeURIComponent(selectedRegion)}&limit=50`),
-      ]);
-
-      const filteredCanonicalEvents = (eventData.events || [])
-        .filter((event) => state.passiveSemanticFilter === "all" || event.status === state.passiveSemanticFilter)
-        .filter((event) => attentionModeAppliesToEvent(event, attentionSets));
-      const visibleSites = (siteData.sites || []).filter((site) =>
-        attentionModeAppliesToSite(site, attentionSets)
-      );
-      const highlightedSiteIds = new Set(
-        filteredCanonicalEvents
-          .map((event) => event.site_id)
-          .filter(Boolean)
-      );
-
-      visibleSites.forEach((site) => {
-        const siteColor = passiveSiteColor(site.site_type);
-        const siteStatusColor = site.top_canonical_status ? passiveStatusColor(site.top_canonical_status) : Cesium.Color.WHITE;
-        const attentionTarget = attentionMapActive && site.site_id && attentionSets.siteIds.has(site.site_id);
-        const highlighted = attentionMapActive
-          ? attentionTarget || (site.site_id && highlightedSiteIds.has(site.site_id))
-          : state.passiveSemanticFilter === "all"
-            ? site.elevated || site.risk_score >= 0.6
-            : (site.site_id && highlightedSiteIds.has(site.site_id));
-        const siteEntity = state.viewer.entities.add({
-          id: `passive-site-${site.seed_key}`,
-          name: site.name,
-          position: Cesium.Cartesian3.fromDegrees(site.coordinates.lon, site.coordinates.lat),
-          point: {
-            pixelSize: (site.risk_score >= 0.75 ? 16 : site.risk_score >= 0.45 ? 13 : 10) + (highlighted ? 2 : 0),
-            color: highlighted ? siteColor : Cesium.Color.fromAlpha(siteColor, 0.22),
-            outlineColor: attentionTarget
-              ? Cesium.Color.RED
-              : highlighted
-                ? siteStatusColor
-                : Cesium.Color.fromAlpha(Cesium.Color.WHITE, 0.3),
-            outlineWidth: attentionTarget ? 4 : highlighted ? 3 : 1,
-          },
-          label: {
-            text: site.name,
-            font: "11px sans-serif",
-            pixelOffset: new Cesium.Cartesian2(0, -18),
-            fillColor: highlighted ? Cesium.Color.WHITE : Cesium.Color.fromAlpha(Cesium.Color.WHITE, 0.45),
-            showBackground: highlighted,
-            backgroundColor: Cesium.Color.fromAlpha(Cesium.Color.BLACK, 0.55),
-          },
-          properties: { layer: "passive-site", payload: site },
-          description: `${site.site_type} | risk ${site.risk_score.toFixed(2)} | ${site.seed_status} | ${site.top_canonical_status ?? "no_canonical_state"} | ${site.risk_trend} | ${attentionTarget ? "attention_target" : highlighted ? "highlighted" : "background"}`,
-        });
-        state.passiveGlobeEntities.push(siteEntity);
-        if (site.site_id) {
-          state.passiveSiteEntityIndex[site.site_id] = siteEntity;
         }
       });
-
-        filteredCanonicalEvents.forEach((event) => {
-          const attentionTarget = attentionMapActive && attentionSets.canonicalIds.has(event.canonical_event_id);
-          const eventEntity = state.viewer.entities.add({
-            id: `passive-canonical-event-${event.canonical_event_id}`,
-            name: `${event.event_type} @ ${event.site_name}`,
-            position: Cesium.Cartesian3.fromDegrees(event.coordinates.lon, event.coordinates.lat),
-            point: {
-              pixelSize: passiveCanonicalPixelSize(event),
-              color: passiveStatusColor(event.status),
-              outlineColor: attentionTarget ? Cesium.Color.WHITE : Cesium.Color.BLACK,
-              outlineWidth: attentionTarget ? 4 : 2,
-            },
-            label: {
-              text: `${event.event_type} ${event.status} (${event.support_count})`,
-              font: "10px sans-serif",
-              pixelOffset: new Cesium.Cartesian2(0, 18),
-              fillColor: Cesium.Color.WHITE,
-              showBackground: true,
-              backgroundColor: Cesium.Color.fromAlpha(Cesium.Color.BLACK, 0.55),
-          },
-          properties: { layer: "passive-canonical-event", payload: event },
-          description: `${attentionTarget ? "attention_target | " : ""}${event.summary}`,
-          });
-          state.passiveGlobeEntities.push(eventEntity);
-          state.passiveEntityIndex[event.canonical_event_id] = eventEntity;
-          if (!state.passiveSiteEventIndex[event.site_id]) {
-            state.passiveSiteEventIndex[event.site_id] = [];
-          }
-          state.passiveSiteEventIndex[event.site_id].push(eventEntity);
-        });
-
-      renderPassiveMapLegend(selectedRegionSummary, visibleSites, filteredCanonicalEvents, visibleRegions.length);
-      applyPassiveSiteFocus(state.selectedPassiveSiteId, state.selectedPassiveCanonicalEventId);
-      if (state.passiveDashboardSummary && state.passiveMaintenanceSummary) {
-        renderPassiveDashboard(
-          state.passiveDashboardSummary,
-          state.passiveMaintenanceSummary,
-          state.passiveCommandCenterSummary,
-        );
-      }
-
-      if (state.passiveGlobeEntities.length) {
-        state.viewer.zoomTo(state.passiveGlobeEntities);
-      }
-
-      renderEmpty($("passive-focus"), "Select a passive region, site, or canonical event on the map.");
     }
+  } catch (_) { /* leave defaults */ }
+}
 
-    async function refreshPassiveDashboardSummary() {
-      try {
-        const semanticFilter = state.passiveSemanticFilter && state.passiveSemanticFilter !== "all"
-          ? `&semantic_status=${encodeURIComponent(state.passiveSemanticFilter)}`
-          : "";
-        const pressureFilter = state.passivePressureFilter && state.passivePressureFilter !== "all"
-          ? `&min_pressure_priority=${encodeURIComponent(state.passivePressureFilter)}`
-          : "";
-        const attentionKindFilter = state.passiveAttentionKindFilter && state.passiveAttentionKindFilter !== "all"
-          ? `&attention_kind=${encodeURIComponent(state.passiveAttentionKindFilter)}`
-          : "";
-        const attentionPriorityFilter = state.passiveAttentionPriorityFilter && state.passiveAttentionPriorityFilter !== "all"
-          ? `&min_attention_priority=${encodeURIComponent(state.passiveAttentionPriorityFilter)}`
-          : "";
-        const commandCenter = await api(`/v1/passive/command-center/summary?limit=5&semantic_window_hours=336${semanticFilter}${pressureFilter}${attentionKindFilter}${attentionPriorityFilter}`);
-        const data = commandCenter.dashboard || {};
-        const maintenance = commandCenter.maintenance || {};
-        state.passiveDashboardSummary = data;
-        state.passiveMaintenanceSummary = maintenance;
-        state.passiveCommandCenterSummary = commandCenter;
-        renderPassiveDashboard(data, maintenance, commandCenter);
-        renderPassiveCommandCenterPanel(commandCenter);
-        return data;
-      } catch (error) {
-        renderEmpty($("passive-dashboard"), error.message);
-        return null;
-      }
+// --- Attention Queue ---
+async function refreshAttentionQueue() {
+  try {
+    const data = await API.get('/v1/passive/command-center/summary');
+    const list = document.getElementById('attention-queue-list');
+    const cnt  = document.getElementById('attention-count');
+    if (!list) return;
+    const items = data.attention_queue || data.queue || data.items || [];
+    if (!items.length) {
+      list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">Queue is clear.</div>';
+      if (cnt) cnt.textContent = '0';
+      return;
     }
+    if (cnt) cnt.textContent = 'top ' + Math.min(items.length, 5);
+    list.innerHTML = items.slice(0, 5).map((item, idx) => {
+      const pc   = priorityClass(idx);
+      const kind = (item.kind || item.type || 'event').toLowerCase();
+      const kindClass = kind === 'site' ? 'focus' : kind === 'region' ? 'region' : kind === 'replay' ? 'replay' : 'evidence';
+      const kindLabel = kind === 'site' ? 'Focus Site' : kind === 'region' ? 'Open Region' : kind === 'replay' ? 'Replay' : 'Evidence';
+      const title  = item.title || item.name || 'Unnamed item';
+      const reason = item.reason || item.description || '';
+      const num    = String(idx + 1).padStart(2, '0');
+      const isWarn = idx <= 1 && (item.level || '').toLowerCase() !== 'healthy';
+      return '<div class="attention-item">'
+        + '<div class="priority-number ' + pc + '">' + num + '</div>'
+        + '<div class="att-body">'
+        + '<div class="att-head"><span class="att-kind ' + kindClass + '">' + kindLabel + '</span></div>'
+        + '<div class="att-title">' + title + '</div>'
+        + (reason ? '<div class="att-reason">' + reason + '</div>' : '')
+        + '<button class="att-action' + (isWarn ? ' warn' : '') + '">Open &rarr;</button>'
+        + '</div></div>';
+    }).join('');
+  } catch (_) { /* leave loading */ }
+}
 
-    function renderPassiveCanonicalEvents(events) {
-      const target = $("canonical-events");
-      if (!target) return;
-      if (!events || !events.length) {
-        renderEmpty(target, "No canonical events.");
-        return;
-      }
-      target.innerHTML = events.slice(0, 10).map((event) => `
-        <div class="card">
-          <div class="meta">
-            ${renderRiskDeltaPill(event.risk_delta?.classification)}
-            <span class="${pillClass(event.severity === "critical" || event.severity === "high" ? "failed" : "ok")}">${escapeHtml(event.severity)}</span>
-            <span>${escapeHtml(event.event_type)}</span>
-            <span>${escapeHtml(event.site_name)}</span>
-          </div>
-          <div class="meta" style="margin-top:6px">
-            <span>${escapeHtml(event.status)}</span>
-            <span>${escapeHtml(event.temporal_phase)}</span>
-            <span>risk ${(event.risk_score * 100).toFixed(0)}%</span>
-            <span>${event.support_count} signals</span>
-          </div>
-          <div class="meta" style="margin-top:6px">${escapeHtml(event.status_summary)}</div>
-          ${event.risk_delta?.explanation ? `<div class="meta" style="margin-top:6px">${escapeHtml(event.risk_delta.explanation)}</div>` : ""}
-          <div class="row" style="margin-top:8px">
-            <button class="secondary passive-refocus-canonical" data-canonical-id="${escapeHtml(event.canonical_event_id)}" data-site-id="${escapeHtml(event.site_id)}">Focus Event</button>
-            <button class="secondary passive-open-region-runs" data-region-id="${escapeHtml(event.region_id)}">Region Runs</button>
-          </div>
-        </div>`).join("");
+// --- Recommended Actions ---
+async function refreshRecommendedActions() {
+  try {
+    const data = await API.get('/v1/passive/command-center/summary');
+    const list = document.getElementById('recommended-actions-list');
+    if (!list) return;
+    const actions = data.recommended_actions || data.actions || data.remediations || [];
+    if (!actions.length) {
+      list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:6px 0;">No recommendations at this time.</div>';
+      return;
     }
+    const colorMap = { high: 'var(--coral)', med: 'var(--amber)', medium: 'var(--amber)', low: 'var(--teal)' };
+    list.innerHTML = actions.slice(0, 4).map(a => {
+      const impact = (a.impact || a.priority || 'med').toLowerCase();
+      const color  = colorMap[impact] || 'var(--teal)';
+      const conf   = a.confidence != null ? a.confidence.toFixed(2) : '\u2014';
+      const desc   = a.description || a.action || a.title || 'Action required.';
+      const target = a.target || a.site || a.region || '';
+      return '<div style="padding:11px 12px;background:var(--bg-elevated);border-left:2px solid ' + color + ';border-radius:0 2px 2px 0;">'
+        + '<div style="font-size:12px;color:var(--text-primary);line-height:1.4;">'
+        + desc + (target ? ' <strong style="color:' + color + ';font-weight:500">' + target + '</strong>' : '')
+        + '</div>'
+        + '<div style="font-family:var(--font-mono);font-size:9.5px;color:var(--text-tertiary);margin-top:5px;letter-spacing:0.08em;">'
+        + 'IMPACT &middot; ' + impact.toUpperCase() + ' &nbsp;&middot;&nbsp; CONF &middot; ' + conf
+        + '</div></div>';
+    }).join('');
+  } catch (_) { /* leave */ }
+}
 
-    async function refreshPassiveCanonicalEvents() {
-      const regionQuery = state.selectedPassiveRegionId
-        ? `&region_id=${encodeURIComponent(state.selectedPassiveRegionId)}`
-        : "";
-      try {
-        const data = await api(`/v1/passive/canonical-events?limit=10${regionQuery}`);
-        renderPassiveCanonicalEvents(data.events || []);
-        return data;
-      } catch (error) {
-        renderEmpty($("canonical-events"), error.message);
-        return null;
-      }
+// --- Event Composition ---
+async function refreshEventComposition() {
+  try {
+    const data   = await API.get('/v1/passive/map/canonical-events');
+    const events = Array.isArray(data) ? data : (data.events || data.items || []);
+    const list   = document.getElementById('event-composition-list');
+    const total  = document.getElementById('event-total');
+    if (!list) return;
+    if (!events.length) {
+      list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:4px 0;">No events.</div>';
+      if (total) total.textContent = '0 live';
+      return;
     }
-
-    async function refreshPassiveOperationalVisibility() {
-      try {
-        const regionQuery = state.selectedPassiveRegionId
-          ? `&region_id=${encodeURIComponent(state.selectedPassiveRegionId)}`
-          : "";
-        const data = await api(`/v1/passive/operational-visibility?limit=25${regionQuery}`);
-        state.passiveOperationalVisibility = data;
-        $('operational-visibility').innerHTML = renderOperationalVisibility(data);
-        if (state.globeReady) { refreshPassiveMapLayers(); }
-        return data;
-      } catch (error) {
-        renderEmpty($('operational-visibility'), error.message);
-        return null;
-      }
-    }
-
-    function syncSemanticTimelinePanel(timeline, label) {
-      const target = $("semantic-timeline");
-      const lbl = $("semantic-timeline-label");
-      if (!target) return;
-      const prevScroll = target.scrollTop;
-      state.semanticTimeline = timeline;
-      if (lbl) lbl.textContent = label || "";
-      target.innerHTML = renderSemanticTimeline(timeline);
-      target.scrollTop = prevScroll;
-      target.classList.remove("stl-updated");
-      void target.offsetWidth; // force reflow to restart animation
-      target.classList.add("stl-updated");
-    }
-
-    async function refreshSemanticTimeline() {
-      const regionId = state.selectedPassiveRegionId;
-      const target = $("semantic-timeline");
-      const label = $("semantic-timeline-label");
-      if (!regionId) {
-        renderEmpty(target, "Select a passive region to load its semantic timeline.");
-        if (label) label.textContent = "";
-        return null;
-      }
-      try {
-        const prevScroll = target.scrollTop;
-        const data = await api(`/v1/passive/regions/${encodeURIComponent(regionId)}/semantic-timeline?limit=20`);
-        state.semanticTimeline = data;
-        if (label) label.textContent = regionId;
-        target.innerHTML = renderSemanticTimeline(data);
-        target.scrollTop = prevScroll;
-        target.classList.remove("stl-updated");
-        void target.offsetWidth;
-        target.classList.add("stl-updated");
-        return data;
-      } catch (error) {
-        renderEmpty(target, error.message);
-        return null;
-      }
-    }
-
-    async function refreshIngestStatus() {
-        const source = $("source-name").value.trim() || "celestrak-active";
-        try {
-          const data = await api(`/v1/ingest/status?source=${encodeURIComponent(source)}`);
-        $("metric-freshness").textContent = formatSeconds(data.freshness_seconds);
-        renderCards($("ingest-status"), [data], (item) => `
-          <div class="card">
-            <h4>${item.source}</h4>
-            <div class="meta">
-              <span class="${pillClass('ok')}">freshness ${formatSeconds(item.freshness_seconds)}</span>
-              <span class="pill">${item.object_count} objects</span>
-            </div>
-            <div class="meta" style="margin-top:8px">
-              <span>request <span class="mono">${item.latest_request_id}</span></span>
-              <span>${formatEpoch(item.latest_timestamp_unix_seconds)}</span>
-            </div>
-          </div>`);
-      } catch (error) {
-        $("metric-freshness").textContent = "n/a";
-        renderEmpty($("ingest-status"), error.message);
-        }
-      }
-
-    async function refreshApodBriefing() {
-        try {
-          const data = await api("/v1/briefing/apod");
-          $("apod-briefing").innerHTML = `
-            <div class="list">
-              <div class="card">
-                <h4>${data.title}</h4>
-                <div class="meta">
-                  <span class="pill">${data.media_type}</span>
-                  <span>${data.date}</span>
-                </div>
-                ${data.url ? `<div style="margin-top:12px"><img src="${data.url}" alt="${data.title}" style="width:100%;height:220px;object-fit:cover;border-radius:8px;border:1px solid rgba(151,181,214,0.18)" /></div>` : ""}
-                <div class="meta" style="margin-top:12px;line-height:1.6">${data.explanation}</div>
-              </div>
-            </div>`;
-        } catch (error) {
-          renderEmpty($("apod-briefing"), error.message);
-        }
-      }
-
-    async function refreshNeoWsBriefing() {
-      try {
-        const data = await api("/v1/briefing/neows");
-        state.neoBriefing = data;
-        renderNeoWsBriefing(data);
-      } catch (error) {
-        state.neoBriefing = null;
-        state.selectedNeoReferenceId = null;
-        renderEmpty($("neows-briefing"), error.message);
-      }
-    }
-
-    async function refreshEventsTimeline() {
-      const objectId = $("object-id").value.trim();
-      const horizon = Number($("timeline-horizon").value || 72);
-      const eventType = $("event-type-filter").value.trim();
-      const eventTypeParam = eventType ? `&event_type=${encodeURIComponent(eventType)}` : "";
-      const data = await api(`/v1/events/timeline?horizon=${horizon}&limit_per_bucket=6&object_id=${encodeURIComponent(objectId)}${eventTypeParam}`);
-      $("metric-events").textContent = String(data.total_events);
-      renderCards($("events-timeline"), data.buckets, (bucket) => `
-        <div class="card">
-          <h4>${bucket.label}</h4>
-          <div class="meta"><span class="pill">${bucket.events.length} events</span></div>
-          <div class="list" style="margin-top:10px">
-            ${bucket.events.map((event) => `
-              <div class="card">
-                <h4>${event.event_type}</h4>
-                <div class="meta">
-                  <span class="${pillClass(event.prediction?.event === 'UnstableTrack' ? 'failed' : 'ok')}">risk ${(event.risk * 100).toFixed(0)}%</span>
-                  <span>${formatEpoch(event.target_epoch_unix_seconds)}</span>
-                </div>
-                <div class="meta" style="margin-top:8px">${event.summary}</div>
-                <div class="row" style="margin-top:10px">
-                  <button class="secondary event-dispatch" data-event-id="${event.event_id}">Dispatch Event</button>
-                </div>
-              </div>`).join("")}
-          </div>
-        </div>` );
-      return data;
-    }
-
-    async function refreshEventQueue() {
-      const objectId = $("object-id").value.trim();
-      const eventType = $("event-type-filter").value.trim();
-      const eventTypeParam = eventType ? `&event_type=${encodeURIComponent(eventType)}` : "";
-      const data = await api(`/v1/events?limit=8&object_id=${encodeURIComponent(objectId)}&future_only=true${eventTypeParam}`);
-      renderCards($("event-queue"), data, (eventItem) => `
-        <div class="card">
-          <h4>${eventItem.event_type}</h4>
-          <div class="meta">
-            <span class="${pillClass(eventItem.prediction?.event === 'UnstableTrack' ? 'failed' : 'ok')}">risk ${(eventItem.risk * 100).toFixed(0)}%</span>
-            <span>${formatEpoch(eventItem.target_epoch_unix_seconds)}</span>
-            <span class="mono">${eventItem.object_id}</span>
-          </div>
-          <div class="meta" style="margin-top:8px">${eventItem.summary}</div>
-          <div class="row" style="margin-top:10px">
-            <button class="secondary event-dispatch" data-event-id="${eventItem.event_id}">Dispatch Event</button>
-          </div>
-        </div>`);
-      return data;
-    }
-
-    async function refreshObjectTimeline() {
-      const objectId = $("object-id").value.trim();
-      const horizon = Number($("timeline-horizon").value || 72);
-      const data = await api(`/v1/objects/${encodeURIComponent(objectId)}/timeline?horizon=${horizon}`);
-      renderCards($("object-timeline"), data.checkpoints, (item) => `
-        <div class="card">
-          <h4>t+${item.offset_hours}h</h4>
-          <div class="meta">
-            <span class="pill">${item.propagation_model}</span>
-            <span>${formatEpoch(item.target_epoch_unix_seconds)}</span>
-          </div>
-          <div class="meta" style="margin-top:8px">${item.summary}</div>
-          </div>`);
-      return data;
-    }
-
-    async function refreshCloseApproaches() {
-      const objectId = $("object-id").value.trim();
-      const horizon = Number($("timeline-horizon").value || 72);
-      const data = await api(`/v1/objects/${encodeURIComponent(objectId)}/close-approaches?horizon=${horizon}&threshold_km=250&limit=6`);
-      state.closeApproaches = data;
-      renderCards($("close-approaches"), data.close_approaches, (item) => `
-        <div class="card">
-          <h4>${item.counterpart_object_name}</h4>
-          <div class="meta">
-            <span class="pill">${item.propagation_model}</span>
-            <span>${formatEpoch(item.target_epoch_unix_seconds)}</span>
-          </div>
-          <div class="meta" style="margin-top:8px">
-            <span>${item.miss_distance_km.toFixed(1)} km miss distance</span>
-            <span>priority ${(item.priority_score * 100).toFixed(0)}%</span>
-          </div>
-          <div class="meta" style="margin-top:8px">${item.summary}</div>
-        </div>`);
-      if (!data.close_approaches.length) {
-        renderEmpty($("close-approaches"), "No close approaches inside the selected horizon.");
-      }
-      return data;
-    }
-
-    async function refreshPredictionSnapshots() {
-      const objectId = $("object-id").value.trim();
-      const data = await api(`/v1/objects/${encodeURIComponent(objectId)}/predictions?limit=6`);
-      renderCards($("prediction-snapshots"), data, (item) => `
-        <div class="card">
-          <h4>${item.endpoint}</h4>
-          <div class="meta">
-            <span class="pill">${item.propagation_model}</span>
-            <span>${formatEpoch(item.generated_at_unix_seconds)}</span>
-          </div>
-          <div class="meta" style="margin-top:8px">
-            <span>horizon ${item.horizon_hours}h</span>
-            <span>${item.model_version}</span>
-          </div>
-          <div class="meta" style="margin-top:8px">
-            <span>base ${formatEpoch(item.base_epoch_unix_seconds)}</span>
-            <span class="mono">${item.evidence_bundle_hash ?? "no bundle"}</span>
-          </div>
-        </div>`);
-    }
-
-    async function refreshDeliveries() {
-      const objectId = $("object-id").value.trim();
-      const data = await api(`/v1/notifications?limit=6&object_id=${encodeURIComponent(objectId)}`);
-      $("metric-deliveries").textContent = String(data.length);
-        renderCards($("deliveries"), data, (item) => `
-          <div class="card">
-            <h4>${item.recipient}</h4>
-            <div class="meta">
-              <span class="${pillClass(item.status)}">${item.status}</span>
-              <span>${item.channel}</span>
-              <span>${item.status_code ?? "n/a"}</span>
-              <span>attempt ${item.attempt_number}/${item.max_attempts}</span>
-            </div>
-            <div class="meta" style="margin-top:8px">${item.notification_reason}</div>
-            <div class="meta" style="margin-top:8px"><span class="mono">${item.target}</span></div>
-          </div>`);
-    }
-
-    async function analyzeAndReplay() {
-      const objectId = $("object-id").value.trim();
-      const payload = { object_id: objectId, timestamp_unix_seconds: null };
-      const analysis = await api("/v1/analyze-object", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      state.lastBundleHash = analysis.evidence_bundle.bundle_hash;
-      const replayManifest = await api(`/v1/evidence/${state.lastBundleHash}/replay`);
-      state.lastManifestHash = replayManifest.manifest_hash;
-      const replay = await api(`/v1/replay/${state.lastManifestHash}/execute`);
-      renderReplayExecution(replay, state.lastManifestHash);
-    }
-
-    async function dispatchAlert() {
-      const objectId = $("object-id").value.trim();
-      await api("/v1/notifications/dispatch", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ object_id: objectId, timestamp_unix_seconds: null }),
-      });
-      await refreshDeliveries();
-    }
-
-    async function dispatchEvent(eventId) {
-      await api("/v1/events/dispatch", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ event_id: eventId }),
-      });
-      await refreshDeliveries();
-    }
-
-    async function refreshAll() {
-      $("refresh-status").textContent = "Refreshing...";
-      try {
-          const [_, __, ___, eventsTimeline, eventQueue, objectTimeline, closeApproaches] = await Promise.all([
-              refreshIngestStatus(),
-              refreshApodBriefing(),
-              refreshNeoWsBriefing(),
-              refreshEventsTimeline(),
-              refreshEventQueue(),
-              refreshObjectTimeline(),
-            refreshCloseApproaches(),
-            refreshPredictionSnapshots(),
-            refreshDeliveries(),
-            refreshPassiveDashboardSummary(),
-            refreshPassiveOperationalVisibility(),
-            refreshPassiveCanonicalEvents(),
-            refreshSemanticTimeline(),
-            analyzeAndReplay(),
-        ]);
-        updateGlobe(objectTimeline, eventsTimeline, state.neoBriefing, closeApproaches);
-        await refreshPassiveMapLayers();
-        $("refresh-status").textContent = `Updated ${new Date().toLocaleTimeString()}`;
-      } catch (error) {
-        $("refresh-status").textContent = error.message;
-      }
-    }
-
-    $("refresh-all").addEventListener("click", refreshAll);
-    $("dispatch-alert").addEventListener("click", async () => {
-      $("refresh-status").textContent = "Dispatching...";
-      try {
-        await dispatchAlert();
-        await refreshAll();
-      } catch (error) {
-        $("refresh-status").textContent = error.message;
-      }
+    if (total) total.textContent = events.length + ' live';
+    // Count by type
+    const counts = {};
+    events.forEach(ev => {
+      const t = (ev.event_type || ev.kind || ev.type || 'other').toUpperCase().replace(/_/g, ' ');
+      counts[t] = (counts[t] || 0) + 1;
     });
-    $("passive-dashboard").addEventListener("click", async (event) => {
-      const pressureFilterButton = event.target.closest(".passive-pressure-filter");
-      if (pressureFilterButton) {
-        state.passivePressureFilter = pressureFilterButton.dataset.filter || "all";
-        $("refresh-status").textContent = `Pressure filter: ${state.passivePressureFilter}`;
-        await Promise.all([refreshPassiveDashboardSummary(), refreshPassiveMapLayers()]);
-        return;
-      }
-      const attentionKindFilterButton = event.target.closest(".passive-attention-kind-filter");
-      if (attentionKindFilterButton) {
-        state.passiveAttentionKindFilter = attentionKindFilterButton.dataset.filter || "all";
-        $("refresh-status").textContent = `Attention filter: ${state.passiveAttentionKindFilter}`;
-        await refreshPassiveDashboardSummary();
-        await refreshPassiveMapLayers();
-        return;
-      }
-      const attentionPriorityFilterButton = event.target.closest(".passive-attention-priority-filter");
-      if (attentionPriorityFilterButton) {
-        state.passiveAttentionPriorityFilter = attentionPriorityFilterButton.dataset.filter || "all";
-        $("refresh-status").textContent = `Attention priority: ${state.passiveAttentionPriorityFilter}`;
-        await refreshPassiveDashboardSummary();
-        await refreshPassiveMapLayers();
-        return;
-      }
-      const attentionMapButton = event.target.closest(".passive-toggle-attention-map");
-      if (attentionMapButton) {
-        state.passiveAttentionMapMode = !state.passiveAttentionMapMode;
-        $("refresh-status").textContent = `Attention map: ${state.passiveAttentionMapMode ? "on" : "off"}`;
-        await Promise.all([refreshPassiveDashboardSummary(), refreshPassiveMapLayers()]);
-        return;
-      }
-      const filterButton = event.target.closest(".passive-semantic-filter");
-      if (filterButton) {
-        state.passiveSemanticFilter = filterButton.dataset.filter || "all";
-        $("refresh-status").textContent = `Semantic filter: ${state.passiveSemanticFilter}`;
-        await Promise.all([refreshPassiveDashboardSummary(), refreshPassiveMapLayers()]);
-        return;
-      }
-      const resetSemanticButton = event.target.closest(".passive-reset-semantic-filter");
-      if (resetSemanticButton) {
-        state.passiveSemanticFilter = "all";
-        $("refresh-status").textContent = "Semantic filter: all";
-        await Promise.all([refreshPassiveDashboardSummary(), refreshPassiveMapLayers()]);
-        return;
-      }
-      const resetPressureButton = event.target.closest(".passive-reset-pressure-filter");
-      if (resetPressureButton) {
-        state.passivePressureFilter = "all";
-        $("refresh-status").textContent = "Pressure filter: all";
-        await Promise.all([refreshPassiveDashboardSummary(), refreshPassiveMapLayers()]);
-        return;
-      }
-      const resetAttentionKindButton = event.target.closest(".passive-reset-attention-kind-filter");
-      if (resetAttentionKindButton) {
-        state.passiveAttentionKindFilter = "all";
-        $("refresh-status").textContent = "Attention filter: all";
-        await refreshPassiveDashboardSummary();
-        await refreshPassiveMapLayers();
-        return;
-      }
-      const resetAttentionPriorityButton = event.target.closest(".passive-reset-attention-priority-filter");
-      if (resetAttentionPriorityButton) {
-        state.passiveAttentionPriorityFilter = "all";
-        $("refresh-status").textContent = "Attention priority: all";
-        await refreshPassiveDashboardSummary();
-        await refreshPassiveMapLayers();
-        return;
-      }
-      const refocusCanonicalButton = event.target.closest(".passive-refocus-canonical");
-      if (refocusCanonicalButton) {
-        await handlePassiveRefocusCanonicalButton(refocusCanonicalButton, "Focused canonical event");
-        return;
-      }
-      const refocusSiteButton = event.target.closest(".passive-refocus-site");
-      if (refocusSiteButton) {
-        await handlePassiveRefocusSiteButton(refocusSiteButton, "Focused site");
-        return;
-      }
-      const attentionItemCard = event.target.closest(".passive-attention-item-card");
-      if (attentionItemCard) {
-        setPassiveSelectedAttentionFromDataset(attentionItemCard.dataset);
-        await focusPassiveAttentionItem(
-          attentionItemCard.dataset.attentionKind || attentionItemCard.dataset.kind,
-          attentionItemCard.dataset.regionId,
-          attentionItemCard.dataset.siteId,
-          attentionItemCard.dataset.canonicalId,
-        );
-        return;
-      }
-      const openPathButton = event.target.closest(".passive-open-path");
-      if (openPathButton) {
-        handlePassiveOpenPathButton(openPathButton, "Opened read path", false);
-        return;
-      }
-      const leaseButton = event.target.closest(".passive-open-lease");
-      if (leaseButton) {
-        setPassiveSelectedAttentionFromDataset(leaseButton.dataset);
-        await openPassiveLease(leaseButton.dataset.regionId, "Focused active lease");
-        return;
-      }
-      const heartbeatButton = event.target.closest(".passive-open-heartbeat");
-      if (heartbeatButton) {
-        await openPassiveHeartbeat(heartbeatButton.dataset.workerId, "Focused worker heartbeat");
-        return;
-      }
-      const workerDiagnosticsButton = event.target.closest(".passive-open-worker-diagnostics");
-      if (workerDiagnosticsButton) {
-        setPassiveSelectedAttentionFromDataset(workerDiagnosticsButton.dataset);
-        await openPassiveWorkerDiagnostics(
-          "Opened worker diagnostics",
-          workerDiagnosticsButton.dataset.regionId || null,
-        );
-        return;
-      }
-      const heartbeatListButton = event.target.closest(".passive-open-heartbeat-list");
-      if (heartbeatListButton) {
-        setPassiveSelectedAttentionFromDataset(heartbeatListButton.dataset);
-        await openPassiveHeartbeatList(false, "Opened worker heartbeats");
-        return;
-      }
-      const staleHeartbeatsButton = event.target.closest(".passive-open-stale-heartbeats");
-      if (staleHeartbeatsButton) {
-        setPassiveSelectedAttentionFromDataset(staleHeartbeatsButton.dataset);
-        await openPassiveHeartbeatList(true, "Opened stale worker heartbeats");
-        return;
-      }
-      const sourceSamplesButton = event.target.closest(".passive-open-source-samples");
-      if (sourceSamplesButton) {
-        setPassiveSelectedAttentionFromDataset(sourceSamplesButton.dataset);
-        await openPassiveSourceSamples(sourceSamplesButton.dataset.sourceKind, "Opened source samples", sourceSamplesButton.dataset.regionId || null);
-        return;
-      }
-      const previewSourcePruneButton = event.target.closest(".passive-preview-source-prune");
-      if (previewSourcePruneButton) {
-        setPassiveSelectedAttentionFromDataset(previewSourcePruneButton.dataset);
-        previewSourcePruneButton.disabled = true;
-        try {
-          await pruneSourceHealthSamples(
-            previewSourcePruneButton.dataset.sourceKind || null,
-            previewSourcePruneButton.dataset.regionId || null,
-            "Source health prune preview",
-            true,
-          );
-        } catch (error) {
-          $("refresh-status").textContent = error.message;
-        } finally {
-          previewSourcePruneButton.disabled = false;
-        }
-        return;
-      }
-      const pruneSourceHealthButton = event.target.closest(".passive-prune-source-health");
-      if (pruneSourceHealthButton) {
-        setPassiveSelectedAttentionFromDataset(pruneSourceHealthButton.dataset);
-        pruneSourceHealthButton.disabled = true;
-        try {
-          await pruneSourceHealthSamples(
-            pruneSourceHealthButton.dataset.sourceKind || null,
-            pruneSourceHealthButton.dataset.regionId || null,
-            "Pruned old source health samples",
-          );
-        } catch (error) {
-          $("refresh-status").textContent = error.message;
-        } finally {
-          pruneSourceHealthButton.disabled = false;
-        }
-        return;
-      }
-      const openPathButton = event.target.closest(".passive-open-path");
-      if (openPathButton) {
-        handlePassiveOpenPathButton(openPathButton, "Opened read path");
-        return;
-      }
-      const evidenceButton = event.target.closest(".passive-open-evidence");
-      if (evidenceButton) {
-        handlePassiveOpenEvidenceButton(evidenceButton, "Opened evidence");
-        return;
-      }
-      const runReplayButton = event.target.closest(".passive-run-replay");
-      if (runReplayButton) {
-        await handlePassiveRunReplayButton(runReplayButton, "Passive replay");
-        return;
-      }
-      const regionRunsButton = event.target.closest(".passive-open-region-runs");
-      if (regionRunsButton) {
-        setPassiveSelectedAttentionFromDataset(regionRunsButton.dataset);
-        await openPassiveRegionRuns(regionRunsButton.dataset.regionId, "Opened region runs");
-        return;
-      }
-      const regionOverviewButton = event.target.closest(".passive-open-region-overview");
-      if (regionOverviewButton) {
-        await handlePassiveOpenRegionOverviewButton(regionOverviewButton, "Opened region");
-        return;
-      }
-      const stripEntry = event.target.closest(".passive-strip-entry");
-      if (!stripEntry) return;
-      const canonicalId = stripEntry.dataset.canonicalId;
-      if (!canonicalId) return;
-      focusPassiveCanonicalEvent(canonicalId, stripEntry.dataset.siteId, "Focused canonical event");
-    });
-    $("refresh-operational-visibility").addEventListener("click", async () => {
-      $("refresh-status").textContent = "Refreshing operational visibility...";
-      try {
-        await refreshPassiveOperationalVisibility();
-        $("refresh-status").textContent = `Operational visibility updated ${new Date().toLocaleTimeString()}`;
-      } catch (error) {
-        $("refresh-status").textContent = error.message;
-      }
-    });
-    $("operational-visibility").addEventListener("click", async (event) => {
-      const workerDiagnosticsButton = event.target.closest(".passive-open-worker-diagnostics");
-      if (workerDiagnosticsButton) {
-        await openPassiveWorkerDiagnostics(
-          "Opened worker diagnostics",
-          workerDiagnosticsButton.dataset.regionId || null,
-        );
-        return;
-      }
-      const regionRunsButton = event.target.closest(".passive-open-region-runs");
-      if (regionRunsButton) {
-        await openPassiveRegionRuns(regionRunsButton.dataset.regionId, "Opened region runs");
-        return;
-      }
-      const heartbeatButton = event.target.closest(".passive-open-heartbeat");
-      if (heartbeatButton) {
-        await openPassiveHeartbeat(heartbeatButton.dataset.workerId, "Opened worker heartbeat");
-        return;
-      }
-      const openPathButton = event.target.closest(".passive-open-path");
-      if (openPathButton) {
-        handlePassiveOpenPathButton(openPathButton, "Opened read path");
-        return;
-      }
-    });
-    $("neows-briefing").addEventListener("click", async (event) => {
-      const focusButton = event.target.closest(".neo-briefing-focus");
-      if (focusButton) {
-        await focusNeoBriefingItem(focusButton.dataset.neoReferenceId, "Focused NEO");
-        return;
-      }
-      const openPathButton = event.target.closest(".neo-open-path");
-      if (openPathButton) {
-        if (openPathButton.dataset.neoReferenceId) {
-          selectNeoBriefingItem(openPathButton.dataset.neoReferenceId);
-        }
-        openPassivePath(openPathButton.dataset.path, "Opened NEO read path");
-        return;
-      }
-      const briefingItem = event.target.closest(".neo-briefing-item");
-      if (!briefingItem) return;
-      selectNeoBriefingItem(briefingItem.dataset.neoReferenceId, "Selected NEO");
-    });
-    $("events-timeline").addEventListener("click", async (event) => {
-      const button = event.target.closest(".event-dispatch");
-      if (!button) return;
-      const eventId = button.dataset.eventId;
-      if (!eventId) return;
-      $("refresh-status").textContent = "Dispatching event...";
-      button.disabled = true;
-      try {
-        await dispatchEvent(eventId);
-        await refreshAll();
-      } catch (error) {
-        $("refresh-status").textContent = error.message;
-      } finally {
-        button.disabled = false;
-      }
-    });
-    $("event-queue").addEventListener("click", async (event) => {
-      const button = event.target.closest(".event-dispatch");
-      if (!button) return;
-      const eventId = button.dataset.eventId;
-      if (!eventId) return;
-      $("refresh-status").textContent = "Dispatching event...";
-      button.disabled = true;
-      try {
-        await dispatchEvent(eventId);
-        await refreshAll();
-      } catch (error) {
-        $("refresh-status").textContent = error.message;
-      } finally {
-        button.disabled = false;
-      }
-    });
-    $("passive-focus").addEventListener("click", async (event) => {
-      const clearSelectedAttentionButton = event.target.closest(".passive-clear-selected-attention");
-      if (clearSelectedAttentionButton) {
-        clearPassiveSelectedAttention("Cleared selected attention");
-        return;
-      }
-      const refocusCanonicalButton = event.target.closest(".passive-refocus-canonical");
-      if (refocusCanonicalButton) {
-        await handlePassiveRefocusCanonicalButton(refocusCanonicalButton, "Focused canonical event");
-        return;
-      }
-      const refocusSiteButton = event.target.closest(".passive-refocus-site");
-      if (refocusSiteButton) {
-        await handlePassiveRefocusSiteButton(refocusSiteButton, "Focused site");
-        return;
-      }
-      const workerDiagnosticsButton = event.target.closest(".passive-open-worker-diagnostics");
-      if (workerDiagnosticsButton) {
-        setPassiveSelectedAttentionFromDataset(workerDiagnosticsButton.dataset);
-        await openPassiveWorkerDiagnostics(
-          "Opened worker diagnostics",
-          workerDiagnosticsButton.dataset.regionId || null,
-        );
-        return;
-      }
-      const leaseButton = event.target.closest(".passive-open-lease");
-      if (leaseButton) {
-        await openPassiveLease(leaseButton.dataset.regionId, "Opened region lease");
-        return;
-      }
-      const heartbeatButton = event.target.closest(".passive-open-heartbeat");
-      if (heartbeatButton) {
-        await openPassiveHeartbeat(heartbeatButton.dataset.workerId, "Opened worker heartbeat");
-        return;
-      }
-      const staleHeartbeatsButton = event.target.closest(".passive-open-stale-heartbeats");
-      if (staleHeartbeatsButton) {
-        setPassiveSelectedAttentionFromDataset(staleHeartbeatsButton.dataset);
-        await openPassiveHeartbeatList(true, "Opened stale worker heartbeats");
-        return;
-      }
-      const heartbeatListButton = event.target.closest(".passive-open-heartbeat-list");
-      if (heartbeatListButton) {
-        setPassiveSelectedAttentionFromDataset(heartbeatListButton.dataset);
-        await openPassiveHeartbeatList(false, "Opened worker heartbeats");
-        return;
-      }
-      const sourceSamplesButton = event.target.closest(".passive-open-source-samples");
-      if (sourceSamplesButton) {
-        setPassiveSelectedAttentionFromDataset(sourceSamplesButton.dataset);
-        await openPassiveSourceSamples(sourceSamplesButton.dataset.sourceKind, "Opened source samples", sourceSamplesButton.dataset.regionId || null);
-        return;
-      }
-      const regionRunsButton = event.target.closest(".passive-open-region-runs");
-      if (regionRunsButton) {
-        setPassiveSelectedAttentionFromDataset(regionRunsButton.dataset);
-        await openPassiveRegionRuns(regionRunsButton.dataset.regionId, "Opened region runs");
-        return;
-      }
-      const regionRunButton = event.target.closest(".passive-open-region-run");
-      if (regionRunButton) {
-        setPassiveSelectedAttentionFromDataset(regionRunButton.dataset);
-        await openPassiveRegionRun(regionRunButton.dataset.runId, "Opened region run");
-        return;
-      }
-      const regionOverviewButton = event.target.closest(".passive-open-region-overview");
-      if (regionOverviewButton) {
-        await handlePassiveOpenRegionOverviewButton(regionOverviewButton, "Opened region");
-        return;
-      }
-      const pruneHeartbeatsButton = event.target.closest(".passive-prune-stale-heartbeats");
-      if (pruneHeartbeatsButton) {
-        setPassiveSelectedAttentionFromDataset(pruneHeartbeatsButton.dataset);
-        pruneHeartbeatsButton.disabled = true;
-        try {
-          await pruneStaleHeartbeats("Pruned stale worker heartbeats");
-        } catch (error) {
-          $("refresh-status").textContent = error.message;
-        } finally {
-          pruneHeartbeatsButton.disabled = false;
-        }
-        return;
-      }
-      const timelineEntry = event.target.closest(".passive-timeline-entry");
-      if (timelineEntry) {
-        const canonicalId = timelineEntry.dataset.canonicalId;
-        if (canonicalId) {
-          focusPassiveCanonicalEvent(canonicalId, timelineEntry.dataset.siteId, "Timeline focus");
-        }
-        return;
-      }
-      const goMapButton = event.target.closest(".passive-go-map");
-      if (goMapButton) {
-        focusPassiveCanonicalEvent(goMapButton.dataset.canonicalId, goMapButton.dataset.siteId, "Focused canonical event");
-        return;
-      }
-      const goSiteButton = event.target.closest(".passive-go-site");
-      if (goSiteButton) {
-        focusPassiveSite(goSiteButton.dataset.siteId, "Focused site");
-        return;
-      }
-      const openPathButton = event.target.closest(".passive-open-path");
-      if (openPathButton) {
-        handlePassiveOpenPathButton(openPathButton, "Opened read path");
-        return;
-      }
-      const evidenceButton = event.target.closest(".passive-open-evidence");
-      if (evidenceButton) {
-        handlePassiveOpenEvidenceButton(evidenceButton, "Opened evidence");
-        return;
-      }
-      const runReplayButton = event.target.closest(".passive-run-replay");
-      if (runReplayButton) {
-        await handlePassiveRunReplayButton(runReplayButton, "Passive replay");
-        return;
-      }
-      const replayButton = event.target.closest(".passive-replay");
-      if (!replayButton) return;
-      const manifestHash = replayButton.dataset.manifestHash;
-      if (!manifestHash) return;
-      replayButton.disabled = true;
-      try {
-        await runPassiveReplay(manifestHash, "Passive replay");
-      } catch (error) {
-        $("refresh-status").textContent = error.message;
-      } finally {
-        replayButton.disabled = false;
-      }
-    });
-    $("passive-command-center").addEventListener("click", async (event) => {
-      const regionOverviewButton = event.target.closest(".passive-open-region-overview");
-      if (regionOverviewButton) {
-        await handlePassiveOpenRegionOverviewButton(regionOverviewButton, "Opened region");
-        return;
-      }
-      const regionRunsButton = event.target.closest(".passive-open-region-runs");
-      if (regionRunsButton) {
-        await openPassiveRegionRuns(regionRunsButton.dataset.regionId, "Opened region runs");
-        return;
-      }
-      const workerDiagnosticsButton = event.target.closest(".passive-open-worker-diagnostics");
-      if (workerDiagnosticsButton) {
-        await openPassiveWorkerDiagnostics("Opened worker diagnostics", workerDiagnosticsButton.dataset.regionId || null);
-        return;
-      }
-      const refocusCanonicalButton = event.target.closest(".passive-refocus-canonical");
-      if (refocusCanonicalButton) {
-        await handlePassiveRefocusCanonicalButton(refocusCanonicalButton, "Focused canonical event");
-        return;
-      }
-      const refocusSiteButton = event.target.closest(".passive-refocus-site");
-      if (refocusSiteButton) {
-        await handlePassiveRefocusSiteButton(refocusSiteButton, "Focused site");
-        return;
-      }
-    });
-    $("canonical-events").addEventListener("click", async (event) => {
-      const refocusCanonicalButton = event.target.closest(".passive-refocus-canonical");
-      if (refocusCanonicalButton) {
-        await handlePassiveRefocusCanonicalButton(refocusCanonicalButton, "Focused canonical event");
-        return;
-      }
-      const regionRunsButton = event.target.closest(".passive-open-region-runs");
-      if (regionRunsButton) {
-        await openPassiveRegionRuns(regionRunsButton.dataset.regionId, "Opened region runs");
-        return;
-      }
-    });
-    $("refresh-canonical-events").addEventListener("click", async () => {
-      $("refresh-status").textContent = "Refreshing canonical events...";
-      try {
-        await refreshPassiveCanonicalEvents();
-        $("refresh-status").textContent = `Canonical events updated ${new Date().toLocaleTimeString()}`;
-      } catch (error) {
-        $("refresh-status").textContent = error.message;
-      }
-    });
-    $("refresh-semantic-timeline").addEventListener("click", async () => {
-      $("refresh-status").textContent = "Refreshing semantic timeline...";
-      try {
-        await refreshSemanticTimeline();
-        $("refresh-status").textContent = `Semantic timeline updated ${new Date().toLocaleTimeString()}`;
-      } catch (error) {
-        $("refresh-status").textContent = error.message;
-      }
-    });
-    $("semantic-timeline").addEventListener("click", async (event) => {
-      // Quick action: View Event
-      const viewBtn = event.target.closest(".stl-qa-view");
-      if (viewBtn) {
-        const { canonicalId, siteId, regionId } = viewBtn.dataset;
-        $("refresh-status").textContent = "Opening event\u2026";
-        try {
-          const reached = await focusPassiveCanonicalFromAttention(canonicalId, siteId, regionId, "Timeline \u2192 Event");
-          if (!reached) await focusPassiveSiteFromAttention(siteId, regionId, "Timeline \u2192 Site");
-        } catch (e) { $("refresh-status").textContent = e.message; }
-        return;
-      }
-      // Quick action: Open Site
-      const siteBtn = event.target.closest(".stl-qa-site");
-      if (siteBtn) {
-        $("refresh-status").textContent = "Opening site\u2026";
-        try {
-          await focusPassiveSiteFromAttention(siteBtn.dataset.siteId, siteBtn.dataset.regionId, "Timeline \u2192 Site");
-        } catch (e) { $("refresh-status").textContent = e.message; }
-        return;
-      }
-      // Quick action: Replay
-      const replayBtn = event.target.closest(".stl-qa-replay");
-      if (replayBtn) {
-        const hash = replayBtn.dataset.manifestHash;
-        if (hash) {
-          $("refresh-status").textContent = "Running replay\u2026";
-          try { await handlePassiveRunReplayButton(replayBtn, "Timeline \u2192 Replay"); }
-          catch (e) { $("refresh-status").textContent = e.message; }
-        }
-        return;
-      }
-      // Click on entry container itself → open event (fallback)
-      const entry = event.target.closest(".passive-timeline-entry");
-      if (!entry) return;
-      const canonicalId = entry.dataset.canonicalId;
-      const siteId = entry.dataset.siteId;
-      const regionId = entry.dataset.regionId || state.selectedPassiveRegionId;
-      $("refresh-status").textContent = "Opening\u2026";
-      try {
-        if (canonicalId && siteId) {
-          const reached = await focusPassiveCanonicalFromAttention(canonicalId, siteId, regionId, "Timeline \u2192 Event");
-          if (!reached) await focusPassiveSiteFromAttention(siteId, regionId, "Timeline \u2192 Site");
-        } else if (siteId) {
-          await focusPassiveSiteFromAttention(siteId, regionId, "Timeline \u2192 Site");
-        }
-      } catch (error) {
-        $("refresh-status").textContent = error.message;
-      }
-    });
-    $("event-type-filter").addEventListener("change", refreshAll);
-    $("toggle-neo-layer").addEventListener("change", () => {
-      updateGlobe(null, null, state.neoBriefing, state.closeApproaches);
-      refreshAll();
-    });
-    $("toggle-close-approach-layer").addEventListener("change", () => {
-      updateGlobe(null, null, state.neoBriefing, state.closeApproaches);
-      refreshAll();
-    });
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    const max    = sorted[0][1];
+    const colors = ['var(--coral)', 'var(--amber)', 'var(--teal)', 'var(--violet)', 'var(--lime)'];
+    list.innerHTML = sorted.slice(0, 5).map(([type, n], i) => {
+      const pct   = Math.round((n / max) * 100);
+      const color = colors[i % colors.length];
+      return '<div>'
+        + '<div style="display:flex;justify-content:space-between;margin-bottom:4px;font-family:var(--font-mono);font-size:10.5px;">'
+        + '<span style="color:var(--text-secondary);">' + type + '</span>'
+        + '<span style="color:' + color + '">' + n + '</span>'
+        + '</div>'
+        + '<div style="height:3px;background:var(--bg-deep);border-radius:1px;overflow:hidden;">'
+        + '<div style="width:' + pct + '%;height:100%;background:' + color + ';"></div>'
+        + '</div></div>';
+    }).join('');
+  } catch (_) { /* leave */ }
+}
 
-    initGlobe();
-    renderEmpty($("passive-focus"), "Select a passive region, site, or canonical event on the map.");
-    refreshAll();
-  </script>
+// --- Sys status ---
+function refreshSysStatus() {
+  const upd = document.getElementById('sys-updated');
+  if (upd) upd.textContent = 'just now';
+}
+
+// --- Timeline labels ---
+function updateTimelineLabels() {
+  const now   = new Date();
+  const start = new Date(now.getTime() - 36 * 3600 * 1000);
+  const end   = new Date(now.getTime() + 36 * 3600 * 1000);
+  const fmt   = d => d.toUTCString().split(' ').slice(1, 5).join(' ').replace(':00 GMT', ' UTC');
+
+  const pad = n => String(n).padStart(2, '0');
+  const fmtTime = d => pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + ' UTC';
+  const fmtDate = d => ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getUTCMonth()] + ' ' + d.getUTCDate() + ', ' + d.getUTCFullYear();
+
+  const st = document.getElementById('timeline-start-time');
+  const sd = document.getElementById('timeline-start-date');
+  const et = document.getElementById('timeline-end-time');
+  const ed = document.getElementById('timeline-end-date');
+  if (st) st.textContent = fmtTime(start);
+  if (sd) sd.textContent = fmtDate(start);
+  if (et) et.textContent = fmtTime(end);
+  if (ed) ed.textContent = fmtDate(end);
+}
+
+// --- Master refresh ---
+async function refreshAll() {
+  refreshSysStatus();
+  updateTimelineLabels();
+  await Promise.allSettled([
+    refreshWhatChanged(),
+    refreshNarrative(),
+    refreshSourceHealth(),
+    refreshProvenance(),
+    refreshOpPicture(),
+    refreshAttentionQueue(),
+    refreshRecommendedActions(),
+    refreshEventComposition(),
+  ]);
+}
+
+// Initial load + polling
+refreshAll();
+setInterval(refreshAll, 30000);
+</script>
+
 </body>
 </html>
 "##;
