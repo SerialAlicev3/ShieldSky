@@ -333,6 +333,10 @@ pub async fn operator_console() -> Html<&'static str> {
     Html(OPERATOR_CONSOLE_HTML)
 }
 
+pub async fn landing_page() -> Html<&'static str> {
+    Html(LANDING_PAGE_HTML)
+}
+
 pub async fn ingest_tle(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1514,10 +1518,11 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!doctype html>
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: Inter, Arial, sans-serif;
+      font-family: "Segoe UI", Arial, sans-serif;
       background:
-        linear-gradient(rgba(8,17,29,0.78), rgba(8,17,29,0.94)),
-        url('https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?auto=format&fit=crop&w=1600&q=80') center/cover fixed;
+        radial-gradient(circle at top left, rgba(83, 209, 193, 0.12), transparent 28%),
+        radial-gradient(circle at top right, rgba(243, 201, 105, 0.12), transparent 22%),
+        linear-gradient(180deg, #08111d, #0c1626 42%, #0a1320 100%);
       color: var(--text);
     }
     a { color: inherit; }
@@ -1831,14 +1836,14 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!doctype html>
   <main class="shell">
     <section class="hero">
       <h1>SSS Operator Console</h1>
-      <p>Space data becomes prioritized intelligence here: live ingest freshness, future event pressure, outbound notifications, and replay drift in one operator workflow.</p>
+      <p>ShieldSky fuses orbital context, passive sensing, and response routing into one operator surface for site protection, airspace monitoring, and evidence-backed decisions.</p>
     </section>
 
     <section class="globe-stage">
       <div id="cesium-globe"></div>
       <div class="globe-overlay">
-        <h3>SSS Operations Map</h3>
-        <p>Passive regions, observed sites, events, future checkpoints, and orbital pressure share the same operator surface.</p>
+        <h3>ShieldSky Operational Map</h3>
+        <p>Regions, observed sites, canonical events, future checkpoints, and orbital context are coordinated here as one live operational picture.</p>
       </div>
       <div class="globe-legend" id="passive-map-legend"></div>
     </section>
@@ -5471,5 +5476,254 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!doctype html>
     refreshAll();
   </script>
 </body>
+</html>
+"##;
+
+const LANDING_PAGE_HTML: &str = r##"<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ShieldSky</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #08111d;
+        --panel: rgba(14, 24, 39, 0.92);
+        --panel-strong: rgba(20, 34, 56, 0.96);
+        --line: rgba(151, 181, 214, 0.18);
+        --text: #eff5ff;
+        --muted: #a8bad2;
+        --accent: #53d1c1;
+        --accent-2: #f3c969;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", Arial, sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(83, 209, 193, 0.14), transparent 24%),
+          radial-gradient(circle at 85% 15%, rgba(243, 201, 105, 0.12), transparent 18%),
+          linear-gradient(180deg, #08111d 0%, #0b1524 52%, #09111d 100%);
+      }
+      a { color: inherit; text-decoration: none; }
+      .shell {
+        min-height: 100vh;
+        padding: 40px 24px 56px;
+        max-width: 1180px;
+        margin: 0 auto;
+      }
+      .nav {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 36px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+      }
+      .brand-mark {
+        width: 14px;
+        height: 14px;
+        border-radius: 999px;
+        background: linear-gradient(135deg, var(--accent), #7bd4ff);
+        box-shadow: 0 0 20px rgba(83, 209, 193, 0.45);
+      }
+      .nav-links {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .nav-links a,
+      .cta,
+      .cta-secondary {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 10px 14px;
+        font-size: 14px;
+      }
+      .cta {
+        background: linear-gradient(180deg, rgba(83, 209, 193, 0.24), rgba(83, 209, 193, 0.08));
+      }
+      .cta-secondary {
+        background: rgba(255,255,255,0.03);
+      }
+      .hero {
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
+        gap: 20px;
+        margin-bottom: 20px;
+      }
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--panel);
+        padding: 24px;
+        backdrop-filter: blur(10px);
+      }
+      h1 {
+        margin: 0 0 14px;
+        font-size: clamp(34px, 6vw, 64px);
+        line-height: 0.98;
+      }
+      .eyebrow {
+        color: var(--accent);
+        font-size: 13px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        margin-bottom: 14px;
+      }
+      .lede {
+        margin: 0;
+        color: var(--muted);
+        font-size: 17px;
+        line-height: 1.65;
+        max-width: 60ch;
+      }
+      .hero-actions {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-top: 22px;
+      }
+      .stat-grid,
+      .feature-grid {
+        display: grid;
+        gap: 16px;
+      }
+      .stat-grid {
+        grid-template-columns: repeat(3, 1fr);
+        margin: 20px 0 28px;
+      }
+      .stat {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 16px;
+        background: rgba(255,255,255,0.025);
+      }
+      .stat strong {
+        display: block;
+        font-size: 26px;
+        margin-bottom: 6px;
+      }
+      .stat span,
+      .feature p,
+      .note,
+      .mini-list li {
+        color: var(--muted);
+      }
+      .feature-grid {
+        grid-template-columns: repeat(3, 1fr);
+      }
+      .feature {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 18px;
+        background: rgba(255,255,255,0.02);
+      }
+      .feature h3,
+      .side-panel h2,
+      .panel h2 {
+        margin: 0 0 10px;
+        font-size: 18px;
+      }
+      .side-panel {
+        display: grid;
+        gap: 14px;
+      }
+      .mini-list {
+        margin: 0;
+        padding-left: 18px;
+        display: grid;
+        gap: 8px;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        color: #d9ebff;
+      }
+      .note {
+        margin-top: 18px;
+        font-size: 14px;
+        line-height: 1.6;
+      }
+      @media (max-width: 900px) {
+        .hero,
+        .feature-grid,
+        .stat-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <div class="nav">
+        <div class="brand"><span class="brand-mark"></span><span>ShieldSky</span></div>
+        <div class="nav-links">
+          <a href="/console">Operator Console</a>
+          <a href="/v1/health">Health</a>
+          <a href="/v1/version">Version</a>
+        </div>
+      </div>
+
+      <section class="hero">
+        <div class="panel">
+          <div class="eyebrow">Sky Security System</div>
+          <h1>Operational airspace intelligence for monitored sites.</h1>
+          <p class="lede">ShieldSky combines passive sensing, orbital context, canonical event detection, and response workflows into one deployable Rust service built for monitoring, triage, and evidence-backed action.</p>
+          <div class="hero-actions">
+            <a class="cta" href="/console">Open Operator Console</a>
+            <a class="cta-secondary" href="/v1/health">API Health</a>
+          </div>
+          <div class="stat-grid">
+            <div class="stat"><strong>Passive</strong><span>Site and region surveillance from fused sources.</span></div>
+            <div class="stat"><strong>Canonical</strong><span>Event normalization, semantic timelines, and remediation surfaces.</span></div>
+            <div class="stat"><strong>Deployable</strong><span>Rust API running in Render with health endpoints and operator UI.</span></div>
+          </div>
+        </div>
+        <div class="panel side-panel">
+          <div>
+            <h2>Primary surfaces</h2>
+            <ul class="mini-list">
+              <li><a href="/console"><code>/console</code></a> for the live operator interface</li>
+              <li><a href="/v1/briefing/apod"><code>/v1/briefing/apod</code></a> for NASA APOD briefing</li>
+              <li><a href="/v1/briefing/neows"><code>/v1/briefing/neows</code></a> for NEO risk briefing</li>
+              <li><a href="/v1/passive/dashboard/summary"><code>/v1/passive/dashboard/summary</code></a> for passive operations summary</li>
+            </ul>
+          </div>
+          <div>
+            <h2>Deployment profile</h2>
+            <ul class="mini-list">
+              <li>Render-ready Docker deployment</li>
+              <li><code>/health</code> and <code>/v1/health</code> health endpoints</li>
+              <li>SQLite-backed operational storage</li>
+            </ul>
+          </div>
+          <p class="note">This root page is intentionally concise. The operational UI lives in the console and the API remains directly accessible for integrations and dashboards.</p>
+        </div>
+      </section>
+
+      <section class="feature-grid">
+        <article class="feature">
+          <h3>Passive Region Monitoring</h3>
+          <p>Track monitored regions, mapped sites, risk history, maintenance state, and source-health evidence across the passive surveillance pipeline.</p>
+        </article>
+        <article class="feature">
+          <h3>Event and Timeline Workflows</h3>
+          <p>Canonical events, semantic timelines, and operational timelines surface what changed, why it matters, and which action path follows.</p>
+        </article>
+        <article class="feature">
+          <h3>Briefings and Context</h3>
+          <p>APOD and NeoWs briefings provide external context while the core ShieldSky console focuses on operational site protection and decision support.</p>
+        </article>
+      </section>
+    </main>
+  </body>
 </html>
 "##;

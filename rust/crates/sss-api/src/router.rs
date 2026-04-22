@@ -1,5 +1,4 @@
 use axum::{
-    response::IntoResponse,
     routing::{get, post},
     Router,
 };
@@ -21,16 +20,16 @@ use crate::handlers::{
     get_passive_site_patterns, get_passive_site_risk_history, get_passive_site_semantic_timeline,
     get_passive_sites, get_passive_source_health_samples, get_passive_worker_diagnostics,
     get_passive_worker_heartbeats, get_prediction_snapshots, get_replay_manifest,
-    get_replay_manifest_for_bundle, health, ingest_celestrak_active, ingest_tle, operator_console,
-    passive_scan, passive_scan_live, predict, prune_passive_source_health_samples,
-    prune_passive_worker_heartbeats, run_passive_regions, run_passive_scheduler, space_overview,
-    upsert_passive_region, version,
+    get_replay_manifest_for_bundle, health, ingest_celestrak_active, ingest_tle, landing_page,
+    operator_console, passive_scan, passive_scan_live, predict,
+    prune_passive_source_health_samples, prune_passive_worker_heartbeats, run_passive_regions,
+    run_passive_scheduler, space_overview, upsert_passive_region, version,
 };
 use crate::state::AppState;
 
 pub fn build_router(state: AppState) -> Router {
     Router::new()
-        .route("/", get(root))
+        .route("/", get(landing_page))
         .route("/health", get(health))
         .route("/console", get(operator_console))
         .route("/v1/health", get(health))
@@ -72,10 +71,6 @@ pub fn build_router(state: AppState) -> Router {
         .route("/v1/replay/:manifest_hash/execute", get(execute_replay))
         .route("/v1/replay/:manifest_hash", get(get_replay_manifest))
         .with_state(state)
-}
-
-async fn root() -> impl IntoResponse {
-    "ShieldSky API is live. Use /v1/health for health checks."
 }
 
 #[allow(clippy::too_many_lines)]
