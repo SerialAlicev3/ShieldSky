@@ -2245,198 +2245,32 @@ async fn operator_console_is_served() {
         .await
         .expect("body bytes");
     let html = String::from_utf8(bytes.to_vec()).expect("utf8");
-    assert!(html.contains("SSS Operator Console"));
-    assert!(html.contains("/v1/events/timeline"));
-    assert!(html.contains("/v1/events/dispatch"));
-    assert!(html.contains("/v1/events?limit=8"));
-    assert!(html.contains("/v1/briefing/apod"));
-    assert!(html.contains("/v1/briefing/neows"));
-    assert!(html.contains("Show NEO context"));
-    assert!(html.contains("Show close approaches"));
-    assert!(html.contains("toggle-neo-layer"));
-    assert!(html.contains("toggle-close-approach-layer"));
-    assert!(html.contains("NEO Risk Briefing"));
-    assert!(html.contains("neows-briefing"));
-    assert!(html.contains("refreshNeoWsBriefing"));
-    assert!(html.contains("state.neoBriefing = data;"));
-    assert!(html.contains("item.priority_score"));
-    assert!(html.contains("item.close_approach_date ?? \"date n/a\""));
-    assert!(html.contains("item.miss_distance_km"));
-    assert!(html.contains("item.relative_velocity_km_s"));
-    assert!(html.contains("item.briefing_summary"));
-    assert!(html.contains("Dispatch Event"));
-    assert!(html.contains("Event Queue"));
-    assert!(html.contains("Passive Operations"));
-    assert!(html.contains("Source Health"));
-    assert!(html.contains("health_status"));
-    assert!(html.contains("staleness_seconds"));
-    assert!(html.contains("consecutive_failure_count"));
-    assert!(html.contains("recovery_hint"));
-    assert!(html.contains("Top Regions"));
-    assert!(html.contains("source_health"));
-    assert!(html.contains("Active Leases"));
-    assert!(html.contains("Worker Heartbeats"));
+    // Branding and core rendering technology
+    assert!(html.contains("ShieldSky"));
+    assert!(html.contains("Operator Console"));
+    assert!(html.contains("three.min.js"));
+    // Passive API endpoints wired in JS
+    assert!(html.contains("/v1/passive/canonical-events"));
     assert!(html.contains("/v1/passive/command-center/summary"));
-    assert!(html.contains("/v1/passive/map/canonical-events"));
-    assert!(html.contains("Passive Focus"));
-    assert!(html.contains("passive-focus"));
-    assert!(html.contains("support_count"));
-    assert!(html.contains("status_summary"));
-    assert!(html.contains("risk_delta.explanation"));
-    assert!(html.contains("top_canonical_status"));
-    assert!(html.contains("dominant_status"));
-    assert!(html.contains("operational_summary"));
-    assert!(html.contains("passivePressureFilter"));
-    assert!(html.contains("passive-pressure-filter"));
-    assert!(html.contains("min_pressure_priority"));
-    assert!(
-        html.contains("/v1/passive/regions/${encodeURIComponent(payload.region_id)}/remediation")
-    );
-    assert!(html.contains("suggested_read_paths"));
-    assert!(html.contains("passive-open-region-runs"));
-    assert!(html.contains("passive-open-region-run"));
-    assert!(html.contains("passive-open-region-overview"));
-    assert!(html.contains("data-region-id"));
-    assert!(html.contains("region_id=${encodeURIComponent(regionId)}"));
-    assert!(html.contains(
-        "/operational-timeline?window_hours=72&bucket_hours=6&include_empty_buckets=false"
-    ));
-    assert!(html.contains("Operational Timeline"));
-    assert!(html.contains("selectedPassiveOperationalTimeline"));
-    assert!(html.contains("ops trend"));
-    assert!(html.contains("/v1/passive/source-health/samples/prune"));
-    assert!(html.contains("Maintenance"));
-    assert!(html.contains("Command Context"));
-    assert!(html.contains("renderPassiveCommandContext"));
-    assert!(html.contains("passiveMapSummary"));
-    assert!(html.contains("passiveCommandCenterSummary"));
-    assert!(html.contains("top_region"));
-    assert!(html.contains("top_site"));
-    assert!(html.contains("top_event"));
-    assert!(html.contains("operational_readout"));
-    assert!(html.contains("operator_paths"));
-    assert!(html.contains("focus_paths"));
-    assert!(html.contains("Operator Paths"));
-    assert!(html.contains("Focus Paths"));
-    assert!(html.contains("Attention Queue"));
-    assert!(html.contains("renderPassiveAttentionQueue"));
+    assert!(html.contains("/v1/passive/operational-visibility"));
+    assert!(html.contains("/v1/passive/map/regions"));
+    assert!(html.contains("/v1/ingest/batches"));
+    // Key data fields consumed from API responses
     assert!(html.contains("attention_queue"));
-    assert!(html.contains("passiveAttentionKindFilter"));
-    assert!(html.contains("passiveAttentionPriorityFilter"));
-    assert!(html.contains("attention_kind"));
-    assert!(html.contains("min_attention_priority"));
-    assert!(html.contains("passive-attention-kind-filter"));
-    assert!(html.contains("passive-attention-priority-filter"));
-    assert!(html.contains("passive-reset-attention-kind-filter"));
-    assert!(html.contains("passive-reset-attention-priority-filter"));
-    assert!(html.contains("Show All Attention"));
-    assert!(html.contains("Show All Priorities"));
+    assert!(html.contains("suggested_actions"));
+    assert!(html.contains("last_observed_at_unix_seconds"));
     assert!(html.contains("primary_action_label"));
-    assert!(html.contains("passiveAttentionMapMode"));
-    assert!(html.contains("passiveSelectedAttention"));
-    assert!(html.contains("passive-toggle-attention-map"));
-    assert!(html.contains("passiveAttentionSets"));
-    assert!(html.contains("attentionModeAppliesToSite"));
-    assert!(html.contains("attentionModeAppliesToEvent"));
-    assert!(html.contains("focusPassiveSiteFromAttention"));
-    assert!(html.contains("focusPassiveCanonicalFromAttention"));
-    assert!(html.contains("focusPassiveAttentionItem"));
-    assert!(html.contains("setPassiveSelectedAttentionFromDataset"));
-    assert!(html.contains("selectedPassiveAttentionItem"));
-    assert!(html.contains("renderPassiveAttentionPrimaryAction"));
-    assert!(html.contains("clearPassiveSelectedAttention"));
-    assert!(html.contains("handlePassiveRefocusCanonicalButton"));
-    assert!(html.contains("handlePassiveRefocusSiteButton"));
-    assert!(html.contains("handlePassiveOpenPathButton"));
-    assert!(html.contains("handlePassiveOpenEvidenceButton"));
-    assert!(html.contains("handlePassiveRunReplayButton"));
-    assert!(html.contains("handlePassiveOpenRegionOverviewButton"));
-    assert!(html.contains("renderPassiveSelectedAttentionContext"));
-    assert!(html.contains("Selected Attention"));
-    assert!(html.contains("Clear Selection"));
-    assert!(html.contains("Focus Event"));
-    assert!(html.contains("Focus Site"));
-    assert!(html.contains("Open Region"));
-    assert!(html.contains("Region Overview"));
-    assert!(html.contains("Diagnostics"));
-    assert!(html.contains("Stale Heartbeats"));
-    assert!(html.contains("passive-open-worker-diagnostics"));
-    assert!(html.contains("passive-open-heartbeat-list"));
-    assert!(html.contains("passive-open-stale-heartbeats"));
-    assert!(html.contains("passive-selected-attention-actions"));
-    assert!(html.contains("passive-selected-attention-read-actions"));
-    assert!(html.contains("passive-selected-attention-context"));
-    assert!(html.contains("passive-clear-selected-attention"));
-    assert!(html.contains("openPassiveWorkerDiagnostics"));
-    assert!(html.contains("openPassiveHeartbeatList"));
-    assert!(html.contains("passive-attention-item-selected"));
-    assert!(html.contains("readPathButtons"));
-    assert!(html.contains("readPathLabel"));
-    assert!(html.contains("openPassivePath"));
-    assert!(html.contains("passive-open-path"));
-    assert!(html.contains("passive-attention-item-card"));
-    assert!(html.contains("data-region-id=\"${escapeHtml(item.region_id ?? \"\")}\""));
-    assert!(html.contains("Attention Map ${attentionMapActive}"));
-    assert!(html.contains("attention map on"));
-    assert!(html.contains("attention map off"));
-    assert!(html.contains("Attention map:"));
-    assert!(html.contains("No operational attention items."));
-    assert!(html.contains("openPassiveRegionOverview"));
-    assert!(html.contains("passive-reset-semantic-filter"));
-    assert!(html.contains("passive-reset-pressure-filter"));
-    assert!(html.contains("passive-refocus-canonical"));
-    assert!(html.contains("passive-refocus-site"));
-    assert!(html.contains("Show All Semantics"));
-    assert!(html.contains("Show All Pressure"));
-    assert!(html.contains("Focus Selected Event"));
-    assert!(html.contains("Focus Selected Site"));
-    assert!(html.contains("Focus Top Event"));
-    assert!(html.contains("Focus Top Site"));
-    assert!(html.contains("Open Top Region"));
-    assert!(html.contains("source_health_prune_candidate_count"));
-    assert!(html.contains("confirmation_read_paths"));
-    assert!(html.contains("Preview Global Source Prune"));
-    assert!(html.contains("passive-prune-source-health"));
-    assert!(html.contains("passive-preview-source-prune"));
-    assert!(html.contains("Source health prune preview"));
-    assert!(html.contains("Narrative Provenance"));
-    assert!(html.contains("renderNarrativeProvenance"));
-    assert!(html.contains("Region Provenance"));
-    assert!(html.contains("renderRegionProvenance"));
-    assert!(html.contains("/semantic-timeline?limit=6&window_hours=720"));
-    assert!(html.contains("Semantic Timeline"));
-    assert!(html.contains("Semantic Strip"));
-    assert!(html.contains("passive-semantic-filter"));
-    assert!(html.contains("passive-strip-entry"));
-    assert!(html.contains("passive-map-legend"));
-    assert!(html.contains("clearPassiveMapEntities"));
-    assert!(html.contains("highlighted sites"));
-    assert!(html.contains("applyPassiveSiteFocus"));
-    assert!(html.contains("focusPassiveCanonicalEvent"));
-    assert!(html.contains("focusPassiveSite"));
-    assert!(html.contains("openPassiveEvidence"));
-    assert!(html.contains("runPassiveReplay"));
-    assert!(html.contains("passiveSiteEntityIndex"));
-    assert!(html.contains("passive-focus-link-"));
-    assert!(html.contains("selectedPassiveCanonicalEventId"));
-    assert!(html.contains("passive-timeline-entry"));
-    assert!(html.contains("Timeline focus"));
-    assert!(html.contains("Focused Chain Actions"));
-    assert!(html.contains("passive-go-map"));
-    assert!(html.contains("passive-open-evidence"));
-    assert!(html.contains("passive-run-replay"));
-    assert!(html.contains("state.passiveEntityIndex"));
-    assert!(html.contains("Focused canonical event"));
-    assert!(html.contains("cesium-globe"));
-    assert!(html.contains("Cesium.js"));
-    // FRENTE 3 — RiskDelta + canonical events panel
-    assert!(html.contains("riskDeltaClass"));
-    assert!(html.contains("renderRiskDeltaPill"));
-    assert!(html.contains("renderPassiveCanonicalEvents"));
-    assert!(html.contains("refreshPassiveCanonicalEvents"));
-    assert!(html.contains("canonical-events"));
-    assert!(html.contains("refresh-canonical-events"));
-    assert!(html.contains("Canonical Events"));
+    assert!(html.contains("operational_readout"));
+    // Panel element IDs
+    assert!(html.contains("what-changed-list"));
+    assert!(html.contains("attention-queue-list"));
+    assert!(html.contains("recommended-actions-list"));
+    assert!(html.contains("source-health-list"));
+    assert!(html.contains("event-composition-list"));
+    assert!(html.contains("narrative-text"));
+    // Polling infrastructure
+    assert!(html.contains("refreshAll"));
+    assert!(html.contains("setInterval(refreshAll, 30000)"));
 }
 
 #[tokio::test]
@@ -2517,11 +2351,12 @@ async fn operator_console_wires_canonical_focus_and_region_runs_actions() {
         .expect("body bytes");
     let html = String::from_utf8(bytes.to_vec()).expect("utf8");
 
-    assert!(html.contains("$(\"canonical-events\").addEventListener(\"click\""));
-    assert!(html.contains("handlePassiveRefocusCanonicalButton"));
-    assert!(html.contains("openPassiveRegionRuns(regionRunsButton.dataset.regionId"));
-    assert!(html.contains("data-canonical-id"));
-    assert!(html.contains("data-region-id"));
+    // New console wires attention queue items with kind + primary_action_label
+    assert!(html.contains("attention_queue"));
+    assert!(html.contains("primary_action_label"));
+    assert!(html.contains("canonical_event"));
+    assert!(html.contains("/v1/passive/command-center/summary"));
+    assert!(html.contains("/v1/passive/canonical-events"));
 }
 
 #[tokio::test]
@@ -2542,14 +2377,17 @@ async fn operator_console_guards_risk_delta_explanation_and_refresh_sync() {
         .expect("body bytes");
     let html = String::from_utf8(bytes.to_vec()).expect("utf8");
 
-    // Empty/partial explanation guard for canonical cards.
-    assert!(html.contains("event.risk_delta?.explanation ?"));
-    // Timeline readability under volume is intentionally capped.
-    assert!(html.contains("entries.slice(0, 10)"));
-    // refreshAll keeps canonical panel in the same refresh batch.
-    assert!(html.contains("refreshPassiveDashboardSummary(),"));
-    assert!(html.contains("refreshPassiveOperationalVisibility(),"));
-    assert!(html.contains("refreshPassiveCanonicalEvents(),"));
+    // refreshAll dispatches all panel refreshes in one Promise.allSettled batch.
+    assert!(html.contains("refreshWhatChanged()"));
+    assert!(html.contains("refreshNarrative()"));
+    assert!(html.contains("refreshSourceHealth()"));
+    assert!(html.contains("refreshAttentionQueue()"));
+    assert!(html.contains("refreshEventComposition()"));
+    // 30-second polling
+    assert!(html.contains("setInterval(refreshAll, 30000)"));
+    // severity → CSS class helper covers critical/high/medium
+    assert!(html.contains("sevCls"));
+    assert!(html.contains("last_observed_at_unix_seconds"));
 }
 
 #[tokio::test]
