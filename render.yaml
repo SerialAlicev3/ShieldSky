@@ -4,7 +4,7 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     plan: free
-    healthCheckPath: /health
+    healthCheckPath: /v1/health
     envVars:
       - key: SSS_STORAGE_PATH
         value: /app/data/sss-api.sqlite
