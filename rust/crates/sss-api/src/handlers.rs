@@ -2614,6 +2614,103 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
   .panel:nth-child(3) { animation-delay: 0.5s; }
   .panel:nth-child(4) { animation-delay: 0.6s; }
   .panel:nth-child(5) { animation-delay: 0.7s; }
+
+  /* ============================================================
+     MOBILE LAYOUT — Globe visible, rails stacked below
+     ============================================================ */
+  @media (max-width: 860px) {
+    html, body { overflow-y: auto; overflow-x: hidden; }
+
+    .console {
+      display: flex;
+      flex-direction: column;
+      height: auto;
+      min-height: 100vh;
+    }
+
+    .top-bar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      width: 100%;
+      flex-shrink: 0;
+      /* Collapse search bar on small screens */
+    }
+
+    /* Hide some desktop-only top bar elements to save space */
+    .search-wrap { display: none; }
+
+    .center {
+      width: 100%;
+      height: 45vh;
+      min-height: 260px;
+      flex-shrink: 0;
+      order: 1;
+    }
+
+    /* Simplify overlays on mobile */
+    .crosshair, .scanlines, .corner-frame { display: none; }
+    .telemetry { display: none; }
+    .coord-badge { font-size: 9px; padding: 4px 8px; bottom: 4px; left: 4px; }
+
+    /* Op picture and legend: stack inside globe panel */
+    .op-picture { bottom: 4px; left: 4px; right: 4px; max-width: none; font-size: 11px; }
+    .op-stats { gap: 12px; }
+    .legend { bottom: auto; top: 4px; right: 4px; left: auto; }
+
+    .left-rail {
+      grid-area: unset;
+      width: 100%;
+      height: auto;
+      max-height: none;
+      overflow-y: visible;
+      border-right: none;
+      border-top: 1px solid var(--line);
+      order: 2;
+      flex-shrink: 0;
+    }
+
+    .right-rail {
+      grid-area: unset;
+      width: 100%;
+      height: auto;
+      max-height: none;
+      overflow-y: visible;
+      border-left: none;
+      border-top: 1px solid var(--line);
+      order: 3;
+      flex-shrink: 0;
+    }
+
+    .bottom-bar {
+      grid-area: unset;
+      width: 100%;
+      height: auto;
+      order: 4;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 12px 16px;
+      flex-shrink: 0;
+    }
+
+    /* Ensure panels don't clip content */
+    .panel { flex-shrink: 0; }
+
+    /* Focus panel: full width on mobile */
+    .focus-panel {
+      left: 8px;
+      right: 8px;
+      bottom: 8px;
+      top: auto;
+      max-width: none;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .center { height: 38vh; min-height: 220px; }
+    .brand-name { display: none; }
+    .op-stat-value { font-size: 18px; }
+  }
 </style>
 </head>
 <body>
