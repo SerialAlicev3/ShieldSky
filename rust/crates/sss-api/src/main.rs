@@ -387,10 +387,10 @@ fn seed_default_regions(state: &AppState) -> bool {
     for region in defaults {
         match state.upsert_passive_region_target(region) {
             Ok(created) => {
-                tracing::info!(region_id = %created.region_id, "seeded default passive region")
+                tracing::info!(region_id = %created.region_id, "seeded default passive region");
             }
             Err(error) => {
-                tracing::warn!(%error, name = %region.name, "failed to seed default passive region")
+                tracing::warn!(%error, name = %region.name, "failed to seed default passive region");
             }
         }
     }

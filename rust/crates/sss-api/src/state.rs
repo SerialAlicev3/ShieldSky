@@ -1563,6 +1563,8 @@ impl AppState {
             .await
             .map_err(|error| AppError::SourceUnavailable(error.to_string()))?;
         let seeds = overpass_elements_to_seeds(request, payload.elements);
+        self.store_discovered_site_profiles(&seeds)
+            .map_err(AppError::Storage)?;
         self.store_or_update_seed_lifecycle(&seeds, None, now_unix_seconds())
             .map_err(AppError::Storage)?;
         let response = PassiveInfraDiscoverResponse {
@@ -3043,6 +3045,17 @@ impl AppState {
             .iter()
             .filter(|pattern| pattern.recurring_events > 1)
             .collect::<Vec<_>>();
+        if filtered_records.is_empty() && filtered_events.is_empty() && filtered_patterns.is_empty()
+        {
+            return self.build_seed_candidate_narrative(
+                site_id,
+                days,
+                site_name,
+                seed_confidence,
+                window_start_unix_seconds,
+                anchor_unix_seconds,
+            );
+        }
         let event_count = filtered_events.len();
         let recurring_pattern_count = filtered_patterns.len();
         let critical_event_count = filtered_events
@@ -3083,6 +3096,41 @@ impl AppState {
             latest_peak_risk,
             observation_confidence: seed_confidence,
             risk_direction,
+            narrative,
+            provenance,
+        })
+    }
+
+    fn build_seed_candidate_narrative(
+        &self,
+        site_id: &str,
+        days: u32,
+        site_name: String,
+        seed_confidence: f64,
+        window_start_unix_seconds: i64,
+        anchor_unix_seconds: i64,
+    ) -> Result<RiskHistoryNarrative, AppError> {
+        let narrative = format!(
+            "Nos ultimos {days} dias: este site foi descoberto e perfilado, mas ainda nao acumulou historico operacional suficiente. A seed esta registada, pronta para observacao continua, e a confianca atual do candidato esta em {seed_confidence:.2}."
+        );
+        let provenance = self.build_narrative_provenance(
+            site_id,
+            window_start_unix_seconds,
+            anchor_unix_seconds,
+        )?;
+
+        Ok(RiskHistoryNarrative {
+            site_id: site_id.to_string(),
+            site_name,
+            window_days: days.max(1),
+            generated_at_unix_seconds: now_unix_seconds(),
+            event_count: 0,
+            recurring_pattern_count: 0,
+            critical_event_count: 0,
+            average_cumulative_risk: 0.0,
+            latest_peak_risk: 0.0,
+            observation_confidence: seed_confidence,
+            risk_direction: "flat".to_string(),
             narrative,
             provenance,
         })
@@ -3200,6 +3248,36 @@ impl AppState {
             }
         }
         Ok(None)
+    }
+
+    fn store_discovered_site_profiles(
+        &self,
+        seeds: &[OpenInfraSiteSeed],
+    ) -> Result<(), StorageError> {
+        let mut profiles_by_site_id = BTreeMap::<String, PassiveSiteProfile>::new();
+        for seed in seeds {
+            let profile = sss_passive_scanner::sources::infra_mapper::site_profile_from_seed(seed);
+            let site_id = profile.site.site_id.to_string();
+            if let Some(existing) = profiles_by_site_id.get_mut(&site_id) {
+                for source_reference in profile.source_references {
+                    if !existing.source_references.contains(&source_reference) {
+                        existing.source_references.push(source_reference);
+                    }
+                }
+                for passive_tag in profile.passive_tags {
+                    if !existing.passive_tags.contains(&passive_tag) {
+                        existing.passive_tags.push(passive_tag);
+                    }
+                }
+                existing.observation_radius_km = existing
+                    .observation_radius_km
+                    .max(profile.observation_radius_km);
+            } else {
+                profiles_by_site_id.insert(site_id, profile);
+            }
+        }
+        self.storage
+            .store_passive_site_profiles(&profiles_by_site_id.into_values().collect::<Vec<_>>())
     }
 
     fn store_or_update_seed_lifecycle(
@@ -3804,7 +3882,15 @@ fn build_seed_record(
     });
     let site_id = matched_site
         .map(|site| site.site.site_id.to_string())
-        .or_else(|| existing.and_then(|record| record.site_id.as_ref()).cloned());
+        .or_else(|| existing.and_then(|record| record.site_id.as_ref()).cloned())
+        .or_else(|| {
+            Some(
+                sss_passive_scanner::sources::infra_mapper::site_profile_from_seed(seed)
+                    .site
+                    .site_id
+                    .to_string(),
+            )
+        });
     let site_events = site_id.as_ref().map_or_else(Vec::new, |site_id| {
         scan.map_or_else(Vec::new, |output| {
             output

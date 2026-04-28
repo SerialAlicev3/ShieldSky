@@ -154,6 +154,10 @@ pub struct SiteMapItem {
     pub top_event_type: Option<String>,
     pub top_event_severity: Option<MapSeverity>,
     pub top_event_target_epoch_unix_seconds: Option<i64>,
+    pub priority_reason: String,
+    pub status_reason: String,
+    pub overview_path: Option<String>,
+    pub narrative_path: Option<String>,
     pub observed: bool,
     pub elevated: bool,
 }
@@ -487,6 +491,16 @@ fn site_map_item(
     canonical_focus: Option<&SiteCanonicalFocus>,
 ) -> SiteMapItem {
     let elevated = seed_is_elevated(&record);
+    let priority_reason = seed_priority_reason(&record, top_event);
+    let status_reason = seed_status_reason(&record, top_event, canonical_focus);
+    let overview_path = record
+        .site_id
+        .as_ref()
+        .map(|site_id| format!("/v1/passive/sites/{site_id}/overview"));
+    let narrative_path = record
+        .site_id
+        .as_ref()
+        .map(|site_id| format!("/v1/passive/sites/{site_id}/narrative?days=30"));
     SiteMapItem {
         site_id: record.site_id.clone(),
         region_id,
@@ -512,6 +526,10 @@ fn site_map_item(
         top_event_type: top_event.map(|event| threat_type_name(event.threat_type)),
         top_event_severity: top_event.map(|event| severity_from_risk(event.risk_score)),
         top_event_target_epoch_unix_seconds: None,
+        priority_reason,
+        status_reason,
+        overview_path,
+        narrative_path,
         observed: record.last_scanned_at_unix_seconds.is_some(),
         elevated,
     }
@@ -879,6 +897,61 @@ fn severity_from_risk(risk_score: f64) -> MapSeverity {
         MapPriority::High => MapSeverity::High,
         MapPriority::Medium => MapSeverity::Medium,
         MapPriority::Low => MapSeverity::Low,
+    }
+}
+
+fn seed_priority_reason(record: &PassiveSeedRecord, top_event: Option<&PassiveEvent>) -> String {
+    if let Some(event) = top_event {
+        format!(
+            "Priority elevated by {} risk at {:.0}% over a {:?} asset.",
+            threat_type_name(event.threat_type),
+            event.risk_score * 100.0,
+            record.seed.site_type
+        )
+    } else if record.last_scanned_at_unix_seconds.is_some() {
+        format!(
+            "Monitoring priority {:.0}% driven by {:?} criticality {:?} with confidence {:.0}%.",
+            record.scan_priority * 100.0,
+            record.seed.site_type,
+            record.seed.criticality,
+            record.confidence * 100.0
+        )
+    } else {
+        format!(
+            "First-pass candidate discovered for {:?} criticality {:?}; scan priority {:.0}%.",
+            record.seed.site_type,
+            record.seed.criticality,
+            record.scan_priority * 100.0
+        )
+    }
+}
+
+fn seed_status_reason(
+    record: &PassiveSeedRecord,
+    top_event: Option<&PassiveEvent>,
+    canonical_focus: Option<&SiteCanonicalFocus>,
+) -> String {
+    if let Some(event) = top_event {
+        return format!(
+            "Latest event: {} with {:?} severity and observational confidence {:.0}%.",
+            threat_type_name(event.threat_type),
+            severity_from_risk(event.risk_score),
+            record.confidence * 100.0
+        );
+    }
+    if let Some(focus) = canonical_focus {
+        return format!(
+            "Canonical state {:?} with {:?} risk trend.",
+            focus.status, focus.risk_trend
+        );
+    }
+    if record.last_scanned_at_unix_seconds.is_some() {
+        format!(
+            "Observed site under continuous monitoring; no active canonical pressure yet. Sources fused: {}.",
+            record.source_count
+        )
+    } else {
+        "Discovered site candidate awaiting first live scan and narrative enrichment.".to_string()
     }
 }
 

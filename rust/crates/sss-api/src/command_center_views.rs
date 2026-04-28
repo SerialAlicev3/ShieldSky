@@ -494,23 +494,29 @@ fn neows_attention_item(
 
 fn site_attention_item(site: &SiteMapItem) -> PassiveCommandCenterAttentionItem {
     let site_id = site.site_id.clone().unwrap_or_default();
+    let priority = std::cmp::max(site.scan_priority, priority_from_risk(site.risk_score));
+    let reason = format!("{} {}", site.status_reason, site.priority_reason);
     PassiveCommandCenterAttentionItem {
         item_id: format!("site:{site_id}"),
         kind: PassiveCommandCenterAttentionKind::Site,
-        priority: priority_from_risk(site.risk_score),
+        priority,
         title: site.name.clone(),
-        reason: format!(
-            "Site risk is {:.0}% with trend {:?} and canonical state {:?}.",
-            site.risk_score * 100.0,
-            site.risk_trend,
-            site.top_canonical_status
-        ),
-        primary_action_label: "Focus Site".to_string(),
+        reason,
+        primary_action_label: if site.observed {
+            "Open Site".to_string()
+        } else {
+            "Prime Site".to_string()
+        },
         region_id: Some(site.region_id.clone()),
         site_id: Some(site_id),
         canonical_event_id: None,
-        action_path: None,
-        confirmation_read_paths: Vec::new(),
+        action_path: site.overview_path.clone(),
+        confirmation_read_paths: site
+            .overview_path
+            .iter()
+            .cloned()
+            .chain(site.narrative_path.iter().cloned())
+            .collect(),
     }
 }
 

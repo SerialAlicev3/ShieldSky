@@ -1256,6 +1256,36 @@ async fn passive_site_discovery_fetches_public_infra_seeds() {
         "Discovered"
     );
     assert_eq!(seeds_registry_body["data"][0]["seed_status"], "New");
+    let site_id = seeds_registry_body["data"][0]["site_id"]
+        .as_str()
+        .expect("discovered seed site id");
+    assert!(!site_id.is_empty());
+
+    let overview_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/passive/sites/{site_id}/overview?limit=10"))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(overview_response.status(), StatusCode::OK);
+    let overview_body = body_json(overview_response).await;
+    assert_eq!(overview_body["data"]["site"]["site"]["site_id"], site_id);
+    assert_eq!(
+        overview_body["data"]["seed_lifecycle"]["classification_status"],
+        "Discovered"
+    );
+    assert_eq!(
+        overview_body["data"]["risk_history_narrative"]["event_count"],
+        0
+    );
+    assert!(overview_body["data"]["risk_history_narrative"]["narrative"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("foi descoberto e perfilado"));
 
     let recorded_body = bodies.lock().await[0].clone();
     assert!(recorded_body.contains("power"));
@@ -2141,6 +2171,13 @@ async fn passive_regions_persist_and_orchestrate_discovery_then_scheduler() {
             );
         }
     }
+    assert!(attention_queue.iter().any(|item| {
+        item["kind"] == "site"
+            && item["action_path"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("/v1/passive/sites/")
+    }));
     assert!(command_center_body["data"]["dashboard"]["top_regions"].is_array());
     assert!(command_center_body["data"]["maintenance"]["suggested_actions"].is_array());
     assert!(

@@ -3210,7 +3210,7 @@ document.getElementById('focus-primary-btn').addEventListener('click', () => {
 });
 
 // --- Globe data cache + focus system ---
-const GLOBE_DATA = { regions: [], events: [] };
+const GLOBE_DATA = { regions: [], sites: [], events: [] };
 let lastAttentionItems = [];
 let _focusCoords = { lat: null, lng: null };
 const PRESSURE_HISTORY = []; // circular buffer { t, score }
@@ -3293,6 +3293,12 @@ document.querySelectorAll('.legend-toggle').forEach(t => {
         const lat = (r.bbox.south + r.bbox.north) / 2;
         const lng = (r.bbox.west  + r.bbox.east)  / 2;
         openFocusPanel({ kind: 'region', title: r.name || r.region_id, reason: (r.seeds_elevated || 0) + ' seeds elevated \u00b7 ' + (r.seeds_known || 0) + ' indexed', lat: lat, lng: lng });
+        input.value = '';
+        return;
+      }
+      const s = GLOBE_DATA.sites.find(function(s) { return ((s.name || '') + ' ' + (s.seed_key || '')).toLowerCase().includes(q); });
+      if (s && s.coordinates) {
+        openFocusPanel({ kind: 'site', title: s.name || s.seed_key || 'Site', reason: s.status_reason || s.priority_reason || '', lat: s.coordinates.lat, lng: s.coordinates.lon });
         input.value = '';
         return;
       }
@@ -3537,8 +3543,17 @@ async function refreshOpPicture() {
       }
     }
 
+    const siteResponses = await Promise.all(
+      enabledRegions.map(function(r) {
+        return API.get('/v1/passive/map/sites?region_id=' + encodeURIComponent(r.region_id))
+          .catch(function() { return { sites: [] }; });
+      })
+    );
+    const sites = siteResponses.flatMap(function(resp) { return resp.sites || []; });
+
     // Store in global cache for focus lookups
     GLOBE_DATA.regions = enabledRegions;
+    GLOBE_DATA.sites   = sites;
     GLOBE_DATA.events  = events;
 
     // Rebuild globe entities from live API data (clear previous)
@@ -3564,6 +3579,40 @@ async function refreshOpPicture() {
             outlineColor: color.withAlpha(0.5),
             outlineWidth: 1.5,
             height: 0,
+          },
+        });
+      }
+    });
+    sites.forEach(site => {
+      if (site.coordinates) {
+        const level = site.elevated ? 'elevated' : (site.observed ? 'active' : 'healthy');
+        const color = SITE_COLORS[level] || SITE_COLORS.active;
+        viewer.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(site.coordinates.lon, site.coordinates.lat),
+          point: {
+            pixelSize: site.elevated ? 10 : (site.observed ? 8 : 6),
+            color,
+            outlineColor: Cesium.Color.BLACK.withAlpha(0.7),
+            outlineWidth: site.elevated ? 2 : 1,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
+          },
+          label: {
+            text: site.name || site.seed_key || 'Site',
+            font: '9px monospace',
+            fillColor: Cesium.Color.WHITE.withAlpha(0.72),
+            outlineColor: Cesium.Color.BLACK,
+            outlineWidth: 2,
+            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            pixelOffset: new Cesium.Cartesian2(0, 14),
+            scale: 0.9,
+            showBackground: false,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
+          },
+          properties: {
+            kind: 'site',
+            label: site.name || site.seed_key || 'Site',
+            site_id: site.site_id || '',
+            reason: site.status_reason || site.priority_reason || ''
           },
         });
       }
@@ -3650,9 +3699,10 @@ function handleAttentionClick(idx) {
       if (first.bbox) { lat = (first.bbox.south + first.bbox.north) / 2; lng = (first.bbox.west + first.bbox.east) / 2; }
     }
   } else if (item.kind === 'site') {
-    // Sites have no separate cache — search events for a coordinate match
-    const ev = GLOBE_DATA.events.find(e => (e.site_name || '').toLowerCase() === item.title.toLowerCase());
-    if (ev && ev.coordinates) { lat = ev.coordinates.lat; lng = ev.coordinates.lon; }
+    const site = GLOBE_DATA.sites.find(s =>
+      (item.site_id && s.site_id === item.site_id) ||
+      (s.name || '').toLowerCase() === item.title.toLowerCase());
+    if (site && site.coordinates) { lat = site.coordinates.lat; lng = site.coordinates.lon; }
   } else if (item.kind === 'canonical_event' || item.kind === 'neo') {
     const ev = GLOBE_DATA.events.find(e =>
       (e.summary || e.event_type || '').toLowerCase().includes(item.title.toLowerCase()) ||
