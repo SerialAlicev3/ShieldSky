@@ -2348,10 +2348,25 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
     background: var(--amber-dim);
     border-color: var(--amber);
   }
+  .att-action.subtle {
+    color: var(--text-secondary);
+    border-color: var(--line-strong);
+  }
+  .att-action.subtle:hover {
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+    border-color: var(--text-secondary);
+  }
 
   /* Risk trend mini chart */
   .chart-container {
     padding: 14px 0 4px;
+  }
+  .chart-context {
+    margin-top: 10px;
+    font-size: 11px;
+    line-height: 1.55;
+    color: var(--text-secondary);
   }
 
   .chart-title {
@@ -2460,6 +2475,16 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
   .timeline-container {
     position: relative;
     padding: 12px 16px;
+  }
+  .timeline-summary {
+    position: absolute;
+    left: 16px;
+    top: -2px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
   }
 
   .timeline-track {
@@ -2667,8 +2692,23 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
     letter-spacing: 0.1em;
     margin-bottom: 12px;
   }
+  .focus-detail {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    color: var(--text-tertiary);
+    letter-spacing: 0.08em;
+    line-height: 1.6;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
   .focus-divider { border: none; border-top: 1px solid var(--line); margin: 10px 0; }
-  .focus-actions { display: flex; gap: 8px; }
+  .focus-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .focus-links {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
 
   /* Load animation — staggered reveals */
   .console > * {
@@ -3017,10 +3057,12 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
       <div class="focus-ftitle" id="focus-title">&mdash;</div>
       <div class="focus-reason" id="focus-reason"></div>
       <div class="focus-coords" id="focus-coords"></div>
+      <div class="focus-detail" id="focus-detail"></div>
       <hr class="focus-divider">
       <div class="focus-actions">
         <button class="att-action" id="focus-primary-btn">Open &rarr;</button>
       </div>
+      <div class="focus-links" id="focus-links"></div>
     </div>
 
   </main>
@@ -3090,6 +3132,7 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
         <div class="chart-x-labels">
           <span>-72H</span><span>-48H</span><span>-24H</span><span>NOW</span>
         </div>
+        <div class="chart-context" id="risk-context">Waiting for focused analytics.</div>
       </div>
     </div>
 
@@ -3119,6 +3162,7 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
     </div>
 
     <div class="timeline-container" id="timeline">
+      <div class="timeline-summary" id="timeline-summary">Event memory and forecast windows will appear here.</div>
       <div class="timeline-track"></div>
       <div class="future-window" style="left: 60%; right: 0;"></div>
 
@@ -3345,9 +3389,44 @@ function setFocusPrimaryButton(label, path) {
   FOCUS_STATE.actionPath = path || null;
 }
 
+function setFocusQuickLinks(links) {
+  const container = document.getElementById('focus-links');
+  if (!container) return;
+  const validLinks = (links || []).filter(function(link) { return link && link.label && link.path; });
+  if (!validLinks.length) {
+    container.innerHTML = '';
+    return;
+  }
+  container.innerHTML = validLinks.map(function(link) {
+    const cls = link.warn ? 'att-action warn' : 'att-action subtle';
+    const label = String(link.label).replace(/</g, '&lt;');
+    const path = String(link.path).replace(/'/g, '');
+    return '<button class="' + cls + '" onclick="window.open(\'' + path + '\', \'_blank\', \'noopener\')">' + label + '</button>';
+  }).join('');
+}
+
+function setRiskContext(text) {
+  const contextEl = document.getElementById('risk-context');
+  if (!contextEl) return;
+  contextEl.textContent = text || 'Waiting for focused analytics.';
+}
+
+function setTimelineSummary(text) {
+  const summaryEl = document.getElementById('timeline-summary');
+  if (!summaryEl) return;
+  summaryEl.textContent = text || 'Event memory and forecast windows will appear here.';
+}
+
 function forecastLayerEnabled() {
   const toggle = document.querySelector('.legend-toggle[data-layer="forecast"]');
   return !toggle || toggle.classList.contains('on');
+}
+
+function entityVisibleForFilter(kind) {
+  if (CONSOLE_STATE.filter === 'site') return kind === 'site';
+  if (CONSOLE_STATE.filter === 'regional') return kind === 'region';
+  if (CONSOLE_STATE.filter === 'incident') return kind === 'canonical_event';
+  return true;
 }
 
 function clearForecastOverlay() {
@@ -3442,7 +3521,8 @@ function renderTimelineEntries(entries) {
       return '<div class="timeline-event ' + cls + '" '
         + 'style="' + style + '" '
         + 'title="' + title + '" '
-        + 'onclick="openFocusPanel({kind:\'' + kind + '\',title:\'' + title + '\',reason:\'' + reason + '\',lat:' + lat + ',lng:' + lng + ',siteId:\'' + siteId + '\',regionId:\'' + regionId + '\',actionPath:\'' + actionPath + '\'})"></div>';
+        + 'onclick="openFocusPanel({kind:\'' + kind + '\',title:\'' + title + '\',reason:\'' + reason + '\',lat:' + lat + ',lng:' + lng + ',siteId:\'' + siteId + '\',regionId:\'' + regionId + '\',actionPath:\'' + actionPath + '\'})">'
+        + '<div class="timeline-event-label">' + title + '</div></div>';
     })
     .join('');
 }
@@ -3461,8 +3541,13 @@ async function refreshGlobalAnalytics() {
     const windowEl = document.getElementById('risk-trend-window');
     if (windowEl) windowEl.textContent = CONSOLE_STATE.window.toUpperCase();
     updateRiskTrend(pressure);
+    setRiskContext(topSite
+      ? ('Top site ' + topSite.name + ' is carrying ' + (pressure * 100).toFixed(0) + '% modeled pressure in the current ' + CONSOLE_STATE.window.toUpperCase() + ' window.')
+      : 'No focused site selected. Global pressure reflects the most elevated monitored surface.');
     renderTimelineEntries((data.dashboard && data.dashboard.top_canonical_events) || []);
+    setTimelineSummary('Global timeline showing canonical event memory across the current command window.');
     setFocusPrimaryButton('Open →', null);
+    setFocusQuickLinks([]);
   } catch (_) { /* leave */ }
 }
 
@@ -3503,17 +3588,38 @@ async function refreshFocusedSiteAnalytics() {
         '<span>PATTERNS · ' + ((overview.recurring_patterns || []).length) + '</span>' +
         '<span>FORECAST · ' + (scenario.horizon_hours || 24) + 'H</span>';
     }
+    const focusDetail = document.getElementById('focus-detail');
+    if (focusDetail) {
+      const confidence = Number(recommendation.confidence || 0) * 100;
+      const sourceCount = overview.seed_lifecycle ? Number(overview.seed_lifecycle.source_count || 0) : 0;
+      focusDetail.textContent =
+        'CONFIDENCE ' + confidence.toFixed(0) + '% · SOURCES ' + sourceCount + ' · ACTION ' + String(recommendation.action || 'monitor_only').replace(/_/g, ' ');
+    }
 
     const focusReason = document.getElementById('focus-reason');
     if (focusReason) {
       focusReason.textContent = recommendation.operational_reason + ' ' + recommendation.expected_benefit;
     }
     setFocusPrimaryButton('Open Overview →', FOCUS_STATE.actionPath);
+    const provenance = overview.risk_history_narrative ? overview.risk_history_narrative.provenance : null;
+    setFocusQuickLinks([
+      { label: 'Narrative', path: '/v1/passive/sites/' + encodeURIComponent(siteId) + '/narrative?days=30' },
+      { label: 'Forecast', path: '/v1/forecast/sites/' + encodeURIComponent(siteId) + '/scenario?horizon_hours=24' },
+      provenance && provenance.bundle_hashes && provenance.bundle_hashes[0]
+        ? { label: 'Evidence', path: '/v1/evidence/' + provenance.bundle_hashes[0], warn: true }
+        : null,
+      provenance && provenance.manifest_hashes && provenance.manifest_hashes[0]
+        ? { label: 'Replay', path: '/v1/replay/' + provenance.manifest_hashes[0], warn: true }
+        : null,
+    ]);
 
     const riskTitleEl = document.getElementById('risk-trend-title');
     const riskWindowEl = document.getElementById('risk-trend-window');
     if (riskTitleEl) riskTitleEl.textContent = (overview.site && overview.site.site && overview.site.site.name ? overview.site.site.name : FOCUS_STATE.title || 'Site') + ' Risk';
     if (riskWindowEl) riskWindowEl.textContent = (scenario.horizon_hours || 24) + 'H';
+    setRiskContext((overview.risk_history_narrative && overview.risk_history_narrative.risk_direction
+      ? ('Risk direction: ' + overview.risk_history_narrative.risk_direction + '. ')
+      : '') + recommendation.expected_benefit);
 
     const historyPoints = ((overview.temporal_evolution || []).slice(-12)).map(function(point) {
       return {
@@ -3566,6 +3672,11 @@ async function refreshFocusedSiteAnalytics() {
         };
       });
     renderTimelineEntries(recentEntries.concat(forecastEntries));
+    setTimelineSummary(
+      ((overview.recent_events || []).length) + ' recent event' + (((overview.recent_events || []).length) === 1 ? '' : 's')
+      + ' · ' + forecastEntries.length + ' forecast window' + (forecastEntries.length === 1 ? '' : 's')
+      + ' promoted into the next ' + (scenario.horizon_hours || 24) + 'h.'
+    );
     renderForecastOverlay(siteId, _focusCoords.lat, _focusCoords.lng, scenario.points || []);
 
     const recList = document.getElementById('recommended-actions-list');
@@ -3596,6 +3707,8 @@ function openFocusPanel({ kind, title, reason, lat, lng, siteId, regionId, actio
   fTitle.textContent  = title || '\u2014';
   fReason.textContent = reason || '';
   fCoords.textContent = lat != null ? lat.toFixed(4) + '\u00b0N \u00b7 ' + lng.toFixed(4) + '\u00b0' : '';
+  const focusDetail = document.getElementById('focus-detail');
+  if (focusDetail) focusDetail.textContent = '';
   _focusCoords = { lat, lng };
   FOCUS_STATE.kind = kind || null;
   FOCUS_STATE.siteId = siteId || null;
@@ -3606,6 +3719,7 @@ function openFocusPanel({ kind, title, reason, lat, lng, siteId, regionId, actio
   panel.classList.add('visible');
   if (lat != null) focusOnGlobe(lat, lng);
   setFocusPrimaryButton(actionPath ? 'Open →' : 'Recenter →', actionPath || null);
+  setFocusQuickLinks(narrativePath ? [{ label: 'Narrative', path: narrativePath }] : []);
   refreshFocusedSiteAnalytics().catch(() => {});
 }
 
@@ -3979,6 +4093,7 @@ async function refreshOpPicture() {
           position: Cesium.Cartesian3.fromDegrees(lng, lat),
           point: { pixelSize: SITE_SIZES[level] || 9, color, outlineColor: Cesium.Color.BLACK.withAlpha(0.7), outlineWidth: 1, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND },
           label: { text: r.name || r.region_id, font: '10px monospace', fillColor: Cesium.Color.WHITE.withAlpha(0.85), outlineColor: Cesium.Color.BLACK, outlineWidth: 2, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(0, -18), scale: 1.0, showBackground: false, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND },
+          show: entityVisibleForFilter('region'),
           properties: { kind: 'region', layer: level, label: r.name || r.region_id, region_id: r.region_id, action_path: '/v1/passive/regions/' + r.region_id + '/overview', reason: (r.seeds_elevated || 0) + ' seeds elevated · ' + (r.seeds_known || 0) + ' indexed' },
         });
         // Region outline rectangle
@@ -3991,6 +4106,7 @@ async function refreshOpPicture() {
             outlineWidth: 1.5,
             height: 0,
           },
+          show: entityVisibleForFilter('region'),
           properties: { kind: 'region', layer: level, label: r.name || r.region_id, region_id: r.region_id, action_path: '/v1/passive/regions/' + r.region_id + '/overview', reason: r.narrative_summary || ((r.seeds_elevated || 0) + ' seeds elevated') },
         });
       }
@@ -4020,6 +4136,7 @@ async function refreshOpPicture() {
             showBackground: false,
             heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
           },
+          show: entityVisibleForFilter('site'),
           properties: {
             kind: 'site',
             layer: level,
@@ -4040,6 +4157,7 @@ async function refreshOpPicture() {
         viewer.entities.add({
           position: Cesium.Cartesian3.fromDegrees(ev.coordinates.lon, ev.coordinates.lat),
           point: { pixelSize: SITE_SIZES[level] || 9, color, outlineColor: Cesium.Color.BLACK.withAlpha(0.7), outlineWidth: 1, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND },
+          show: entityVisibleForFilter('canonical_event'),
           properties: { kind: 'canonical_event', layer: level, label: ev.site_name || ev.event_type || 'Event', site_id: ev.site_id || '', region_id: ev.region_id || '', action_path: '/v1/passive/sites/' + ev.site_id + '/overview', reason: ev.summary || ev.operational_readout || '' },
         });
       }
