@@ -3269,20 +3269,34 @@ clickHandler.setInputAction(function(click) {
     lng = Cesium.Math.toDegrees(carto.longitude);
   }
   openFocusPanel({
-    kind:   (props.kind && props.kind.getValue()) || 'site',
-    title:  (props.label && props.label.getValue()) || (ent.name) || 'Unknown',
-    reason: (props.reason && props.reason.getValue()) || '',
-    lat, lng,
+    kind: propValue(props, 'kind') || 'site',
+    title: propValue(props, 'label') || ent.name || 'Unknown',
+    reason: propValue(props, 'reason') || '',
+    lat,
+    lng,
+    siteId: propValue(props, 'site_id') || '',
+    regionId: propValue(props, 'region_id') || '',
+    actionPath: propValue(props, 'action_path') || '',
+    narrativePath: propValue(props, 'narrative_path') || '',
   });
 }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
 document.getElementById('focus-close-btn').addEventListener('click', () => {
   document.getElementById('focus-panel').classList.remove('visible');
   _focusCoords = { lat: null, lng: null };
+  FOCUS_STATE.kind = null;
+  FOCUS_STATE.siteId = null;
+  FOCUS_STATE.regionId = null;
+  FOCUS_STATE.actionPath = null;
+  FOCUS_STATE.narrativePath = null;
+  FOCUS_STATE.lastRecommendation = null;
+  refreshGlobalAnalytics().catch(() => {});
 });
 
 document.getElementById('focus-primary-btn').addEventListener('click', () => {
-  if (_focusCoords.lat != null) {
+  if (FOCUS_STATE.actionPath) {
+    window.open(FOCUS_STATE.actionPath, '_blank', 'noopener');
+  } else if (_focusCoords.lat != null) {
     focusOnGlobe(_focusCoords.lat, _focusCoords.lng, 180000);
   }
 });
@@ -3291,6 +3305,15 @@ document.getElementById('focus-primary-btn').addEventListener('click', () => {
 const GLOBE_DATA = { regions: [], sites: [], events: [] };
 let lastAttentionItems = [];
 let _focusCoords = { lat: null, lng: null };
+const FOCUS_STATE = {
+  kind: null,
+  siteId: null,
+  regionId: null,
+  actionPath: null,
+  narrativePath: null,
+  title: null,
+  lastRecommendation: null,
+};
 const PRESSURE_HISTORY = []; // circular buffer { t, score }
 
 function focusOnGlobe(lat, lng, altM) {
@@ -3301,7 +3324,201 @@ function focusOnGlobe(lat, lng, altM) {
   });
 }
 
-function openFocusPanel({ kind, title, reason, lat, lng }) {
+function propValue(props, key) {
+  return props && props[key] ? props[key].getValue() : null;
+}
+
+function severityClassFromScore(score) {
+  if (score >= 0.85) return 'critical';
+  if (score >= 0.65) return 'elevated';
+  if (score >= 0.35) return 'active';
+  return 'resolved';
+}
+
+function setFocusPrimaryButton(label, path) {
+  const btn = document.getElementById('focus-primary-btn');
+  if (!btn) return;
+  btn.textContent = label || 'Open →';
+  btn.disabled = false;
+  btn.style.opacity = '1';
+  FOCUS_STATE.actionPath = path || null;
+}
+
+function pushPressureHistory(points) {
+  PRESSURE_HISTORY.length = 0;
+  (points || []).slice(-12).forEach(function(point) {
+    PRESSURE_HISTORY.push(point);
+  });
+}
+
+function renderTimelineEntries(entries) {
+  const strip = document.getElementById('timeline-events');
+  if (!strip) return;
+  if (!entries || !entries.length) {
+    strip.innerHTML = '';
+    return;
+  }
+  const now = Date.now();
+  const start = now - 36 * 3600 * 1000;
+  const total = 72 * 3600 * 1000;
+  strip.innerHTML = entries
+    .map(function(entry) {
+      const ts = (entry.target_epoch_unix_seconds || entry.last_observed_at_unix_seconds || 0) * 1000;
+      const pct = Math.max(2, Math.min(97, ((ts - start) / total) * 100));
+      const cls = entry.forecast ? 'forecast' : (entry.className || sevCls(entry.severity));
+      const title = (entry.title || 'event').replace(/'/g, '');
+      const reason = (entry.reason || '').replace(/'/g, ' ').substring(0, 120);
+      const kind = entry.kind || (entry.forecast ? 'site' : 'canonical_event');
+      const lat = entry.lat != null ? entry.lat : 'null';
+      const lng = entry.lng != null ? entry.lng : 'null';
+      const siteId = entry.siteId ? String(entry.siteId).replace(/'/g, '') : '';
+      const regionId = entry.regionId ? String(entry.regionId).replace(/'/g, '') : '';
+      const actionPath = entry.actionPath ? String(entry.actionPath).replace(/'/g, '') : '';
+      const style = cls === 'forecast'
+        ? 'left:' + pct.toFixed(1) + '%;cursor:pointer;'
+        : 'left:' + pct.toFixed(1) + '%;cursor:pointer;';
+      return '<div class="timeline-event ' + cls + '" '
+        + 'style="' + style + '" '
+        + 'title="' + title + '" '
+        + 'onclick="openFocusPanel({kind:\'' + kind + '\',title:\'' + title + '\',reason:\'' + reason + '\',lat:' + lat + ',lng:' + lng + ',siteId:\'' + siteId + '\',regionId:\'' + regionId + '\',actionPath:\'' + actionPath + '\'})"></div>';
+    })
+    .join('');
+}
+
+async function refreshGlobalAnalytics() {
+  try {
+    const data = await API.get('/v1/passive/command-center/summary');
+    const topSite = data.dashboard && data.dashboard.top_sites ? data.dashboard.top_sites[0] : null;
+    const topRegion = data.highlights ? data.highlights.top_region : null;
+    const pressure = topSite ? Number(topSite.risk_score || 0) : 0;
+    PRESSURE_HISTORY.push({ t: Date.now(), score: pressure });
+    if (PRESSURE_HISTORY.length > 12) PRESSURE_HISTORY.shift();
+    const titleEl = document.getElementById('risk-trend-title');
+    if (titleEl) titleEl.textContent = topRegion ? topRegion.name + ' Risk' : 'Region Risk';
+    const windowEl = document.getElementById('risk-trend-window');
+    if (windowEl) windowEl.textContent = CONSOLE_STATE.window.toUpperCase();
+    updateRiskTrend(pressure);
+    renderTimelineEntries((data.dashboard && data.dashboard.top_canonical_events) || []);
+    setFocusPrimaryButton('Open →', null);
+  } catch (_) { /* leave */ }
+}
+
+async function refreshFocusedSiteAnalytics() {
+  if (FOCUS_STATE.kind !== 'site' || !FOCUS_STATE.siteId) {
+    await refreshGlobalAnalytics();
+    return;
+  }
+  try {
+    const siteId = FOCUS_STATE.siteId;
+    const [overview, scenario, recommendation, decisions] = await Promise.all([
+      API.get('/v1/passive/sites/' + encodeURIComponent(siteId) + '/overview?limit=12'),
+      API.get('/v1/forecast/sites/' + encodeURIComponent(siteId) + '/scenario?horizon_hours=24'),
+      API.post('/v1/orchestrator/sites/' + encodeURIComponent(siteId) + '/recommend', {
+        horizon_hours: 24,
+        battery_state_of_charge: 0.45,
+        reserve_margin_ratio: 0.18,
+        price_signal_bias: 0.0,
+      }),
+      API.get('/v1/orchestrator/sites/' + encodeURIComponent(siteId) + '/decisions?limit=5').catch(function() { return []; }),
+    ]);
+
+    FOCUS_STATE.lastRecommendation = recommendation;
+    FOCUS_STATE.narrativePath = '/v1/passive/sites/' + encodeURIComponent(siteId) + '/narrative?days=30';
+    FOCUS_STATE.actionPath = '/v1/passive/sites/' + encodeURIComponent(siteId) + '/overview';
+
+    const narEl = document.getElementById('narrative-text');
+    const metaEl = document.getElementById('narrative-meta');
+    if (narEl) {
+      narEl.textContent = (overview.risk_history_narrative && overview.risk_history_narrative.narrative)
+        || recommendation.operational_reason
+        || 'Focused site analytics active.';
+      narEl.style.color = '';
+    }
+    if (metaEl) {
+      metaEl.innerHTML =
+        '<span>EVENTS · ' + ((overview.recent_events || []).length) + '</span>' +
+        '<span>PATTERNS · ' + ((overview.recurring_patterns || []).length) + '</span>' +
+        '<span>FORECAST · ' + (scenario.horizon_hours || 24) + 'H</span>';
+    }
+
+    const focusReason = document.getElementById('focus-reason');
+    if (focusReason) {
+      focusReason.textContent = recommendation.operational_reason + ' ' + recommendation.expected_benefit;
+    }
+    setFocusPrimaryButton('Open Overview →', FOCUS_STATE.actionPath);
+
+    const riskTitleEl = document.getElementById('risk-trend-title');
+    const riskWindowEl = document.getElementById('risk-trend-window');
+    if (riskTitleEl) riskTitleEl.textContent = (overview.site && overview.site.site && overview.site.site.name ? overview.site.site.name : FOCUS_STATE.title || 'Site') + ' Risk';
+    if (riskWindowEl) riskWindowEl.textContent = (scenario.horizon_hours || 24) + 'H';
+
+    const historyPoints = ((overview.temporal_evolution || []).slice(-12)).map(function(point) {
+      return {
+        t: point.window_end_unix_seconds,
+        score: Math.max(Number(point.peak_risk || 0), Number(point.cumulative_risk || 0)),
+      };
+    });
+    if (historyPoints.length) {
+      pushPressureHistory(historyPoints);
+      updateRiskTrend(historyPoints[historyPoints.length - 1].score);
+    } else {
+      const forecastPoints = (scenario.points || []).slice(0, 12).map(function(point) {
+        return { t: point.target_epoch_unix_seconds, score: Number(point.reserve_stress_index || 0) };
+      });
+      pushPressureHistory(forecastPoints);
+      updateRiskTrend(forecastPoints.length ? forecastPoints[forecastPoints.length - 1].score : 0);
+    }
+
+    const recentEntries = (overview.recent_events || []).map(function(event) {
+      return {
+        kind: 'canonical_event',
+        title: (event.site_name || event.threat_type || 'event').toUpperCase(),
+        reason: event.summary || '',
+        severity: severityClassFromScore(Number(event.risk_score || 0)),
+        last_observed_at_unix_seconds: event.observed_at_unix_seconds,
+        lat: _focusCoords.lat,
+        lng: _focusCoords.lng,
+        siteId: siteId,
+        actionPath: '/v1/passive/sites/' + encodeURIComponent(siteId) + '/overview',
+      };
+    });
+    const forecastEntries = (scenario.points || [])
+      .filter(function(point) {
+        return Number(point.reserve_stress_index || 0) >= 0.45 || Number(point.modeled_price_index || 0) >= 0.7;
+      })
+      .slice(0, 6)
+      .map(function(point) {
+        const stress = Number(point.reserve_stress_index || 0);
+        return {
+          kind: 'site',
+          title: 'FORECAST T+' + point.offset_hours + 'H',
+          reason: 'Reserve stress ' + (stress * 100).toFixed(0) + '% · price index ' + (Number(point.modeled_price_index || 0) * 100).toFixed(0) + '%.',
+          forecast: true,
+          className: 'forecast',
+          target_epoch_unix_seconds: point.target_epoch_unix_seconds,
+          lat: _focusCoords.lat,
+          lng: _focusCoords.lng,
+          siteId: siteId,
+          actionPath: '/v1/forecast/sites/' + encodeURIComponent(siteId) + '/scenario?horizon_hours=24',
+        };
+      });
+    renderTimelineEntries(recentEntries.concat(forecastEntries));
+
+    const recList = document.getElementById('recommended-actions-list');
+    if (recList) {
+      const decisionCount = Array.isArray(decisions) ? decisions.length : 0;
+      recList.innerHTML =
+        '<div style="padding:11px 12px;background:var(--bg-elevated);border-left:2px solid var(--teal);border-radius:0 2px 2px 0;">'
+        + '<div style="font-size:12px;color:var(--text-primary);line-height:1.4;">' + String(recommendation.action || 'monitor_only').replace(/_/g, ' ').toUpperCase() + '</div>'
+        + '<div style="font-size:11px;color:var(--text-secondary);margin-top:3px;line-height:1.4;">' + recommendation.expected_benefit + '</div>'
+        + '<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-tertiary);margin-top:6px;letter-spacing:0.08em;">'
+        + 'CONFIDENCE ' + (Number(recommendation.confidence || 0) * 100).toFixed(0) + '% · DECISIONS ' + decisionCount
+        + '</div></div>';
+    }
+  } catch (_) { /* leave */ }
+}
+
+function openFocusPanel({ kind, title, reason, lat, lng, siteId, regionId, actionPath, narrativePath }) {
   const panel   = document.getElementById('focus-panel');
   const fKind   = document.getElementById('focus-kind');
   const fTitle  = document.getElementById('focus-title');
@@ -3316,8 +3533,16 @@ function openFocusPanel({ kind, title, reason, lat, lng }) {
   fReason.textContent = reason || '';
   fCoords.textContent = lat != null ? lat.toFixed(4) + '\u00b0N \u00b7 ' + lng.toFixed(4) + '\u00b0' : '';
   _focusCoords = { lat, lng };
+  FOCUS_STATE.kind = kind || null;
+  FOCUS_STATE.siteId = siteId || null;
+  FOCUS_STATE.regionId = regionId || null;
+  FOCUS_STATE.actionPath = actionPath || null;
+  FOCUS_STATE.narrativePath = narrativePath || null;
+  FOCUS_STATE.title = title || null;
   panel.classList.add('visible');
   if (lat != null) focusOnGlobe(lat, lng);
+  setFocusPrimaryButton(actionPath ? 'Open →' : 'Recenter →', actionPath || null);
+  refreshFocusedSiteAnalytics().catch(() => {});
 }
 
 // --- Console state (filter + time window) ---
@@ -3370,19 +3595,46 @@ document.querySelectorAll('.legend-toggle').forEach(t => {
       if (r && r.bbox) {
         const lat = (r.bbox.south + r.bbox.north) / 2;
         const lng = (r.bbox.west  + r.bbox.east)  / 2;
-        openFocusPanel({ kind: 'region', title: r.name || r.region_id, reason: (r.seeds_elevated || 0) + ' seeds elevated \u00b7 ' + (r.seeds_known || 0) + ' indexed', lat: lat, lng: lng });
+        openFocusPanel({
+          kind: 'region',
+          title: r.name || r.region_id,
+          reason: (r.seeds_elevated || 0) + ' seeds elevated \u00b7 ' + (r.seeds_known || 0) + ' indexed',
+          lat: lat,
+          lng: lng,
+          regionId: r.region_id || '',
+          actionPath: '/v1/passive/regions/' + r.region_id + '/overview',
+        });
         input.value = '';
         return;
       }
       const s = GLOBE_DATA.sites.find(function(s) { return ((s.name || '') + ' ' + (s.seed_key || '')).toLowerCase().includes(q); });
       if (s && s.coordinates) {
-        openFocusPanel({ kind: 'site', title: s.name || s.seed_key || 'Site', reason: s.status_reason || s.priority_reason || '', lat: s.coordinates.lat, lng: s.coordinates.lon });
+        openFocusPanel({
+          kind: 'site',
+          title: s.name || s.seed_key || 'Site',
+          reason: s.status_reason || s.priority_reason || '',
+          lat: s.coordinates.lat,
+          lng: s.coordinates.lon,
+          siteId: s.site_id || '',
+          regionId: s.region_id || '',
+          actionPath: s.overview_path || '',
+          narrativePath: s.narrative_path || '',
+        });
         input.value = '';
         return;
       }
       const ev = GLOBE_DATA.events.find(function(e) { return ((e.site_name || '') + ' ' + (e.event_type || '') + ' ' + (e.summary || '')).toLowerCase().includes(q); });
       if (ev && ev.coordinates) {
-        openFocusPanel({ kind: 'canonical_event', title: ev.site_name || ev.event_type || 'Event', reason: ev.summary || ev.operational_readout || '', lat: ev.coordinates.lat, lng: ev.coordinates.lon });
+        openFocusPanel({
+          kind: 'canonical_event',
+          title: ev.site_name || ev.event_type || 'Event',
+          reason: ev.summary || ev.operational_readout || '',
+          lat: ev.coordinates.lat,
+          lng: ev.coordinates.lon,
+          siteId: ev.site_id || '',
+          regionId: ev.region_id || '',
+          actionPath: ev.site_id ? '/v1/passive/sites/' + ev.site_id + '/overview' : '',
+        });
         input.value = '';
       }
     }, 350);
@@ -3413,6 +3665,16 @@ document.querySelectorAll('.legend-toggle').forEach(t => {
 const API = {
   async get(path) {
     const res  = await fetch(path);
+    const json = await res.json();
+    if (!res.ok) throw new Error((json.error && json.error.message) || 'HTTP ' + res.status);
+    return json.data !== undefined ? json.data : json;
+  },
+  async post(path, payload) {
+    const res = await fetch(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload || {}),
+    });
     const json = await res.json();
     if (!res.ok) throw new Error((json.error && json.error.message) || 'HTTP ' + res.status);
     return json.data !== undefined ? json.data : json;
@@ -3646,7 +3908,7 @@ async function refreshOpPicture() {
           position: Cesium.Cartesian3.fromDegrees(lng, lat),
           point: { pixelSize: SITE_SIZES[level] || 9, color, outlineColor: Cesium.Color.BLACK.withAlpha(0.7), outlineWidth: 1, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND },
           label: { text: r.name || r.region_id, font: '10px monospace', fillColor: Cesium.Color.WHITE.withAlpha(0.85), outlineColor: Cesium.Color.BLACK, outlineWidth: 2, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(0, -18), scale: 1.0, showBackground: false, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND },
-          properties: { kind: 'region', label: r.name || r.region_id, region_id: r.region_id, reason: (r.seeds_elevated || 0) + ' seeds elevated · ' + (r.seeds_known || 0) + ' indexed' },
+          properties: { kind: 'region', layer: level, label: r.name || r.region_id, region_id: r.region_id, action_path: '/v1/passive/regions/' + r.region_id + '/overview', reason: (r.seeds_elevated || 0) + ' seeds elevated · ' + (r.seeds_known || 0) + ' indexed' },
         });
         // Region outline rectangle
         viewer.entities.add({
@@ -3658,6 +3920,7 @@ async function refreshOpPicture() {
             outlineWidth: 1.5,
             height: 0,
           },
+          properties: { kind: 'region', layer: level, label: r.name || r.region_id, region_id: r.region_id, action_path: '/v1/passive/regions/' + r.region_id + '/overview', reason: r.narrative_summary || ((r.seeds_elevated || 0) + ' seeds elevated') },
         });
       }
     });
@@ -3688,8 +3951,12 @@ async function refreshOpPicture() {
           },
           properties: {
             kind: 'site',
+            layer: level,
             label: site.name || site.seed_key || 'Site',
             site_id: site.site_id || '',
+            region_id: site.region_id || '',
+            action_path: site.overview_path || '',
+            narrative_path: site.narrative_path || '',
             reason: site.status_reason || site.priority_reason || ''
           },
         });
@@ -3702,7 +3969,7 @@ async function refreshOpPicture() {
         viewer.entities.add({
           position: Cesium.Cartesian3.fromDegrees(ev.coordinates.lon, ev.coordinates.lat),
           point: { pixelSize: SITE_SIZES[level] || 9, color, outlineColor: Cesium.Color.BLACK.withAlpha(0.7), outlineWidth: 1, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND },
-          properties: { kind: 'canonical_event', label: ev.site_name || ev.event_type || 'Event', reason: ev.summary || ev.operational_readout || '' },
+          properties: { kind: 'canonical_event', layer: level, label: ev.site_name || ev.event_type || 'Event', site_id: ev.site_id || '', region_id: ev.region_id || '', action_path: '/v1/passive/sites/' + ev.site_id + '/overview', reason: ev.summary || ev.operational_readout || '' },
         });
       }
     });
@@ -3788,7 +4055,16 @@ function handleAttentionClick(idx) {
     if (ev && ev.coordinates) { lat = ev.coordinates.lat; lng = ev.coordinates.lon; }
     // No dangerous fallback — lat stays null, panel opens without fly-to
   }
-  openFocusPanel({ kind: item.kind, title: item.title, reason: item.reason, lat, lng });
+  openFocusPanel({
+    kind: item.kind,
+    title: item.title,
+    reason: item.reason,
+    lat,
+    lng,
+    siteId: item.site_id || '',
+    regionId: item.region_id || '',
+    actionPath: item.action_path || (item.site_id ? '/v1/passive/sites/' + item.site_id + '/overview' : (item.region_id ? '/v1/passive/regions/' + item.region_id + '/overview' : '')),
+  });
 }
 
 // --- Recommended Actions ---
@@ -3885,31 +4161,6 @@ function updateRiskTrend(pressure) {
 }
 
 // --- Timeline strip ---
-function refreshTimeline(events) {
-  const strip = document.getElementById('timeline-events');
-  if (!strip) return;
-  if (!events || !events.length) { strip.innerHTML = ''; return; }
-  const now   = Date.now();
-  const start = now - 36 * 3600 * 1000;
-  const total = 72 * 3600 * 1000;
-  const colorMap = { critical: 'var(--coral)', elevated: 'var(--amber)', active: 'var(--teal)', resolved: 'var(--lime)' };
-  strip.innerHTML = events
-    .filter(function(ev) { return ev.last_observed_at_unix_seconds; })
-    .map(function(ev) {
-      const pct   = Math.max(2, Math.min(97, ((ev.last_observed_at_unix_seconds * 1000 - start) / total) * 100));
-      const cls   = sevCls(ev.severity);
-      const color = colorMap[cls] || 'var(--teal)';
-      const label = (ev.site_name || ev.event_type || 'event').replace(/_/g, ' ').toUpperCase();
-      const reason = (ev.summary || '').replace(/'/g, ' ').substring(0, 80);
-      const lat   = ev.coordinates ? ev.coordinates.lat : null;
-      const lng   = ev.coordinates ? ev.coordinates.lon : null;
-      return '<div class="timeline-event" '
-        + 'style="left:' + pct.toFixed(1) + '%;background:' + color + ';cursor:pointer;width:10px;height:10px;border:2px solid rgba(255,255,255,0.25);" '
-        + 'title="' + label + '" '
-        + 'onclick="openFocusPanel({kind:\'canonical_event\',title:\'' + label.replace(/'/g, '') + '\',reason:\'' + reason + '\',lat:' + lat + ',lng:' + lng + '})"></div>';
-    }).join('');
-}
-
 // --- Sys status ---
 function refreshSysStatus() {
   const upd = document.getElementById('sys-updated');
@@ -3946,6 +4197,7 @@ async function refreshAll() {
     refreshRecommendedActions(),
     refreshEventComposition(),
   ]);
+  await refreshFocusedSiteAnalytics();
 }
 
 // Initial load + 30s polling
