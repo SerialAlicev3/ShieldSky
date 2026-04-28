@@ -92,6 +92,11 @@ pub struct PassiveSiteCorpusQuery {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct PassiveSiteForecastQuery {
+    pub horizon_hours: Option<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct PassiveSeedsQuery {
     pub limit: Option<usize>,
 }
@@ -1113,6 +1118,79 @@ pub async fn get_passive_site_narrative(
     let response = state
         .passive_risk_history_narrative(&site_id, days)
         .map_err(|error| app_error_to_api_error(request_id.clone(), error))?;
+    Ok(Json(ApiEnvelope::new(request_id, response)))
+}
+
+pub async fn get_passive_site_solar_forecast(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(site_id): Path<String>,
+    Query(query): Query<PassiveSiteForecastQuery>,
+) -> Result<Json<ApiEnvelope<sss_forecast::SolarForecastResponse>>, ApiError> {
+    let request_id = request_id(&headers);
+    let horizon_hours = query.horizon_hours.unwrap_or(24).clamp(1, 72);
+    let response = state
+        .passive_site_solar_forecast(&request_id, &site_id, horizon_hours)
+        .await
+        .map_err(|error| app_error_to_api_error(request_id.clone(), error))?;
+    Ok(Json(ApiEnvelope::new(request_id, response)))
+}
+
+pub async fn get_passive_site_load_forecast(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(site_id): Path<String>,
+    Query(query): Query<PassiveSiteForecastQuery>,
+) -> Result<Json<ApiEnvelope<sss_forecast::LoadForecastResponse>>, ApiError> {
+    let request_id = request_id(&headers);
+    let horizon_hours = query.horizon_hours.unwrap_or(24).clamp(1, 72);
+    let response = state
+        .passive_site_load_forecast(&request_id, &site_id, horizon_hours)
+        .await
+        .map_err(|error| app_error_to_api_error(request_id.clone(), error))?;
+    Ok(Json(ApiEnvelope::new(request_id, response)))
+}
+
+pub async fn get_passive_site_scenario_forecast(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(site_id): Path<String>,
+    Query(query): Query<PassiveSiteForecastQuery>,
+) -> Result<Json<ApiEnvelope<sss_forecast::ScenarioForecastResponse>>, ApiError> {
+    let request_id = request_id(&headers);
+    let horizon_hours = query.horizon_hours.unwrap_or(24).clamp(1, 72);
+    let response = state
+        .passive_site_scenario_forecast(&request_id, &site_id, horizon_hours)
+        .await
+        .map_err(|error| app_error_to_api_error(request_id.clone(), error))?;
+    Ok(Json(ApiEnvelope::new(request_id, response)))
+}
+
+pub async fn recommend_passive_site_action(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(site_id): Path<String>,
+    Json(request): Json<sss_forecast::OrchestratorRecommendationRequest>,
+) -> Result<Json<ApiEnvelope<sss_forecast::OrchestratorRecommendation>>, ApiError> {
+    let request_id = request_id(&headers);
+    let response = state
+        .passive_site_recommendation(&request_id, &site_id, &request)
+        .await
+        .map_err(|error| app_error_to_api_error(request_id.clone(), error))?;
+    Ok(Json(ApiEnvelope::new(request_id, response)))
+}
+
+pub async fn get_passive_site_orchestrator_decisions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(site_id): Path<String>,
+    Query(query): Query<PredictionSnapshotsQuery>,
+) -> Result<Json<ApiEnvelope<Vec<sss_storage::PredictionSnapshot>>>, ApiError> {
+    let request_id = request_id(&headers);
+    let limit = query.limit.unwrap_or(10).clamp(1, 100);
+    let response = state
+        .passive_site_orchestrator_decisions(&site_id, limit)
+        .map_err(|error| ApiError::storage(request_id.clone(), error.to_string()))?;
     Ok(Json(ApiEnvelope::new(request_id, response)))
 }
 

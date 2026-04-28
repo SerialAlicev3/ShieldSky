@@ -16,6 +16,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 serde = { version = "1", features = ["derive"] }
 serde_json.workspace = true
 sss-core = { path = "../sss-core" }
+sss-forecast = { path = "../sss-forecast" }
 sss-ingest = { path = "../sss-ingest" }
 sss-passive-scanner = { path = "../sss-passive-scanner" }
 sss-site-registry = { path = "../sss-site-registry" }

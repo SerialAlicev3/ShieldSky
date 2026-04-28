@@ -9,7 +9,12 @@ use sss_core::{
     replay_manifest_for, AlertSeverity, AnalyzeObjectRequest, AnalyzeObjectResponse,
     AnticipationEngine, BehaviorSignature, DigitalTwin, EvidenceBundle, MissionClass,
     NotificationDecision, Observation, ObservationSource, OrbitRegime, OrbitalState,
-    ReplayManifest, RiskProfile, SpaceObject, Vector3,
+    PredictedEvent, Prediction, ReplayManifest, RiskProfile, SpaceObject, Vector3,
+};
+use sss_forecast::{
+    load_forecast, recommend_action, scenario_forecast, solar_forecast, LoadForecastResponse,
+    OrchestratorRecommendation, OrchestratorRecommendationRequest, ScenarioForecastResponse,
+    SiteForecastInput, SolarForecastResponse, WeatherNowSignal,
 };
 use sss_ingest::{normalize_tle_record, parse_tle_records, IngestError};
 use sss_passive_scanner::{
@@ -17,7 +22,7 @@ use sss_passive_scanner::{
     PassiveObservation, PassiveRiskRecord, PassiveScanInput, PassiveScanOutput, PassiveScanner,
     PassiveSiteProfile, PassiveSourceKind, PatternSignal, WeatherObservation,
 };
-use sss_site_registry::{Criticality, SiteType};
+use sss_site_registry::{Criticality, Site, SiteType};
 use sss_storage::{
     CanonicalPassiveEvent, IngestBatchLog, NotificationDeliveryLog, PassiveRegionLease,
     PassiveRegionRunLog, PassiveRegionRunStatus, PassiveRegionTarget, PassiveRunOrigin,
@@ -1175,6 +1180,125 @@ impl AppState {
         limit: usize,
     ) -> Result<Vec<PredictionSnapshot>, StorageError> {
         self.storage.prediction_snapshots(object_id, limit)
+    }
+
+    pub async fn passive_site_solar_forecast(
+        &self,
+        request_id: &str,
+        site_id: &str,
+        horizon_hours: u32,
+    ) -> Result<SolarForecastResponse, AppError> {
+        let context = self
+            .passive_site_forecast_context(site_id, horizon_hours)
+            .await?;
+        let response = solar_forecast(&context);
+        self.store_forecast_snapshot(
+            request_id,
+            "/v1/forecast/sites/:site_id/solar",
+            site_id,
+            horizon_hours,
+            &response.narrative,
+            response.confidence,
+        )?;
+        Ok(response)
+    }
+
+    pub async fn passive_site_load_forecast(
+        &self,
+        request_id: &str,
+        site_id: &str,
+        horizon_hours: u32,
+    ) -> Result<LoadForecastResponse, AppError> {
+        let context = self
+            .passive_site_forecast_context(site_id, horizon_hours)
+            .await?;
+        let response = load_forecast(&context);
+        self.store_forecast_snapshot(
+            request_id,
+            "/v1/forecast/sites/:site_id/load",
+            site_id,
+            horizon_hours,
+            &response.narrative,
+            response.confidence,
+        )?;
+        Ok(response)
+    }
+
+    pub async fn passive_site_scenario_forecast(
+        &self,
+        request_id: &str,
+        site_id: &str,
+        horizon_hours: u32,
+    ) -> Result<ScenarioForecastResponse, AppError> {
+        let context = self
+            .passive_site_forecast_context(site_id, horizon_hours)
+            .await?;
+        let response = scenario_forecast(&context);
+        self.store_forecast_snapshot(
+            request_id,
+            "/v1/forecast/sites/:site_id/scenario",
+            site_id,
+            horizon_hours,
+            &response.summary,
+            response.confidence,
+        )?;
+        Ok(response)
+    }
+
+    pub async fn passive_site_recommendation(
+        &self,
+        request_id: &str,
+        site_id: &str,
+        request: &OrchestratorRecommendationRequest,
+    ) -> Result<OrchestratorRecommendation, AppError> {
+        let horizon_hours = request.horizon_hours.unwrap_or(24).clamp(1, 72);
+        let context = self
+            .passive_site_forecast_context(site_id, horizon_hours)
+            .await?;
+        let response = recommend_action(&context, request);
+        self.store_forecast_snapshot(
+            request_id,
+            "/v1/orchestrator/sites/:site_id/recommend",
+            site_id,
+            horizon_hours,
+            &response.operational_reason,
+            response.confidence,
+        )?;
+        Ok(response)
+    }
+
+    pub fn passive_site_orchestrator_decisions(
+        &self,
+        site_id: &str,
+        limit: usize,
+    ) -> Result<Vec<PredictionSnapshot>, StorageError> {
+        Ok(self
+            .storage
+            .prediction_snapshots(site_id, limit)?
+            .into_iter()
+            .filter(|snapshot| snapshot.endpoint == "/v1/orchestrator/sites/:site_id/recommend")
+            .collect())
+    }
+
+    fn store_forecast_snapshot(
+        &self,
+        request_id: &str,
+        endpoint: &str,
+        site_id: &str,
+        horizon_hours: u32,
+        explanation: &str,
+        confidence: f64,
+    ) -> Result<(), AppError> {
+        self.storage
+            .store_prediction_snapshot(&forecast_prediction_snapshot(
+                request_id,
+                endpoint,
+                site_id,
+                horizon_hours,
+                explanation,
+                confidence,
+            ))
+            .map_err(AppError::Storage)
     }
 
     pub fn timeline(
@@ -2614,6 +2738,36 @@ impl AppState {
         self.build_risk_history_narrative(site_id, days, None)
     }
 
+    async fn passive_site_forecast_context(
+        &self,
+        site_id: &str,
+        horizon_hours: u32,
+    ) -> Result<SiteForecastInput, AppError> {
+        let site_profile = self
+            .storage
+            .passive_site_profiles()?
+            .into_iter()
+            .find(|candidate| candidate.site.site_id.to_string() == site_id)
+            .ok_or_else(|| AppError::SiteNotFound(format!("passive site not found: {site_id}")))?;
+        let seed_lifecycle = self.seed_record_for_site(&site_profile)?;
+        let latest_risk = self
+            .storage
+            .passive_risk_history(site_id, 1)?
+            .into_iter()
+            .next()
+            .map_or(0.0, |risk| risk.peak_risk);
+        let weather_now = self.fetch_site_weather_now(&site_profile.site).await?;
+
+        Ok(SiteForecastInput {
+            site: site_profile.site,
+            generated_at_unix_seconds: now_unix_seconds(),
+            horizon_hours: horizon_hours.clamp(1, 72),
+            observation_confidence: seed_lifecycle.map_or(0.52, |record| record.confidence),
+            latest_risk,
+            weather_now,
+        })
+    }
+
     pub async fn apod_briefing(
         &self,
         request_id: &str,
@@ -3305,6 +3459,53 @@ impl AppState {
         self.storage.store_passive_seed_records(&records)
     }
 
+    async fn fetch_site_weather_now(&self, site: &Site) -> Result<WeatherNowSignal, AppError> {
+        let payload: OpenMeteoForecastResponse = self
+            .http_client
+            .get(format!(
+                "{}/v1/forecast",
+                self.open_meteo_base_url.trim_end_matches('/')
+            ))
+            .query(&[
+                ("latitude", site.latitude.to_string()),
+                ("longitude", site.longitude.to_string()),
+                (
+                    "current",
+                    "wind_speed_10m,precipitation_probability,shortwave_radiation,cloud_cover"
+                        .to_string(),
+                ),
+                ("forecast_days", "1".to_string()),
+                ("timezone", "GMT".to_string()),
+                ("timeformat", "unixtime".to_string()),
+            ])
+            .send()
+            .await
+            .map_err(|error| AppError::SourceUnavailable(error.to_string()))?
+            .error_for_status()
+            .map_err(|error| AppError::SourceUnavailable(error.to_string()))?
+            .json::<OpenMeteoForecastResponse>()
+            .await
+            .map_err(|error| AppError::SourceUnavailable(error.to_string()))?;
+        let current = payload.current.ok_or_else(|| {
+            AppError::SourceUnavailable("Open-Meteo current payload missing.".to_string())
+        })?;
+        let irradiance_ratio = current
+            .shortwave_radiation
+            .map_or(0.0_f64, |value| 1.0 - (f64::from(value) / 1_000.0));
+        let cloud_cover_ratio = current
+            .cloud_cover
+            .map_or(0.0_f64, |value| f64::from(value) / 100.0);
+        Ok(WeatherNowSignal {
+            observed_at_unix_seconds: current.time,
+            wind_kph: f64::from(current.wind_speed_10m.unwrap_or_default()),
+            hail_probability: (f64::from(current.precipitation_probability.unwrap_or_default())
+                / 100.0)
+                .clamp(0.0, 1.0),
+            irradiance_drop_ratio: irradiance_ratio.max(cloud_cover_ratio).clamp(0.0, 1.0),
+            cloud_cover_ratio: cloud_cover_ratio.clamp(0.0, 1.0),
+        })
+    }
+
     async fn fetch_open_meteo_observation(
         &self,
         site: &OpenInfraSiteSeed,
@@ -3624,6 +3825,40 @@ fn prediction_snapshot_from_predict_response(
         model_version: "sss-behavioral-mvp-v1".to_string(),
         evidence_bundle_hash: None,
         predictions: response.predictions.clone(),
+    }
+}
+
+fn forecast_prediction_snapshot(
+    request_id: &str,
+    endpoint: &str,
+    site_id: &str,
+    horizon_hours: u32,
+    explanation: &str,
+    confidence: f64,
+) -> PredictionSnapshot {
+    PredictionSnapshot {
+        snapshot_id: format!("{request_id}:forecast:{site_id}:{endpoint}"),
+        request_id: request_id.to_string(),
+        endpoint: endpoint.to_string(),
+        object_id: site_id.to_string(),
+        generated_at_unix_seconds: now_unix_seconds(),
+        horizon_hours: f64::from(horizon_hours),
+        base_epoch_unix_seconds: Some(now_unix_seconds()),
+        propagation_model: "sss-forecast-modeled-v1".to_string(),
+        model_version: "sss-forecast-v1".to_string(),
+        evidence_bundle_hash: None,
+        predictions: vec![Prediction {
+            object_id: site_id.to_string(),
+            horizon_hours: f64::from(horizon_hours),
+            event: PredictedEvent::ContinuedAnomalousBehavior,
+            probability: confidence.clamp(0.0, 0.99),
+            explanation: explanation.to_string(),
+            propagation_model: "sss-forecast-modeled-v1".to_string(),
+            based_on_observation_epoch: Some(now_unix_seconds()),
+            predicted_state: None,
+            position_delta_km: None,
+            velocity_delta_km_s: None,
+        }],
     }
 }
 
