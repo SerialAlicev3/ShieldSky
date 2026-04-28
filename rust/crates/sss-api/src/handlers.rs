@@ -3315,6 +3315,7 @@ const FOCUS_STATE = {
   lastRecommendation: null,
 };
 const PRESSURE_HISTORY = []; // circular buffer { t, score }
+const FORECAST_ENTITIES = [];
 
 function focusOnGlobe(lat, lng, altM) {
   viewer.camera.flyTo({
@@ -3342,6 +3343,67 @@ function setFocusPrimaryButton(label, path) {
   btn.disabled = false;
   btn.style.opacity = '1';
   FOCUS_STATE.actionPath = path || null;
+}
+
+function forecastLayerEnabled() {
+  const toggle = document.querySelector('.legend-toggle[data-layer="forecast"]');
+  return !toggle || toggle.classList.contains('on');
+}
+
+function clearForecastOverlay() {
+  while (FORECAST_ENTITIES.length) {
+    const entity = FORECAST_ENTITIES.pop();
+    if (entity) viewer.entities.remove(entity);
+  }
+}
+
+function renderForecastOverlay(siteId, lat, lng, points) {
+  clearForecastOverlay();
+  if (lat == null || lng == null || !points || !points.length) return;
+  const stressed = points
+    .filter(function(point) {
+      return Number(point.reserve_stress_index || 0) >= 0.45 || Number(point.modeled_price_index || 0) >= 0.7;
+    })
+    .slice(0, 4);
+  stressed.forEach(function(point, index) {
+    const stress = Number(point.reserve_stress_index || 0);
+    const price = Number(point.modeled_price_index || 0);
+    const level = stress >= 0.75 ? 'critical' : stress >= 0.55 ? 'elevated' : 'active';
+    const color = SITE_COLORS[level] || SITE_COLORS.active;
+    const entity = viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(lng, lat),
+      point: {
+        pixelSize: 7 + index,
+        color: color.withAlpha(0.95),
+        outlineColor: Cesium.Color.WHITE.withAlpha(0.4),
+        outlineWidth: 1,
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+      },
+      label: {
+        text: 'T+' + point.offset_hours + 'H',
+        font: '9px monospace',
+        fillColor: color,
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 2,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        pixelOffset: new Cesium.Cartesian2(14, -10 - (index * 12)),
+        showBackground: true,
+        backgroundColor: Cesium.Color.fromCssColorString('#07111B').withAlpha(0.75),
+        scale: 0.9,
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+      },
+      show: forecastLayerEnabled(),
+      properties: {
+        kind: 'site',
+        layer: 'forecast',
+        site_id: siteId,
+        label: 'Forecast T+' + point.offset_hours + 'H',
+        action_path: '/v1/forecast/sites/' + siteId + '/scenario?horizon_hours=24',
+        reason: 'Reserve stress ' + (stress * 100).toFixed(0) + '% · price index ' + (price * 100).toFixed(0) + '%.',
+      },
+    });
+    FORECAST_ENTITIES.push(entity);
+  });
 }
 
 function pushPressureHistory(points) {
@@ -3387,6 +3449,7 @@ function renderTimelineEntries(entries) {
 
 async function refreshGlobalAnalytics() {
   try {
+    clearForecastOverlay();
     const data = await API.get('/v1/passive/command-center/summary');
     const topSite = data.dashboard && data.dashboard.top_sites ? data.dashboard.top_sites[0] : null;
     const topRegion = data.highlights ? data.highlights.top_region : null;
@@ -3503,6 +3566,7 @@ async function refreshFocusedSiteAnalytics() {
         };
       });
     renderTimelineEntries(recentEntries.concat(forecastEntries));
+    renderForecastOverlay(siteId, _focusCoords.lat, _focusCoords.lng, scenario.points || []);
 
     const recList = document.getElementById('recommended-actions-list');
     if (recList) {
@@ -3776,36 +3840,43 @@ async function refreshNarrative() {
 // regions: [{ name, state: 'healthy'|'pressured'|'degraded'|'failing' }]
 async function refreshSourceHealth() {
   try {
-    const data    = await API.get('/v1/passive/operational-visibility');
+    const data    = await API.get('/v1/passive/command-center/summary');
     const grid    = document.getElementById('source-health-list');
     const cnt     = document.getElementById('source-count');
     const sysEl   = document.getElementById('sys-sources');
     if (!grid) return;
-    const regions = data.regions || [];
-    if (!regions.length) {
-      grid.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">No regions configured.</div>';
+    const sources = (data.dashboard && data.dashboard.source_health) || [];
+    if (!sources.length) {
+      grid.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">No source health samples available yet.</div>';
       if (cnt) cnt.textContent = '\u2014';
-      if (sysEl) sysEl.textContent = 'no regions';
+      if (sysEl) sysEl.textContent = 'no feeds';
       return;
     }
-    const score = { healthy: 97, pressured: 62, degraded: 35, failing: 14 };
-    const cls   = { healthy: 'healthy', pressured: 'degraded', degraded: 'degraded', failing: 'failing' };
-    const nHealthy = regions.filter(r => r.state === 'healthy').length;
-    if (cnt)   cnt.textContent  = nHealthy + ' / ' + regions.length;
-    if (sysEl) sysEl.textContent = nHealthy + ' / ' + regions.length + ' regions';
-    grid.innerHTML = regions.map(r => {
-      const sc = score[r.state] || 50;
-      const cl = cls[r.state]   || 'degraded';
-      const nm = (r.name || r.region_id || 'REGION').toUpperCase().substring(0, 14);
+    const scoreByStatus = { healthy: 97, watch: 72, degraded: 38, stale: 16 };
+    const classByStatus = { healthy: 'healthy', watch: 'degraded', degraded: 'degraded', stale: 'failing' };
+    const healthyCount = sources.filter(function(source) { return String(source.health_status || '').toLowerCase() === 'healthy'; }).length;
+    if (cnt) cnt.textContent = healthyCount + ' / ' + sources.length;
+    if (sysEl) sysEl.textContent = healthyCount + ' / ' + sources.length + ' feeds';
+    grid.innerHTML = sources.slice(0, 6).map(function(source) {
+      const status = String(source.health_status || 'degraded').toLowerCase();
+      const sc = scoreByStatus[status] || Math.round(Number(source.reliability_score || 0.5) * 100);
+      const cl = classByStatus[status] || 'degraded';
+      const nm = String(source.source || 'SOURCE').toUpperCase().substring(0, 14);
+      const hint = source.staleness_seconds
+        ? Math.floor(Number(source.staleness_seconds || 0) / 60) + 'm stale'
+        : (Number(source.consecutive_failure_count || 0) > 0
+          ? Number(source.consecutive_failure_count || 0) + ' failures'
+          : 'live');
       return '<div class="source-row">'
         + '<div class="source-name">' + nm + '</div>'
         + '<div class="source-bar"><div class="source-bar-fill ' + cl + '" style="width:' + sc + '%"></div></div>'
         + '<div class="source-value">' + sc + '</div>'
+        + '<div style="grid-column: 1 / span 3; font-family:var(--font-mono);font-size:9px;color:var(--text-tertiary);letter-spacing:0.08em;margin-top:4px;">' + hint + '</div>'
         + '</div>';
     }).join('');
   } catch (_) {
     const grid = document.getElementById('source-health-list');
-    if (grid) grid.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">Visibility data unavailable.</div>';
+    if (grid) grid.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">Source health unavailable.</div>';
   }
 }
 
