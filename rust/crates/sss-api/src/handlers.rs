@@ -2816,6 +2816,35 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
     margin-top: 10px;
     white-space: pre-line;
   }
+  .op-review-strip {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .op-review-pill {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 5px 8px;
+  }
+  .op-review-pill.pending {
+    color: var(--amber);
+    border-color: rgba(241, 201, 107, 0.28);
+  }
+  .op-review-pill.applied {
+    color: var(--teal);
+    border-color: rgba(79, 224, 208, 0.28);
+  }
+  .op-review-pill.dismissed {
+    color: var(--coral);
+    border-color: rgba(255, 124, 110, 0.28);
+  }
   .focus-divider { border: none; border-top: 1px solid var(--line); margin: 10px 0; }
   .focus-actions { display: flex; gap: 8px; flex-wrap: wrap; }
   .focus-links {
@@ -3141,6 +3170,7 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
       <div class="op-message" id="op-message">
         Connecting to operational feeds&hellip;
       </div>
+      <div class="op-review-strip" id="op-review-strip"></div>
     </div>
 
     <!-- Legend -->
@@ -3605,6 +3635,23 @@ function setTimelineSummary(text) {
   summaryEl.textContent = text || 'Event memory and forecast windows will appear here.';
 }
 
+function renderOperationalReviewStrip(counts) {
+  const strip = document.getElementById('op-review-strip');
+  if (!strip) return;
+  const pending = Number((counts && counts.pending) || 0);
+  const applied = Number((counts && counts.applied) || 0);
+  const dismissed = Number((counts && counts.dismissed) || 0);
+  const reviewed = Number((counts && counts.reviewed) || 0);
+  const pills = [];
+  if (pending > 0) pills.push('<span class="op-review-pill pending">' + pending + ' pending review</span>');
+  if (applied > 0) pills.push('<span class="op-review-pill applied">' + applied + ' applied</span>');
+  if (reviewed > 0) pills.push('<span class="op-review-pill">' + reviewed + ' reviewed</span>');
+  if (dismissed > 0) pills.push('<span class="op-review-pill dismissed">' + dismissed + ' dismissed</span>');
+  strip.innerHTML = pills.length
+    ? pills.join('')
+    : '<span class="op-review-pill">No operator review backlog</span>';
+}
+
 function forecastLayerEnabled() {
   const toggle = document.querySelector('.legend-toggle[data-layer="forecast"]');
   return !toggle || toggle.classList.contains('on');
@@ -3802,6 +3849,13 @@ async function refreshGlobalAnalytics() {
     const topSite = data.dashboard && data.dashboard.top_sites ? data.dashboard.top_sites[0] : null;
     const topRegion = data.highlights ? data.highlights.top_region : null;
     const pressure = topSite ? Number(topSite.risk_score || 0) : 0;
+    const reviewCounts = (data.dashboard && data.dashboard.regions ? data.dashboard.regions : []).reduce(function(acc, region) {
+      acc.pending += Number(region.recommendation_pending_review_count || 0);
+      acc.reviewed += Number(region.recommendation_reviewed_count || 0);
+      acc.applied += Number(region.recommendation_applied_count || 0);
+      acc.dismissed += Number(region.recommendation_dismissed_count || 0);
+      return acc;
+    }, { pending: 0, reviewed: 0, applied: 0, dismissed: 0 });
     PRESSURE_HISTORY.push({ t: Date.now(), score: pressure });
     if (PRESSURE_HISTORY.length > 12) PRESSURE_HISTORY.shift();
     const titleEl = document.getElementById('risk-trend-title');
@@ -3817,6 +3871,7 @@ async function refreshGlobalAnalytics() {
     setFocusPrimaryButton('Open →', null);
     setFocusQuickLinks([]);
     setFocusStateText('');
+    renderOperationalReviewStrip(reviewCounts);
   } catch (_) { /* leave */ }
 }
 
@@ -3881,6 +3936,7 @@ async function refreshFocusedSiteAnalytics() {
     setFocusQuickLinks([
       { label: 'Narrative', path: '/v1/passive/sites/' + encodeURIComponent(siteId) + '/narrative?days=30' },
       { label: 'Forecast', path: '/v1/forecast/sites/' + encodeURIComponent(siteId) + '/scenario?horizon_hours=24' },
+      { label: 'Reviews', path: '/v1/orchestrator/sites/' + encodeURIComponent(siteId) + '/reviews?limit=10' },
       provenance && provenance.bundle_hashes && provenance.bundle_hashes[0]
         ? { label: 'Evidence', path: '/v1/evidence/' + provenance.bundle_hashes[0], warn: true }
         : null,
@@ -3901,6 +3957,7 @@ async function refreshFocusedSiteAnalytics() {
       if (latestReview) {
         focusReview.textContent =
           'LAST REVIEW · ' + tAgo(latestReview.decided_at_unix_seconds)
+          + '\nSTATE · ' + humanReviewState(latestReview.state || recommendationState || '')
           + (latestReview.actor ? '\nACTOR · ' + latestReview.actor : '')
           + (latestReview.rationale ? '\nRATIONALE · ' + latestReview.rationale : '');
       } else {
@@ -3909,6 +3966,12 @@ async function refreshFocusedSiteAnalytics() {
           : '';
       }
     }
+    renderOperationalReviewStrip({
+      pending: recommendationState === 'pending_review' ? 1 : 0,
+      reviewed: recommendationState === 'reviewed' ? 1 : 0,
+      applied: recommendationState === 'applied' ? 1 : 0,
+      dismissed: recommendationState === 'dismissed' ? 1 : 0,
+    });
 
     const riskTitleEl = document.getElementById('risk-trend-title');
     const riskWindowEl = document.getElementById('risk-trend-window');
@@ -3986,18 +4049,25 @@ async function refreshFocusedSiteAnalytics() {
     if (recList) {
       const decisionCount = Array.isArray(decisions) ? decisions.length : 0;
       const reviewed = RECOMMENDATION_STATE[siteId];
+      const reviewMeta = latestReview
+        ? ('LAST REVIEW ' + tAgo(latestReview.decided_at_unix_seconds)
+          + (latestReview.actor ? ' · ' + escapeHtml(latestReview.actor) : '')
+          + (latestReview.rationale ? '<br>' + escapeHtml(latestReview.rationale) : ''))
+        : 'AWAITING OPERATOR DECISION';
       recList.innerHTML =
         '<div style="padding:11px 12px;background:var(--bg-elevated);border-left:2px solid var(--teal);border-radius:0 2px 2px 0;">'
-        + '<div style="font-size:12px;color:var(--text-primary);line-height:1.4;">' + String(recommendation.action || 'monitor_only').replace(/_/g, ' ').toUpperCase() + '</div>'
-        + '<div style="font-size:11px;color:var(--text-secondary);margin-top:3px;line-height:1.4;">' + recommendation.expected_benefit + '</div>'
+        + '<div style="font-size:12px;color:var(--text-primary);line-height:1.4;">' + escapeHtml(String(recommendation.action || 'monitor_only').replace(/_/g, ' ').toUpperCase()) + '</div>'
+        + '<div style="font-size:11px;color:var(--text-secondary);margin-top:3px;line-height:1.4;">' + escapeHtml(recommendation.expected_benefit || 'Operational recommendation ready.') + '</div>'
         + '<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-tertiary);margin-top:6px;letter-spacing:0.08em;">'
         + 'CONFIDENCE ' + (Number(recommendation.confidence || 0) * 100).toFixed(0) + '% · DECISIONS ' + decisionCount
         + (reviewed ? ' · STATE ' + String(reviewed).toUpperCase() : '')
         + '</div>'
+        + '<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-secondary);margin-top:8px;line-height:1.7;">' + reviewMeta + '</div>'
         + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">'
         + '<button class="att-action subtle" onclick="setRecommendationState(\'' + siteId + '\', \'reviewed\').catch(() => {})">Review</button>'
         + '<button class="att-action" onclick="setRecommendationState(\'' + siteId + '\', \'applied\').catch(() => {})">Apply</button>'
         + '<button class="att-action warn" onclick="setRecommendationState(\'' + siteId + '\', \'dismissed\').catch(() => {})">Dismiss</button>'
+        + '<button class="att-action subtle" onclick="openDrawerFromPath(\'Recommendation Reviews\', \'/v1/orchestrator/sites/' + encodeURIComponent(siteId) + '/reviews?limit=10\')">History</button>'
         + '</div></div>';
     }
   } catch (_) { /* leave */ }
@@ -4185,6 +4255,21 @@ function tAgo(ts) {
   return Math.floor(d / 86400) + 'd ago';
 }
 
+function escapeHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function humanReviewState(stateValue) {
+  const value = String(stateValue || '').toLowerCase();
+  if (!value) return '';
+  return value.replace(/_/g, ' ');
+}
+
 function reviewStateMatches(stateValue) {
   if (!CONSOLE_STATE.reviewState || CONSOLE_STATE.reviewState === 'all') return true;
   return String(stateValue || '') === CONSOLE_STATE.reviewState;
@@ -4367,6 +4452,13 @@ async function refreshOpPicture() {
     const liveEvents = events.length;
     // total seeds known across all regions
     const seedsKnown = enabledRegions.reduce((s, r) => s + (r.seeds_known || 0), 0);
+    const reviewCounts = enabledRegions.reduce(function(acc, region) {
+      acc.pending += Number(region.recommendation_pending_review_count || 0);
+      acc.reviewed += Number(region.recommendation_reviewed_count || 0);
+      acc.applied += Number(region.recommendation_applied_count || 0);
+      acc.dismissed += Number(region.recommendation_dismissed_count || 0);
+      return acc;
+    }, { pending: 0, reviewed: 0, applied: 0, dismissed: 0 });
 
     const opR   = document.getElementById('op-regions');
     const opS   = document.getElementById('op-sites');
@@ -4381,13 +4473,15 @@ async function refreshOpPicture() {
       } else if (!liveEvents && !elevSites) {
         opMsg.innerHTML = activeRegions + ' region' + (activeRegions === 1 ? '' : 's') + ' monitored'
           + (seedsKnown > 0 ? ' \u00b7 ' + seedsKnown.toLocaleString() + ' seeds indexed' : '')
-          + ' \u00b7 awaiting scan results.';
+          + (reviewCounts.pending > 0 ? ' \u00b7 ' + reviewCounts.pending + ' recommendation review' + (reviewCounts.pending === 1 ? '' : 's') + ' pending.' : ' \u00b7 awaiting scan results.');
       } else {
         opMsg.innerHTML = '<strong>' + elevSites + ' site' + (elevSites === 1 ? '' : 's') + '</strong> elevated \u00b7 '
           + liveEvents + ' event' + (liveEvents === 1 ? '' : 's') + ' live across '
-          + activeRegions + ' region' + (activeRegions === 1 ? '' : 's') + '.';
+          + activeRegions + ' region' + (activeRegions === 1 ? '' : 's') + '.'
+          + (reviewCounts.pending > 0 ? ' ' + reviewCounts.pending + ' recommendation review' + (reviewCounts.pending === 1 ? '' : 's') + ' waiting on operator action.' : '');
       }
     }
+    renderOperationalReviewStrip(reviewCounts);
 
     const siteResponses = await Promise.all(
       enabledRegions.map(function(r) {
