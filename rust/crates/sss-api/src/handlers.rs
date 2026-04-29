@@ -2807,6 +2807,15 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
     text-transform: uppercase;
     margin-bottom: 10px;
   }
+
+  .focus-review {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    color: var(--text-secondary);
+    line-height: 1.7;
+    margin-top: 10px;
+    white-space: pre-line;
+  }
   .focus-divider { border: none; border-top: 1px solid var(--line); margin: 10px 0; }
   .focus-actions { display: flex; gap: 8px; flex-wrap: wrap; }
   .focus-links {
@@ -2978,6 +2987,13 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
       <button class="chip" data-filter="regional">Regional</button>
       <button class="chip" data-filter="site">Site</button>
       <button class="chip" data-filter="incident">Incident</button>
+    </div>
+
+    <div class="chip-group">
+      <button class="chip active" data-review-state="all">All States</button>
+      <button class="chip" data-review-state="pending_review">Pending</button>
+      <button class="chip" data-review-state="applied">Applied</button>
+      <button class="chip" data-review-state="dismissed">Dismissed</button>
     </div>
 
     <div class="chip-group">
@@ -3178,6 +3194,7 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
       </div>
       <div class="focus-links" id="focus-links"></div>
       <div class="focus-state" id="focus-state"></div>
+      <div class="focus-review" id="focus-review"></div>
     </div>
 
   </main>
@@ -3462,6 +3479,8 @@ document.getElementById('focus-close-btn').addEventListener('click', () => {
   FOCUS_STATE.narrativePath = null;
   FOCUS_STATE.lastRecommendation = null;
   setFocusStateText('');
+  const focusReview = document.getElementById('focus-review');
+  if (focusReview) focusReview.textContent = '';
   refreshGlobalAnalytics().catch(() => {});
 });
 document.getElementById('drawer-close-btn').addEventListener('click', closeDrawer);
@@ -3591,10 +3610,11 @@ function forecastLayerEnabled() {
   return !toggle || toggle.classList.contains('on');
 }
 
-function entityVisibleForFilter(kind) {
+function entityVisibleForFilter(kind, operatorState) {
   if (CONSOLE_STATE.filter === 'site') return kind === 'site';
   if (CONSOLE_STATE.filter === 'regional') return kind === 'region';
   if (CONSOLE_STATE.filter === 'incident') return kind === 'canonical_event';
+  if (!reviewStateMatches(operatorState) && (kind === 'site' || kind === 'region')) return false;
   return true;
 }
 
@@ -3876,6 +3896,19 @@ async function refreshFocusedSiteAnalytics() {
       RECOMMENDATION_STATE[siteId] = recommendationState;
     }
     setFocusStateText(recommendationState ? ('RECOMMENDATION ' + String(recommendationState).toUpperCase()) : 'RECOMMENDATION PENDING REVIEW');
+    const focusReview = document.getElementById('focus-review');
+    if (focusReview) {
+      if (latestReview) {
+        focusReview.textContent =
+          'LAST REVIEW · ' + tAgo(latestReview.decided_at_unix_seconds)
+          + (latestReview.actor ? '\nACTOR · ' + latestReview.actor : '')
+          + (latestReview.rationale ? '\nRATIONALE · ' + latestReview.rationale : '');
+      } else {
+        focusReview.textContent = recommendationState === 'pending_review'
+          ? 'LAST REVIEW · Awaiting operator decision'
+          : '';
+      }
+    }
 
     const riskTitleEl = document.getElementById('risk-trend-title');
     const riskWindowEl = document.getElementById('risk-trend-window');
@@ -3976,6 +4009,7 @@ function openFocusPanel({ kind, title, reason, lat, lng, siteId, regionId, actio
   const fTitle  = document.getElementById('focus-title');
   const fReason = document.getElementById('focus-reason');
   const fCoords = document.getElementById('focus-coords');
+  const focusReview = document.getElementById('focus-review');
   if (!panel) return;
   const kindLabel = { site: 'SITE', region: 'REGION', canonical_event: 'EVENT', neo: 'NEO', maintenance: 'MAINTENANCE' }[kind] || (kind || 'SITE').toUpperCase();
   const kindCls   = kind === 'region' ? 'region' : kind === 'canonical_event' ? 'event' : '';
@@ -3986,6 +4020,7 @@ function openFocusPanel({ kind, title, reason, lat, lng, siteId, regionId, actio
   fCoords.textContent = lat != null ? lat.toFixed(4) + '\u00b0N \u00b7 ' + lng.toFixed(4) + '\u00b0' : '';
   const focusDetail = document.getElementById('focus-detail');
   if (focusDetail) focusDetail.textContent = '';
+  if (focusReview) focusReview.textContent = '';
   _focusCoords = { lat, lng };
   FOCUS_STATE.kind = kind || null;
   FOCUS_STATE.siteId = siteId || null;
@@ -4002,7 +4037,7 @@ function openFocusPanel({ kind, title, reason, lat, lng, siteId, regionId, actio
 }
 
 // --- Console state (filter + time window) ---
-const CONSOLE_STATE = { filter: 'global', window: '72h' };
+const CONSOLE_STATE = { filter: 'global', reviewState: 'all', window: '72h' };
 function windowAfterUnix() {
   const secs = { '24h': 86400, '72h': 259200, '7d': 604800, '30d': 2592000 };
   return Math.floor(Date.now() / 1000) - (secs[CONSOLE_STATE.window] || 259200);
@@ -4015,6 +4050,7 @@ document.querySelectorAll('.chip-group').forEach(group => {
       group.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
       chip.classList.add('active');
       if (chip.dataset.filter) CONSOLE_STATE.filter = chip.dataset.filter;
+      if (chip.dataset.reviewState) CONSOLE_STATE.reviewState = chip.dataset.reviewState;
       if (chip.dataset.window) CONSOLE_STATE.window = chip.dataset.window;
       refreshAll();
     });
@@ -4059,6 +4095,7 @@ document.querySelectorAll('.legend-toggle').forEach(t => {
           lng: lng,
           regionId: r.region_id || '',
           actionPath: '/v1/passive/regions/' + r.region_id + '/overview',
+          operatorState: r.recommendation_pending_review_count > 0 ? 'pending_review' : (r.recommendation_applied_count > 0 ? 'applied' : (r.recommendation_reviewed_count > 0 ? 'reviewed' : (r.recommendation_dismissed_count > 0 ? 'dismissed' : ''))),
         });
         input.value = '';
         return;
@@ -4075,6 +4112,7 @@ document.querySelectorAll('.legend-toggle').forEach(t => {
           regionId: s.region_id || '',
           actionPath: s.overview_path || '',
           narrativePath: s.narrative_path || '',
+          operatorState: s.recommendation_review_state ? String(s.recommendation_review_state).toLowerCase() : (s.has_recommendation ? 'pending_review' : ''),
         });
         input.value = '';
         return;
@@ -4145,6 +4183,11 @@ function tAgo(ts) {
   if (d < 3600)  return Math.floor(d / 60) + 'm ago';
   if (d < 86400) return Math.floor(d / 3600) + 'h ago';
   return Math.floor(d / 86400) + 'd ago';
+}
+
+function reviewStateMatches(stateValue) {
+  if (!CONSOLE_STATE.reviewState || CONSOLE_STATE.reviewState === 'all') return true;
+  return String(stateValue || '') === CONSOLE_STATE.reviewState;
 }
 
 // CanonicalPassiveEvent.severity → CSS marker class
@@ -4371,7 +4414,7 @@ async function refreshOpPicture() {
           position: Cesium.Cartesian3.fromDegrees(lng, lat),
           point: { pixelSize: SITE_SIZES[level] || 9, color, outlineColor: Cesium.Color.BLACK.withAlpha(0.7), outlineWidth: 1, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND },
           label: { text: r.name || r.region_id, font: '10px monospace', fillColor: Cesium.Color.WHITE.withAlpha(0.85), outlineColor: Cesium.Color.BLACK, outlineWidth: 2, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(0, -18), scale: 1.0, showBackground: false, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND },
-          show: entityVisibleForFilter('region'),
+          show: entityVisibleForFilter('region', r.recommendation_pending_review_count > 0 ? 'pending_review' : (r.recommendation_applied_count > 0 ? 'applied' : (r.recommendation_reviewed_count > 0 ? 'reviewed' : (r.recommendation_dismissed_count > 0 ? 'dismissed' : '')))),
           properties: { kind: 'region', layer: level, label: r.name || r.region_id, region_id: r.region_id, action_path: '/v1/passive/regions/' + r.region_id + '/overview', reason: (r.seeds_elevated || 0) + ' seeds elevated · ' + (r.seeds_known || 0) + ' indexed', operator_state: r.recommendation_pending_review_count > 0 ? 'pending_review' : (r.recommendation_applied_count > 0 ? 'applied' : (r.recommendation_reviewed_count > 0 ? 'reviewed' : (r.recommendation_dismissed_count > 0 ? 'dismissed' : ''))) },
         });
         // Region outline rectangle
@@ -4384,7 +4427,7 @@ async function refreshOpPicture() {
             outlineWidth: 1.5,
             height: 0,
           },
-          show: entityVisibleForFilter('region'),
+          show: entityVisibleForFilter('region', r.recommendation_pending_review_count > 0 ? 'pending_review' : (r.recommendation_applied_count > 0 ? 'applied' : (r.recommendation_reviewed_count > 0 ? 'reviewed' : (r.recommendation_dismissed_count > 0 ? 'dismissed' : '')))),
           properties: { kind: 'region', layer: level, label: r.name || r.region_id, region_id: r.region_id, action_path: '/v1/passive/regions/' + r.region_id + '/overview', reason: r.narrative_summary || ((r.seeds_elevated || 0) + ' seeds elevated'), operator_state: r.recommendation_pending_review_count > 0 ? 'pending_review' : (r.recommendation_applied_count > 0 ? 'applied' : (r.recommendation_reviewed_count > 0 ? 'reviewed' : (r.recommendation_dismissed_count > 0 ? 'dismissed' : ''))) },
         });
       }
@@ -4414,7 +4457,7 @@ async function refreshOpPicture() {
             showBackground: false,
             heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
           },
-          show: entityVisibleForFilter('site'),
+          show: entityVisibleForFilter('site', site.recommendation_review_state ? String(site.recommendation_review_state).toLowerCase() : (site.has_recommendation ? 'pending_review' : '')),
           properties: {
             kind: 'site',
             layer: level,
@@ -4436,7 +4479,7 @@ async function refreshOpPicture() {
         viewer.entities.add({
           position: Cesium.Cartesian3.fromDegrees(ev.coordinates.lon, ev.coordinates.lat),
           point: { pixelSize: SITE_SIZES[level] || 9, color, outlineColor: Cesium.Color.BLACK.withAlpha(0.7), outlineWidth: 1, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND },
-          show: entityVisibleForFilter('canonical_event'),
+          show: entityVisibleForFilter('canonical_event', ''),
           properties: { kind: 'canonical_event', layer: level, label: ev.site_name || ev.event_type || 'Event', site_id: ev.site_id || '', region_id: ev.region_id || '', action_path: '/v1/passive/sites/' + ev.site_id + '/overview', reason: ev.summary || ev.operational_readout || '' },
         });
       }
@@ -4459,6 +4502,7 @@ async function refreshAttentionQueue() {
     const filterKind = { regional: 'region', site: 'site', incident: 'canonical_event' }[CONSOLE_STATE.filter];
     let items = data.attention_queue || [];
     if (filterKind) items = items.filter(i => i.kind === filterKind);
+    items = items.filter(i => reviewStateMatches(i.operator_state));
     if (!items.length) {
       list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">Queue is clear.</div>';
       if (cnt) cnt.textContent = '0';
