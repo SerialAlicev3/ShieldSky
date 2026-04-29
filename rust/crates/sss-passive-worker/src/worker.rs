@@ -957,12 +957,18 @@ mod tests {
             window_hours: 24,
             max_scan_limit_per_region: 100,
             max_observation_radius_km: 75.0,
+            max_unfetched_feeds_per_region: 1,
             enable_discovery: true,
             enable_scan: true,
             feeds: WorkerFeedConfig {
                 include_adsb: true,
                 include_weather: true,
                 include_fire_smoke: true,
+            },
+            required_feeds: WorkerFeedConfig {
+                include_adsb: false,
+                include_weather: true,
+                include_fire_smoke: false,
             },
             dry_run: false,
         }

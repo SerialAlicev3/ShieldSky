@@ -85,6 +85,14 @@ pub enum RiskTrend {
     Down,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewAgeBucket {
+    New,
+    Aging,
+    Stale,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RegionMapItem {
     pub region_id: String,
@@ -108,6 +116,8 @@ pub struct RegionMapItem {
     pub next_run_at_unix_seconds: Option<i64>,
     pub discovery_due: bool,
     pub dominant_status: Option<CanonicalEventStatus>,
+    pub risk_delta_classification: Option<RiskDeltaType>,
+    pub risk_delta_explanation: Option<String>,
     pub new_event_count: usize,
     pub recurring_event_count: usize,
     pub escalating_event_count: usize,
@@ -123,6 +133,8 @@ pub struct RegionMapItem {
     pub recommendation_reviewed_count: usize,
     pub recommendation_applied_count: usize,
     pub recommendation_dismissed_count: usize,
+    pub pending_review_oldest_age_seconds: Option<i64>,
+    pub pending_review_age_bucket: Option<ReviewAgeBucket>,
     pub latest_run_status: Option<String>,
     pub latest_run_finished_at_unix_seconds: Option<i64>,
     pub operational_pressure_priority: MapPriority,
@@ -166,6 +178,8 @@ pub struct SiteMapItem {
     pub has_recommendation: bool,
     pub recommendation_review_state: Option<PassiveRecommendationReviewState>,
     pub recommendation_reviewed_at_unix_seconds: Option<i64>,
+    pub recommendation_age_seconds: Option<i64>,
+    pub recommendation_age_bucket: Option<ReviewAgeBucket>,
     pub observed: bool,
     pub elevated: bool,
 }
@@ -279,6 +293,7 @@ pub fn build_site_map_response(
             .and_then(|site_id| canonical_by_site.get(site_id))
             .and_then(|history| site_canonical_focus(history, now_unix_seconds()));
         sites.push(site_map_item(
+            state,
             record,
             query.region_id.clone(),
             top_event.as_ref(),
@@ -377,6 +392,7 @@ fn region_map_item(
     let discovery_due = overview.is_some_and(|overview| overview.discovery_due);
     let now = now_unix_seconds();
     let canonical_summary = region_canonical_summary(canonical_events, now);
+    let region_risk_focus = region_risk_delta_focus(canonical_events, now);
     let operational = region_operational_summary(state, &region.region_id, now)
         .unwrap_or_else(|_| empty_region_operational_summary());
     let narrative_summary = match canonical_summary.dominant_status {
@@ -400,7 +416,7 @@ fn region_map_item(
         ),
     };
     let operational_summary = format!(
-        "{} active leases, {} stale leases, {} active workers, {} stale workers, {} failed runs, {} partial runs, {} lease-loss signals, {} pending recommendation reviews, {} applied, {} dismissed.",
+        "{} active leases, {} stale leases, {} active workers, {} stale workers, {} failed runs, {} partial runs, {} lease-loss signals, {} pending recommendation reviews{}, {} applied, {} dismissed.",
         operational.active_lease_count,
         operational.stale_lease_count,
         operational.active_worker_count,
@@ -409,6 +425,10 @@ fn region_map_item(
         operational.recent_partial_run_count,
         operational.recent_lease_loss_count,
         operational.recommendation_pending_review_count,
+        operational
+            .pending_review_oldest_age_seconds
+            .map(|age| format!(" (oldest {}h)", age / 3_600))
+            .unwrap_or_default(),
         operational.recommendation_applied_count,
         operational.recommendation_dismissed_count
     );
@@ -456,6 +476,10 @@ fn region_map_item(
             .map(|last| last.saturating_add(region.discovery_cadence_seconds)),
         discovery_due,
         dominant_status: canonical_summary.dominant_status,
+        risk_delta_classification: region_risk_focus
+            .as_ref()
+            .map(|focus| focus.risk_delta_classification),
+        risk_delta_explanation: region_risk_focus.map(|focus| focus.risk_delta_explanation),
         new_event_count: canonical_summary.new_event_count,
         recurring_event_count: canonical_summary.recurring_event_count,
         escalating_event_count: canonical_summary.escalating_event_count,
@@ -471,6 +495,8 @@ fn region_map_item(
         recommendation_reviewed_count: operational.recommendation_reviewed_count,
         recommendation_applied_count: operational.recommendation_applied_count,
         recommendation_dismissed_count: operational.recommendation_dismissed_count,
+        pending_review_oldest_age_seconds: operational.pending_review_oldest_age_seconds,
+        pending_review_age_bucket: operational.pending_review_age_bucket,
         latest_run_status: operational.latest_run_status,
         latest_run_finished_at_unix_seconds: operational.latest_run_finished_at_unix_seconds,
         operational_pressure_priority: priority_from_score(operational.operational_pressure_score),
@@ -532,7 +558,51 @@ fn site_has_recommendation(state: &AppState, site_id: &str) -> Result<bool, AppE
         .is_empty())
 }
 
+fn latest_recommendation_snapshot_time_for_site(
+    state: &AppState,
+    site_id: &str,
+) -> Result<Option<i64>, AppError> {
+    Ok(state
+        .passive_site_orchestrator_decisions(site_id, 1)
+        .map_err(AppError::Storage)?
+        .into_iter()
+        .next()
+        .map(|snapshot| snapshot.generated_at_unix_seconds))
+}
+
+fn recommendation_age_seconds_for_site(
+    state: &AppState,
+    site_id: &str,
+    latest_review: Option<&PassiveRecommendationReview>,
+    has_recommendation: bool,
+    now_unix_seconds: i64,
+) -> Result<Option<i64>, AppError> {
+    if let Some(review) = latest_review {
+        return Ok(Some(
+            now_unix_seconds.saturating_sub(review.decided_at_unix_seconds),
+        ));
+    }
+    if has_recommendation {
+        return Ok(
+            latest_recommendation_snapshot_time_for_site(state, site_id)?
+                .map(|generated_at| now_unix_seconds.saturating_sub(generated_at)),
+        );
+    }
+    Ok(None)
+}
+
+fn review_age_bucket(age_seconds: i64) -> ReviewAgeBucket {
+    if age_seconds <= 6 * 3_600 {
+        ReviewAgeBucket::New
+    } else if age_seconds <= 24 * 3_600 {
+        ReviewAgeBucket::Aging
+    } else {
+        ReviewAgeBucket::Stale
+    }
+}
+
 fn site_map_item(
+    state: &AppState,
     record: PassiveSeedRecord,
     region_id: String,
     top_event: Option<&PassiveEvent>,
@@ -540,6 +610,17 @@ fn site_map_item(
     latest_review: Option<&PassiveRecommendationReview>,
     has_recommendation: bool,
 ) -> SiteMapItem {
+    let recommendation_age_seconds = record.site_id.as_deref().and_then(|site_id| {
+        recommendation_age_seconds_for_site(
+            state,
+            site_id,
+            latest_review,
+            has_recommendation,
+            now_unix_seconds(),
+        )
+        .ok()
+        .flatten()
+    });
     let elevated = seed_is_elevated(&record);
     let priority_reason = seed_priority_reason(&record, top_event);
     let status_reason = seed_status_reason(
@@ -590,6 +671,8 @@ fn site_map_item(
         recommendation_review_state: latest_review.map(|review| review.state),
         recommendation_reviewed_at_unix_seconds: latest_review
             .map(|review| review.decided_at_unix_seconds),
+        recommendation_age_seconds,
+        recommendation_age_bucket: recommendation_age_seconds.map(review_age_bucket),
         observed: record.last_scanned_at_unix_seconds.is_some(),
         elevated,
     }
@@ -740,6 +823,8 @@ struct RegionOperationalSummary {
     recommendation_reviewed_count: usize,
     recommendation_applied_count: usize,
     recommendation_dismissed_count: usize,
+    pending_review_oldest_age_seconds: Option<i64>,
+    pending_review_age_bucket: Option<ReviewAgeBucket>,
     latest_run_status: Option<String>,
     latest_run_finished_at_unix_seconds: Option<i64>,
     operational_pressure_score: f64,
@@ -766,6 +851,27 @@ fn site_canonical_focus(
         left.last_seen_at_unix_seconds
             .cmp(&right.last_seen_at_unix_seconds)
             .then_with(|| left.max_risk_score.total_cmp(&right.max_risk_score))
+    })?;
+    let projection = project_canonical_event(events, primary, now_unix_seconds);
+    Some(SiteCanonicalFocus {
+        status: projection.status,
+        risk_trend: risk_trend_from_delta(projection.risk_delta.classification),
+        risk_delta_classification: projection.risk_delta.classification,
+        risk_delta_explanation: projection.risk_delta.explanation,
+    })
+}
+
+fn region_risk_delta_focus(
+    events: &[StoredCanonicalPassiveEvent],
+    now_unix_seconds: i64,
+) -> Option<SiteCanonicalFocus> {
+    let primary = events.iter().max_by(|left, right| {
+        left.max_risk_score
+            .total_cmp(&right.max_risk_score)
+            .then_with(|| {
+                left.last_seen_at_unix_seconds
+                    .cmp(&right.last_seen_at_unix_seconds)
+            })
     })?;
     let projection = project_canonical_event(events, primary, now_unix_seconds);
     Some(SiteCanonicalFocus {
@@ -908,19 +1014,35 @@ fn region_operational_summary(
     let mut recommendation_reviewed_count = 0;
     let mut recommendation_applied_count = 0;
     let mut recommendation_dismissed_count = 0;
+    let mut pending_review_oldest_age_seconds = None::<i64>;
     for record in &region_records {
         let Some(site_id) = record.site_id.as_deref() else {
             continue;
         };
         let has_recommendation = site_has_recommendation(state, site_id)?;
         let latest_review = latest_recommendation_review_for_site(state, site_id)?;
+        let recommendation_age_seconds = recommendation_age_seconds_for_site(
+            state,
+            site_id,
+            latest_review.as_ref(),
+            has_recommendation,
+            now_unix_seconds,
+        )?;
         match latest_review.map(|review| review.state) {
             Some(PassiveRecommendationReviewState::Reviewed) => recommendation_reviewed_count += 1,
             Some(PassiveRecommendationReviewState::Applied) => recommendation_applied_count += 1,
             Some(PassiveRecommendationReviewState::Dismissed) => {
                 recommendation_dismissed_count += 1;
             }
-            None if has_recommendation => recommendation_pending_review_count += 1,
+            None if has_recommendation => {
+                recommendation_pending_review_count += 1;
+                if let Some(age_seconds) = recommendation_age_seconds {
+                    pending_review_oldest_age_seconds = Some(
+                        pending_review_oldest_age_seconds
+                            .map_or(age_seconds, |current| current.max(age_seconds)),
+                    );
+                }
+            }
             None => {}
         }
     }
@@ -940,6 +1062,8 @@ fn region_operational_summary(
         recommendation_reviewed_count,
         recommendation_applied_count,
         recommendation_dismissed_count,
+        pending_review_oldest_age_seconds,
+        pending_review_age_bucket: pending_review_oldest_age_seconds.map(review_age_bucket),
         latest_run_status: latest_run.map(|run| format!("{:?}", run.status)),
         latest_run_finished_at_unix_seconds: latest_run.map(|run| run.finished_at_unix_seconds),
         operational_pressure_score: pressure.clamp(0.0, 1.0),
@@ -959,6 +1083,8 @@ fn empty_region_operational_summary() -> RegionOperationalSummary {
         recommendation_reviewed_count: 0,
         recommendation_applied_count: 0,
         recommendation_dismissed_count: 0,
+        pending_review_oldest_age_seconds: None,
+        pending_review_age_bucket: None,
         latest_run_status: None,
         latest_run_finished_at_unix_seconds: None,
         operational_pressure_score: 0.0,

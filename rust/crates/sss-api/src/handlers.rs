@@ -109,6 +109,22 @@ pub struct PassiveSiteRecommendationReviewRequest {
     pub snapshot_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct PassiveRecommendationReviewView {
+    pub review_id: String,
+    pub site_id: String,
+    pub snapshot_id: String,
+    pub request_id: String,
+    pub endpoint: String,
+    pub state: sss_storage::PassiveRecommendationReviewState,
+    pub actor: Option<String>,
+    pub rationale: Option<String>,
+    pub evidence_bundle_hash: Option<String>,
+    pub decided_at_unix_seconds: i64,
+    pub age_seconds: i64,
+    pub age_bucket: crate::map_views::ReviewAgeBucket,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct PassiveSeedsQuery {
     pub limit: Option<usize>,
@@ -1212,12 +1228,39 @@ pub async fn get_passive_site_recommendation_reviews(
     headers: HeaderMap,
     Path(site_id): Path<String>,
     Query(query): Query<PassiveRecommendationReviewsQuery>,
-) -> Result<Json<ApiEnvelope<Vec<sss_storage::PassiveRecommendationReview>>>, ApiError> {
+) -> Result<Json<ApiEnvelope<Vec<PassiveRecommendationReviewView>>>, ApiError> {
     let request_id = request_id(&headers);
     let limit = query.limit.unwrap_or(10).clamp(1, 100);
+    let now = crate::state::now_unix_seconds();
     let response = state
         .passive_site_recommendation_reviews(&site_id, limit)
-        .map_err(|error| ApiError::storage(request_id.clone(), error.to_string()))?;
+        .map_err(|error| ApiError::storage(request_id.clone(), error.to_string()))?
+        .into_iter()
+        .map(|review| {
+            let age_seconds = now.saturating_sub(review.decided_at_unix_seconds);
+            let age_bucket = if age_seconds <= 6 * 3_600 {
+                crate::map_views::ReviewAgeBucket::New
+            } else if age_seconds <= 24 * 3_600 {
+                crate::map_views::ReviewAgeBucket::Aging
+            } else {
+                crate::map_views::ReviewAgeBucket::Stale
+            };
+            PassiveRecommendationReviewView {
+                review_id: review.review_id,
+                site_id: review.site_id,
+                snapshot_id: review.snapshot_id,
+                request_id: review.request_id,
+                endpoint: review.endpoint,
+                state: review.state,
+                actor: review.actor,
+                rationale: review.rationale,
+                evidence_bundle_hash: review.evidence_bundle_hash,
+                decided_at_unix_seconds: review.decided_at_unix_seconds,
+                age_seconds,
+                age_bucket,
+            }
+        })
+        .collect::<Vec<_>>();
     Ok(Json(ApiEnvelope::new(request_id, response)))
 }
 
@@ -3534,6 +3577,8 @@ const FOCUS_STATE = {
   regionId: null,
   actionPath: null,
   narrativePath: null,
+  evidencePath: null,
+  replayPath: null,
   title: null,
   lastRecommendation: null,
 };
@@ -3584,8 +3629,10 @@ function formatReviewHistoryPayload(payload) {
     const rationale = review.rationale ? 'RATIONALE  ' + review.rationale : 'RATIONALE  none recorded';
     const snapshot = review.snapshot_id ? 'SNAPSHOT   ' + review.snapshot_id : '';
     const evidence = review.evidence_bundle_hash ? 'EVIDENCE   ' + review.evidence_bundle_hash : '';
+    const age = review.age_bucket ? 'AGE        ' + String(review.age_bucket).toUpperCase() + ' · ' + tAgo(review.decided_at_unix_seconds) : '';
     return [
-      '#' + String(index + 1).padStart(2, '0') + ' · ' + String(state || 'reviewed').toUpperCase() + ' · ' + tAgo(review.decided_at_unix_seconds),
+      '#' + String(index + 1).padStart(2, '0') + ' · ' + String(state || 'reviewed').toUpperCase(),
+      age,
       actor,
       rationale,
       snapshot,
@@ -3692,6 +3739,13 @@ function setFocusQuickLinks(links) {
     const path = String(link.path).replace(/'/g, '&#39;');
     return '<button class="' + cls + '" onclick="openDrawerFromPath(\'' + safeTitle + '\', \'' + path + '\')">' + label + '</button>';
   }).join('');
+}
+
+function ageBucketLabel(bucket) {
+  const value = String(bucket || '').toLowerCase();
+  if (!value) return '';
+  if (value === 'new') return 'fresh';
+  return value.replace(/_/g, ' ');
 }
 
 function setRiskContext(text) {
@@ -3901,13 +3955,15 @@ function renderTimelineEntries(entries) {
       const siteId = entry.siteId ? String(entry.siteId).replace(/'/g, '') : '';
       const regionId = entry.regionId ? String(entry.regionId).replace(/'/g, '') : '';
       const actionPath = entry.actionPath ? String(entry.actionPath).replace(/'/g, '') : '';
+      const evidencePath = entry.evidencePath ? String(entry.evidencePath).replace(/'/g, '') : '';
+      const replayPath = entry.replayPath ? String(entry.replayPath).replace(/'/g, '') : '';
       const style = cls === 'forecast'
         ? 'left:' + pct.toFixed(1) + '%;cursor:pointer;'
         : 'left:' + pct.toFixed(1) + '%;cursor:pointer;';
       return '<div class="timeline-event ' + cls + '" '
         + 'style="' + style + '" '
         + 'title="' + title + '" '
-        + 'onclick="openFocusPanel({kind:\'' + kind + '\',title:\'' + title + '\',reason:\'' + reason + '\',lat:' + lat + ',lng:' + lng + ',siteId:\'' + siteId + '\',regionId:\'' + regionId + '\',actionPath:\'' + actionPath + '\'})">'
+        + 'onclick="openFocusPanel({kind:\'' + kind + '\',title:\'' + title + '\',reason:\'' + reason + '\',lat:' + lat + ',lng:' + lng + ',siteId:\'' + siteId + '\',regionId:\'' + regionId + '\',actionPath:\'' + actionPath + '\',evidencePath:\'' + evidencePath + '\',replayPath:\'' + replayPath + '\'})">'
         + '<div class="timeline-event-label">' + title + '</div></div>';
     })
     .join('');
@@ -3934,12 +3990,17 @@ async function refreshGlobalAnalytics() {
     const windowEl = document.getElementById('risk-trend-window');
     if (windowEl) windowEl.textContent = CONSOLE_STATE.window.toUpperCase();
     updateRiskTrend(pressure);
-    setRiskContext(topSite
+    setRiskContext(topRegion
       ? semanticRiskDeltaSentence(
-          topSite.risk_delta_classification,
-          topSite.risk_delta_explanation || ('Top site ' + topSite.name + ' is carrying ' + (pressure * 100).toFixed(0) + '% modeled pressure in the current ' + CONSOLE_STATE.window.toUpperCase() + ' window.')
+          topRegion.risk_delta_classification,
+          topRegion.risk_delta_explanation || (topRegion.name + ' is carrying the dominant regional pressure in the current ' + CONSOLE_STATE.window.toUpperCase() + ' window.')
         )
-      : 'No focused site selected. Global pressure reflects the most elevated monitored surface.');
+      : (topSite
+        ? semanticRiskDeltaSentence(
+            topSite.risk_delta_classification,
+            topSite.risk_delta_explanation || ('Top site ' + topSite.name + ' is carrying ' + (pressure * 100).toFixed(0) + '% modeled pressure in the current ' + CONSOLE_STATE.window.toUpperCase() + ' window.')
+          )
+        : 'No focused site selected. Global pressure reflects the most elevated monitored surface.'));
     renderTimelineEntries((data.dashboard && data.dashboard.top_canonical_events) || []);
     setTimelineSummary('Global timeline showing canonical event memory across the current command window.');
     setFocusPrimaryButton('Open →', null);
@@ -4016,12 +4077,12 @@ async function refreshFocusedSiteAnalytics() {
             + '\nAPPLIED · ' + appliedSites.length
             + '\nDISMISSED · ' + dismissedSites.length;
         }
-        setRiskContext(topRiskSite
-          ? semanticRiskDeltaSentence(
-              topRiskSite.risk_delta_classification,
-              topRiskSite.risk_delta_explanation || ('Top regional site ' + topRiskSite.name + ' is carrying ' + (Number(topRiskSite.risk_score || 0) * 100).toFixed(0) + '% modeled pressure.')
-            )
-          : 'Regional risk context will appear as monitored sites accumulate live signals.');
+        setRiskContext(
+          semanticRiskDeltaSentence(
+            overview.risk_delta_classification || (topRiskSite && topRiskSite.risk_delta_classification),
+            overview.risk_delta_explanation || (topRiskSite && topRiskSite.risk_delta_explanation) || (topRiskSite ? ('Top regional site ' + topRiskSite.name + ' is carrying ' + (Number(topRiskSite.risk_score || 0) * 100).toFixed(0) + '% modeled pressure.') : 'Regional risk context will appear as monitored sites accumulate live signals.')
+          )
+        );
         renderOperationalReviewStrip({
           pending: pendingSites.length,
           reviewed: reviewedSites.length,
@@ -4260,7 +4321,7 @@ async function refreshFocusedSiteAnalytics() {
   } catch (_) { /* leave */ }
 }
 
-function openFocusPanel({ kind, title, reason, lat, lng, siteId, regionId, actionPath, narrativePath, operatorState }) {
+function openFocusPanel({ kind, title, reason, lat, lng, siteId, regionId, actionPath, narrativePath, evidencePath, replayPath, operatorState }) {
   const panel   = document.getElementById('focus-panel');
   const fKind   = document.getElementById('focus-kind');
   const fTitle  = document.getElementById('focus-title');
@@ -4284,11 +4345,17 @@ function openFocusPanel({ kind, title, reason, lat, lng, siteId, regionId, actio
   FOCUS_STATE.regionId = regionId || null;
   FOCUS_STATE.actionPath = actionPath || null;
   FOCUS_STATE.narrativePath = narrativePath || null;
+  FOCUS_STATE.evidencePath = evidencePath || null;
+  FOCUS_STATE.replayPath = replayPath || null;
   FOCUS_STATE.title = title || null;
   panel.classList.add('visible');
   if (lat != null) focusOnGlobe(lat, lng);
   setFocusPrimaryButton(actionPath ? 'Open →' : 'Recenter →', actionPath || null);
-  setFocusQuickLinks(narrativePath ? [{ label: 'Narrative', path: narrativePath }] : []);
+  setFocusQuickLinks([
+    narrativePath ? { label: 'Narrative', path: narrativePath } : null,
+    evidencePath ? { label: 'Evidence', path: evidencePath, warn: true } : null,
+    replayPath ? { label: 'Replay', path: replayPath, warn: true } : null,
+  ].filter(Boolean));
   setFocusStateText(operatorState ? ('RECOMMENDATION ' + String(operatorState).replace(/_/g, ' ').toUpperCase()) : '');
   refreshFocusedSiteAnalytics().catch(() => {});
 }
@@ -4385,6 +4452,8 @@ document.querySelectorAll('.legend-toggle').forEach(t => {
           siteId: ev.site_id || '',
           regionId: ev.region_id || '',
           actionPath: ev.site_id ? '/v1/passive/sites/' + ev.site_id + '/overview' : '',
+          evidencePath: ev.bundle_hashes && ev.bundle_hashes[0] ? '/v1/evidence/' + ev.bundle_hashes[0] : '',
+          replayPath: ev.manifest_hashes && ev.manifest_hashes[0] ? '/v1/replay/' + ev.manifest_hashes[0] : '',
         });
         input.value = '';
       }
@@ -4764,7 +4833,8 @@ async function refreshOpPicture() {
             action_path: site.overview_path || '',
             narrative_path: site.narrative_path || '',
             reason: site.status_reason || site.priority_reason || '',
-            operator_state: site.recommendation_review_state ? String(site.recommendation_review_state).toLowerCase() : (site.has_recommendation ? 'pending_review' : '')
+            operator_state: site.recommendation_review_state ? String(site.recommendation_review_state).toLowerCase() : (site.has_recommendation ? 'pending_review' : ''),
+            age_bucket: site.recommendation_age_bucket || '',
           },
         });
       }
@@ -4777,7 +4847,17 @@ async function refreshOpPicture() {
           position: Cesium.Cartesian3.fromDegrees(ev.coordinates.lon, ev.coordinates.lat),
           point: { pixelSize: SITE_SIZES[level] || 9, color, outlineColor: Cesium.Color.BLACK.withAlpha(0.7), outlineWidth: 1, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND },
           show: entityVisibleForFilter('canonical_event', ''),
-          properties: { kind: 'canonical_event', layer: level, label: ev.site_name || ev.event_type || 'Event', site_id: ev.site_id || '', region_id: ev.region_id || '', action_path: '/v1/passive/sites/' + ev.site_id + '/overview', reason: ev.summary || ev.operational_readout || '' },
+          properties: {
+            kind: 'canonical_event',
+            layer: level,
+            label: ev.site_name || ev.event_type || 'Event',
+            site_id: ev.site_id || '',
+            region_id: ev.region_id || '',
+            action_path: '/v1/passive/sites/' + ev.site_id + '/overview',
+            reason: ev.summary || ev.operational_readout || '',
+            evidence_path: ev.bundle_hashes && ev.bundle_hashes[0] ? '/v1/evidence/' + ev.bundle_hashes[0] : '',
+            replay_path: ev.manifest_hashes && ev.manifest_hashes[0] ? '/v1/replay/' + ev.manifest_hashes[0] : '',
+          },
         });
       }
     });
@@ -4829,13 +4909,16 @@ async function refreshAttentionQueue() {
       const urgency = item.urgency_label
         ? '<span class="att-kind replay" style="margin-left:8px;">' + escapeHtml(item.urgency_label) + '</span>'
         : '';
+      const ageBucket = item.age_bucket
+        ? '<span class="att-kind subtle" style="margin-left:8px;">' + escapeHtml(ageBucketLabel(item.age_bucket)) + '</span>'
+        : '';
       const age = item.age_seconds != null
         ? '<span class="change-time">' + tAgo(Math.floor(Date.now() / 1000) - Number(item.age_seconds || 0)) + '</span>'
         : '';
       return '<div class="attention-item">'
         + '<div class="priority-number ' + pc + '">' + num + '</div>'
         + '<div class="att-body">'
-        + '<div class="att-head"><span class="att-kind ' + km.cls + '">' + km.label + '</span>' + operatorState + urgency + age + '</div>'
+        + '<div class="att-head"><span class="att-kind ' + km.cls + '">' + km.label + '</span>' + operatorState + urgency + ageBucket + age + '</div>'
         + '<div class="att-title">' + (item.title || 'Unnamed') + '</div>'
         + (item.reason ? '<div class="att-reason">' + item.reason + '</div>' : '')
         + '<button class="att-action" onclick="handleAttentionClick(' + idx + ')">' + lbl + '</button>'
@@ -4873,6 +4956,12 @@ function handleAttentionClick(idx) {
     if (ev && ev.coordinates) { lat = ev.coordinates.lat; lng = ev.coordinates.lon; }
     // No dangerous fallback — lat stays null, panel opens without fly-to
   }
+  const evidencePath = Array.isArray(item.confirmation_read_paths)
+    ? item.confirmation_read_paths.find(function(path) { return String(path).indexOf('/v1/evidence/') === 0; }) || ''
+    : '';
+  const replayPath = Array.isArray(item.confirmation_read_paths)
+    ? item.confirmation_read_paths.find(function(path) { return String(path).indexOf('/v1/replay/') === 0; }) || ''
+    : '';
   openFocusPanel({
     kind: item.kind,
     title: item.title,
@@ -4883,6 +4972,8 @@ function handleAttentionClick(idx) {
     regionId: item.region_id || '',
     actionPath: item.action_path || (item.site_id ? '/v1/passive/sites/' + item.site_id + '/overview' : (item.region_id ? '/v1/passive/regions/' + item.region_id + '/overview' : '')),
     operatorState: item.operator_state || '',
+    evidencePath: evidencePath,
+    replayPath: replayPath,
   });
 }
 

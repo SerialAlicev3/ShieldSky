@@ -48,6 +48,8 @@ pub struct PassiveCommandCenterRegionHighlight {
     pub name: String,
     pub operational_pressure_priority: crate::map_views::MapPriority,
     pub dominant_status: Option<crate::canonical_views::CanonicalEventStatus>,
+    pub risk_delta_classification: Option<crate::canonical_views::RiskDeltaType>,
+    pub risk_delta_explanation: Option<String>,
     pub narrative_summary: String,
 }
 
@@ -98,6 +100,7 @@ pub struct PassiveCommandCenterAttentionItem {
     pub priority: MapPriority,
     pub urgency_label: String,
     pub age_seconds: Option<i64>,
+    pub age_bucket: Option<crate::map_views::ReviewAgeBucket>,
     pub title: String,
     pub reason: String,
     pub primary_action_label: String,
@@ -310,6 +313,8 @@ fn build_command_center_highlights(
                 name: region.name.clone(),
                 operational_pressure_priority: region.operational_pressure_priority,
                 dominant_status: region.dominant_status,
+                risk_delta_classification: region.risk_delta_classification,
+                risk_delta_explanation: region.risk_delta_explanation.clone(),
                 narrative_summary: region.narrative_summary.clone(),
             });
     let top_site = dashboard
@@ -364,6 +369,7 @@ fn build_attention_queue(
             priority: maintenance_action_priority(action),
             urgency_label: "maintenance backlog".to_string(),
             age_seconds: None,
+            age_bucket: None,
             title: action.title.clone(),
             reason: action.reason.clone(),
             primary_action_label: maintenance_action_label(action),
@@ -394,6 +400,7 @@ fn build_attention_queue(
                 age_seconds: Some(
                     now_unix_seconds.saturating_sub(event.last_observed_at_unix_seconds),
                 ),
+                age_bucket: None,
                 title: format!("{} @ {}", event.event_type, event.site_name),
                 reason: event.operational_readout.clone(),
                 primary_action_label: "Focus Event".to_string(),
@@ -498,6 +505,7 @@ fn neows_attention_item(
         priority: priority_from_risk(object.priority_score),
         urgency_label: "orbital context".to_string(),
         age_seconds: None,
+        age_bucket: None,
         title: object.name.clone(),
         reason: format!(
             "{} Miss distance: {}. Relative velocity: {}.",
@@ -528,16 +536,18 @@ fn site_attention_item(
     let priority = std::cmp::max(site.scan_priority, priority_from_risk(site.risk_score));
     let operator_state = site_operator_state_label(site);
     let reason = format!("{} {}", site.status_reason, site.priority_reason);
-    let age_seconds = site
-        .last_event_at_unix_seconds
-        .or(site.last_scanned_at_unix_seconds)
-        .map(|ts| now_unix_seconds.saturating_sub(ts));
+    let age_seconds = site.recommendation_age_seconds.or_else(|| {
+        site.last_event_at_unix_seconds
+            .or(site.last_scanned_at_unix_seconds)
+            .map(|ts| now_unix_seconds.saturating_sub(ts))
+    });
     PassiveCommandCenterAttentionItem {
         item_id: format!("site:{site_id}"),
         kind: PassiveCommandCenterAttentionKind::Site,
         priority,
         urgency_label: site_attention_urgency(site, age_seconds),
         age_seconds,
+        age_bucket: site.recommendation_age_bucket,
         title: site.name.clone(),
         reason,
         primary_action_label: if site.has_recommendation
@@ -582,15 +592,18 @@ fn region_attention_item(
     region: &RegionMapItem,
     now_unix_seconds: i64,
 ) -> PassiveCommandCenterAttentionItem {
-    let age_seconds = region
-        .latest_run_finished_at_unix_seconds
-        .map(|ts| now_unix_seconds.saturating_sub(ts));
+    let age_seconds = region.pending_review_oldest_age_seconds.or_else(|| {
+        region
+            .latest_run_finished_at_unix_seconds
+            .map(|ts| now_unix_seconds.saturating_sub(ts))
+    });
     PassiveCommandCenterAttentionItem {
         item_id: format!("region:{}", region.region_id),
         kind: PassiveCommandCenterAttentionKind::Region,
         priority: region.operational_pressure_priority,
         urgency_label: region_attention_urgency(region, age_seconds),
         age_seconds,
+        age_bucket: region.pending_review_age_bucket,
         title: region.name.clone(),
         reason: region.operational_summary.clone(),
         primary_action_label: "Open Region".to_string(),

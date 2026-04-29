@@ -15,9 +15,11 @@ pub struct WorkerConfig {
     pub window_hours: u64,
     pub max_scan_limit_per_region: usize,
     pub max_observation_radius_km: f64,
+    pub max_unfetched_feeds_per_region: usize,
     pub enable_discovery: bool,
     pub enable_scan: bool,
     pub feeds: WorkerFeedConfig,
+    pub required_feeds: WorkerFeedConfig,
     pub dry_run: bool,
 }
 
@@ -54,12 +56,22 @@ impl WorkerConfig {
                 .clamp(1, 200),
             max_observation_radius_km: f64_env("SSS_WORKER_MAX_OBSERVATION_RADIUS_KM", 75.0)
                 .clamp(5.0, 500.0),
+            max_unfetched_feeds_per_region: usize_env(
+                "SSS_WORKER_MAX_UNFETCHED_FEEDS_PER_REGION",
+                1,
+            )
+            .clamp(0, 3),
             enable_discovery: bool_env("SSS_WORKER_ENABLE_DISCOVERY", true),
             enable_scan: bool_env("SSS_WORKER_ENABLE_SCAN", true),
             feeds: WorkerFeedConfig {
                 include_adsb: bool_env("SSS_WORKER_INCLUDE_ADSB", true),
                 include_weather: bool_env("SSS_WORKER_INCLUDE_WEATHER", true),
                 include_fire_smoke: bool_env("SSS_WORKER_INCLUDE_FIRE_SMOKE", true),
+            },
+            required_feeds: WorkerFeedConfig {
+                include_adsb: bool_env("SSS_WORKER_REQUIRE_ADSB_WHEN_ENABLED", false),
+                include_weather: bool_env("SSS_WORKER_REQUIRE_WEATHER_WHEN_ENABLED", true),
+                include_fire_smoke: bool_env("SSS_WORKER_REQUIRE_FIRE_SMOKE_WHEN_ENABLED", false),
             },
             dry_run: bool_env("SSS_WORKER_DRY_RUN", false),
         }
@@ -73,6 +85,21 @@ impl WorkerConfig {
     #[must_use]
     pub fn scan_effectively_enabled(&self) -> bool {
         self.enable_scan && self.has_live_feeds()
+    }
+
+    #[must_use]
+    pub fn required_feed_names(&self) -> Vec<&'static str> {
+        let mut feeds = Vec::new();
+        if self.feeds.include_adsb && self.required_feeds.include_adsb {
+            feeds.push("Adsb");
+        }
+        if self.feeds.include_weather && self.required_feeds.include_weather {
+            feeds.push("Weather");
+        }
+        if self.feeds.include_fire_smoke && self.required_feeds.include_fire_smoke {
+            feeds.push("FireSmoke");
+        }
+        feeds
     }
 }
 
