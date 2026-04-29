@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::env;
 
 use crate::canonical_views::CanonicalEventStatus;
 use crate::dashboard_views::{
@@ -266,6 +267,11 @@ fn build_source_readiness_actions(
     state: &AppState,
     region_id: Option<&str>,
 ) -> Result<Vec<PassiveCommandCenterAction>, AppError> {
+    let scheduler_enabled = env::var("SSS_PASSIVE_REGION_POLL_SECONDS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(0)
+        > 0;
     let total_default_regions = default_passive_region_requests().len();
     let configured_region_count = state.passive_region_targets(1_000, false)?.len();
     let missing_region_count = total_default_regions.saturating_sub(configured_region_count);
@@ -341,11 +347,21 @@ fn build_source_readiness_actions(
     if total_samples == 0 {
         actions.push(PassiveCommandCenterAction {
             action_id: "prime-passive-region-cycle".to_string(),
-            title: "Prime passive region cycle".to_string(),
-            reason: if ready_count == 0 {
-                "No source samples have landed yet. Force a discovery and scan cycle to seed the console.".to_string()
+            title: if scheduler_enabled {
+                "Prime passive region cycle".to_string()
             } else {
+                "Run first passive cycle".to_string()
+            },
+            reason: if ready_count == 0 {
+                if scheduler_enabled {
+                    "No source samples have landed yet. Force a discovery and scan cycle to seed the console.".to_string()
+                } else {
+                    "The passive scheduler is off and no source samples have landed yet. Run a manual discovery and scan cycle to seed the console.".to_string()
+                }
+            } else if scheduler_enabled {
                 "Ready feeds exist but the console has not received source samples yet. Force a discovery and scan cycle now.".to_string()
+            } else {
+                "Ready feeds exist, but the passive scheduler is off. Run one manual cycle to seed the console while the deploy stays in manual mode.".to_string()
             },
             method: "POST",
             path: "/v1/passive/regions/run".to_string(),
@@ -359,11 +375,22 @@ fn build_source_readiness_actions(
     } else if !lagging_sources.is_empty() {
         actions.push(PassiveCommandCenterAction {
             action_id: "run-passive-scheduler-now".to_string(),
-            title: "Run passive scheduler now".to_string(),
-            reason: format!(
-                "{} are configured but still waiting for fresh samples. Trigger the scheduler for a fresh pass.",
-                lagging_sources.join(", ")
-            ),
+            title: if scheduler_enabled {
+                "Run passive scheduler now".to_string()
+            } else {
+                "Run manual passive refresh".to_string()
+            },
+            reason: if scheduler_enabled {
+                format!(
+                    "{} are configured but still waiting for fresh samples. Trigger the scheduler for a fresh pass.",
+                    lagging_sources.join(", ")
+                )
+            } else {
+                format!(
+                    "{} are configured but the passive scheduler is off. Run a manual refresh pass now.",
+                    lagging_sources.join(", ")
+                )
+            },
             method: "POST",
             path: "/v1/passive/scheduler/run".to_string(),
             payload: Some(json!({

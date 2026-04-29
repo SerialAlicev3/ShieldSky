@@ -56,6 +56,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             poll_seconds = config.poll_interval.as_secs(),
             retry_seconds = config.retry_interval.as_secs(),
             window_hours = config.window_hours,
+            max_regions_per_cycle = config.max_regions_per_cycle,
             include_adsb = config.feeds.include_adsb,
             include_weather = config.feeds.include_weather,
             include_fire_smoke = config.feeds.include_fire_smoke,
@@ -151,6 +152,7 @@ struct PassiveRegionSchedulerConfig {
     poll_interval: Duration,
     retry_interval: Duration,
     window_hours: u64,
+    max_regions_per_cycle: usize,
     feeds: PassiveRegionFeedConfig,
     force_discovery: bool,
     dry_run: bool,
@@ -206,6 +208,11 @@ fn passive_region_scheduler_config() -> Option<PassiveRegionSchedulerConfig> {
         poll_interval: Duration::from_secs(poll_seconds.max(1)),
         retry_interval: Duration::from_secs(retry_seconds.max(1)),
         window_hours,
+        max_regions_per_cycle: env::var("SSS_PASSIVE_REGION_MAX_REGIONS_PER_CYCLE")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(2)
+            .clamp(1, 50),
         feeds: PassiveRegionFeedConfig {
             include_adsb: bool_env("SSS_PASSIVE_REGION_INCLUDE_ADSB", true),
             include_weather: bool_env("SSS_PASSIVE_REGION_INCLUDE_WEATHER", true),
@@ -294,9 +301,20 @@ async fn run_passive_region_scheduler(state: AppState, config: PassiveRegionSche
             tokio::time::sleep(delay).await;
         }
 
+        let region_ids =
+            select_passive_scheduler_region_batch(&state, config.max_regions_per_cycle);
+        if region_ids.is_empty() {
+            tracing::info!(
+                max_regions_per_cycle = config.max_regions_per_cycle,
+                "passive region scheduler found no enabled regions to process"
+            );
+            delay = config.poll_interval;
+            continue;
+        }
+
         let request_id = format!("scheduler-passive-regions-{}", unix_seconds_now());
         let request = PassiveRegionRunRequest {
-            region_ids: None,
+            region_ids: Some(region_ids.clone()),
             force_discovery: Some(config.force_discovery),
             dry_run: Some(config.dry_run),
             window_hours: Some(config.window_hours),
@@ -309,6 +327,7 @@ async fn run_passive_region_scheduler(state: AppState, config: PassiveRegionSche
             Ok(response) => {
                 tracing::info!(
                     %request_id,
+                    region_batch = region_ids.len(),
                     evaluated_regions = response.evaluated_region_count,
                     discovered_regions = response.discovered_region_count,
                     skipped_regions = response.skipped_region_count,
@@ -324,6 +343,7 @@ async fn run_passive_region_scheduler(state: AppState, config: PassiveRegionSche
             Err(error) => {
                 tracing::warn!(
                     %request_id,
+                    region_batch = region_ids.len(),
                     retry_seconds = config.retry_interval.as_secs(),
                     error = %error,
                     "scheduled passive region run failed"
@@ -332,6 +352,41 @@ async fn run_passive_region_scheduler(state: AppState, config: PassiveRegionSche
             }
         }
     }
+}
+
+fn select_passive_scheduler_region_batch(
+    state: &AppState,
+    max_regions_per_cycle: usize,
+) -> Vec<String> {
+    let mut regions = match state.passive_region_targets(1_000, true) {
+        Ok(regions) => regions,
+        Err(error) => {
+            tracing::warn!(%error, "failed to load passive regions for scheduler batch selection");
+            return Vec::new();
+        }
+    };
+    regions.sort_by(|left, right| {
+        let left_key = (
+            left.last_scheduler_run_at_unix_seconds.is_some(),
+            left.last_discovered_at_unix_seconds.is_some(),
+            left.last_scheduler_run_at_unix_seconds.unwrap_or(i64::MIN),
+            left.last_discovered_at_unix_seconds.unwrap_or(i64::MIN),
+            left.updated_at_unix_seconds,
+        );
+        let right_key = (
+            right.last_scheduler_run_at_unix_seconds.is_some(),
+            right.last_discovered_at_unix_seconds.is_some(),
+            right.last_scheduler_run_at_unix_seconds.unwrap_or(i64::MIN),
+            right.last_discovered_at_unix_seconds.unwrap_or(i64::MIN),
+            right.updated_at_unix_seconds,
+        );
+        left_key.cmp(&right_key)
+    });
+    regions
+        .into_iter()
+        .take(max_regions_per_cycle.max(1))
+        .map(|region| region.region_id)
+        .collect()
 }
 
 /// Seed the two default Portugal monitoring regions on startup if none exist.
