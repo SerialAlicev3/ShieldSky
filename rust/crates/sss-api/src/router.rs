@@ -77,6 +77,13 @@ pub fn build_router(state: AppState) -> Router {
         .with_state(state)
 }
 
+/// Creates a router that registers all passive operation endpoints.
+///
+/// # Examples
+///
+/// ```
+/// let router = passive_routes();
+/// ```
 #[allow(clippy::too_many_lines)]
 fn passive_routes() -> Router<AppState> {
     Router::new()

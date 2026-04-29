@@ -462,6 +462,20 @@ pub struct PassiveRegionRunRequest {
     pub include_fire_smoke: Option<bool>,
 }
 
+/// Provides a curated list of default passive region target requests for bootstrapping passive-region configuration.
+///
+/// Each returned `PassiveRegionTargetRequest` encodes a geographic bounding box, preferred site types, inferred
+/// criticality, discovery cadence (seconds), per-run scan limit, minimum scan priority, and an optional
+/// observation radius (kilometers) used by the region bootstrap workflow.
+///
+/// # Examples
+///
+/// ```
+/// let defaults = default_passive_region_requests();
+/// assert!(!defaults.is_empty());
+/// // ensure entries contain region ids (slugs)
+/// assert!(defaults.iter().all(|r| !r.region_id.is_empty()));
+/// ```
 #[must_use]
 #[allow(clippy::too_many_lines)]
 pub fn default_passive_region_requests() -> Vec<PassiveRegionTargetRequest> {
@@ -714,7 +728,31 @@ pub fn default_passive_region_requests() -> Vec<PassiveRegionTargetRequest> {
     ]
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Construct a `PassiveRegionTargetRequest` for a default region using the given bounding box and configuration.
+///
+/// The returned request uses the supplied region identifier, name, bbox coordinates, and optional overrides
+/// for country code, site types, criticality, and observation radius. Fields not provided here are left as
+/// `None`. The request is enabled and includes the provided discovery cadence, scan limit, and minimum priority.
+///
+/// # Examples
+///
+/// ```
+/// let req = default_region(
+///     "region-1",
+///     "Test Region",
+///     -10.0, -20.0, 10.0, 20.0,
+///     Some("US"),
+///     Some(vec![SiteType::Solar]),
+///     Some(Criticality::High),
+///     86400,
+///     25,
+///     0.1,
+///     Some(15.0),
+/// );
+/// assert_eq!(req.region_id.as_deref(), Some("region-1"));
+/// assert_eq!(req.enabled, Some(true));
+/// assert_eq!(req.discovery_cadence_seconds, Some(86400));
+/// ```
 fn default_region(
     region_id: &str,
     name: &str,
@@ -2255,6 +2293,35 @@ impl AppState {
         Ok(response)
     }
 
+    /// Create or update a passive region target from the provided request.
+    ///
+    /// Validates the request (name must be non-empty and bbox must have south < north and west < east),
+    /// fills default and clamped values for cadence, scan limit, minimum priority, and enabled flag,
+    /// preserves creation timestamp when updating an existing region, and persists the target to storage.
+    ///
+    /// # Errors
+    ///
+    /// Returns `AppError::InvalidRequest` when the name is empty or the bounding box is invalid.
+    ///
+    /// # Returns
+    ///
+    /// A `PassiveRegionTarget` representing the inserted or updated region target.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// let state = AppState::demo();
+    /// let req = PassiveRegionTargetRequest {
+    ///     name: "Test Region".to_string(),
+    ///     south: 10.0,
+    ///     west: 20.0,
+    ///     north: 11.0,
+    ///     east: 21.0,
+    ///     ..Default::default()
+    /// };
+    /// let target = state.upsert_passive_region_target(&req).unwrap();
+    /// assert_eq!(target.name, "Test Region");
+    /// ```
     pub fn upsert_passive_region_target(
         &self,
         request: &PassiveRegionTargetRequest,
@@ -2313,6 +2380,28 @@ impl AppState {
         Ok(target)
     }
 
+    /// Bootstraps a predefined set of passive region targets into storage.
+    ///
+    /// When `request.overwrite_existing` is `true`, existing regions from the defaults are updated; otherwise
+    /// existing regions are left unchanged and counted as skipped. The method returns counts and lists of
+    /// region IDs that were inserted, updated, or skipped, along with the generation timestamp.
+    ///
+    /// # Parameters
+    ///
+    /// - `request`: controls whether existing regions should be overwritten (`overwrite_existing`).
+    ///
+    /// # Returns
+    ///
+    /// A `PassiveRegionDefaultsBootstrapResponse` containing the generation time, total defaults processed,
+    /// counts of inserted/updated/skipped regions, and vectors of the affected region IDs.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let req = PassiveRegionDefaultsBootstrapRequest { overwrite_existing: Some(false) };
+    /// let resp = app_state.bootstrap_default_passive_regions(&req).unwrap();
+    /// assert!(resp.total_defaults >= resp.inserted_count + resp.updated_count + resp.skipped_count);
+    /// ```
     pub fn bootstrap_default_passive_regions(
         &self,
         request: &PassiveRegionDefaultsBootstrapRequest,
@@ -2358,6 +2447,22 @@ impl AppState {
         })
     }
 
+    /// Retrieve passive region targets from storage.
+    ///
+    /// Returns a list of stored `PassiveRegionTarget` records, limited to `limit` entries.
+    /// When `enabled_only` is true, only targets with `enabled == true` are returned.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `StorageError` if the underlying storage retrieval fails.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// // `state` is an instance of `AppState`
+    /// let targets = state.passive_region_targets(10, true).unwrap();
+    /// assert!(targets.len() <= 10);
+    /// ```
     pub fn passive_region_targets(
         &self,
         limit: usize,

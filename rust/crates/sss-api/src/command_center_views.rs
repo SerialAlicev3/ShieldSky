@@ -194,6 +194,41 @@ fn preferred_focus_region(regions: &[RegionMapItem]) -> Option<&RegionMapItem> {
         .or_else(|| regions.first())
 }
 
+/// Build a maintenance projection for the passive command center.
+///
+/// Computes retention cutoffs from `generated_at_unix_seconds` and the provided
+/// retention windows, queries the application state for counts of stale worker
+/// heartbeats and old source-health samples, and assembles suggested maintenance
+/// actions (prune operations and readiness-driven actions) accordingly.
+///
+/// - `state`: application state used to query counts and readiness information.
+/// - `generated_at_unix_seconds`: reference timestamp used to compute cutoffs.
+/// - `heartbeat_retention_seconds`: retention window for worker heartbeats.
+/// - `source_retention_seconds`: retention window for source-health samples.
+/// - `source_kind`: optional filter applied when counting/pruning source-health samples.
+/// - `region_id`: optional region scope applied when counting/pruning and when
+///   building readiness-driven actions.
+///
+/// # Returns
+///
+/// A `PassiveCommandCenterMaintenance` structure containing the retention values,
+/// counts of stale/prunable items, the optional `source_kind` and `region_id`, and
+/// a list of suggested `PassiveCommandCenterAction` entries (may be empty).
+///
+/// # Examples
+///
+/// ```ignore
+/// // Example (placeholder): assemble a maintenance projection for the global scope.
+/// let maintenance = build_maintenance_projection(
+///     &app_state,
+///     now_unix_seconds(),
+///     86_400,      // heartbeat retention
+///     604_800,     // source retention
+///     None,        // source_kind
+///     None,        // region_id
+/// )?;
+/// println!("{}", maintenance.stale_heartbeat_count);
+/// ```
 fn build_maintenance_projection(
     state: &AppState,
     generated_at_unix_seconds: i64,
@@ -261,6 +296,30 @@ fn build_maintenance_projection(
     })
 }
 
+/// Build a list of operator actions that help drive passive-source readiness and regional coverage.
+///
+/// This inspects configured passive-region targets and per-source readiness to produce maintenance
+/// actions such as bootstrapping default regions, inspecting readiness, priming discovery cycles,
+/// or running the scheduler when sources are lagging.
+///
+/// # Parameters
+///
+/// - `region_id`: Optional region scope used to tailor some action paths and payloads.
+///
+/// # Returns
+///
+/// A `Vec<PassiveCommandCenterAction>` containing zero or more suggested maintenance/automation
+/// actions. The function returns an error if state queries fail.
+///
+/// # Examples
+///
+/// ```no_run
+/// // Given an initialized `AppState` named `state`:
+/// let actions = build_source_readiness_actions(&state, Some("pt")).unwrap();
+/// for action in actions {
+///     println!("action: {} - {}", action.action_id, action.title);
+/// }
+/// ```
 #[allow(clippy::too_many_lines)]
 fn build_source_readiness_actions(
     state: &AppState,

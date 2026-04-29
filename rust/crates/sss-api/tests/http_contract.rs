@@ -1742,6 +1742,16 @@ async fn passive_scheduler_scans_due_seeds_and_skips_fresh_ones() {
     assert_eq!(requests.lock().await.len(), request_count_after_first_run);
 }
 
+/// Verifies that a passive region target is persisted, discovery and scheduler runs execute, and region-level operational endpoints reflect and persist expected state.
+///
+/// Creates mock passive feed services, registers a region target, performs a region run (discovery + scheduler), repeats the run to exercise no-due-region behavior, and asserts that run logs, leases, heartbeats, map/site/event/canonical views, dashboards, operational visibility, command-center summaries (including attention items and suggested maintenance actions), and related listing/detail endpoints return expected shapes and persisted values.
+///
+/// # Examples
+///
+/// ```no_run
+/// // Execute as part of the test suite:
+/// // cargo test --test <test-binary> -- passive_regions_persist_and_orchestrate_discovery_then_scheduler
+/// ```
 #[tokio::test]
 #[allow(clippy::too_many_lines)]
 async fn passive_regions_persist_and_orchestrate_discovery_then_scheduler() {
@@ -2594,6 +2604,27 @@ async fn passive_region_defaults_bootstrap_backfills_existing_instances() {
     );
 }
 
+/// Verifies the operator console HTML is served at `/console` and includes expected branding,
+/// API endpoint wiring, data field keys, panel element IDs, and polling helpers.
+///
+/// This integration test issues a request to `/console` and asserts the response is `200 OK`
+/// and that the returned HTML contains the critical strings used by the operator console UI
+/// (branding, Cesium link, passive API endpoints, key JSON field names, panel IDs, and
+/// polling/refresh helpers).
+///
+/// # Examples
+///
+/// ```
+/// // Example (conceptual): send a request to the router and inspect returned HTML.
+/// let response = build_router(AppState::demo().unwrap())
+///     .oneshot(Request::builder().uri("/console").body(Body::empty()).unwrap())
+///     .await
+///     .unwrap();
+/// assert_eq!(response.status(), StatusCode::OK);
+/// let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+/// let html = String::from_utf8(bytes.to_vec()).unwrap();
+/// assert!(html.contains("Operator Console"));
+/// ```
 #[tokio::test]
 #[allow(clippy::too_many_lines)]
 async fn operator_console_is_served() {
