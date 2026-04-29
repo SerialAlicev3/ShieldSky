@@ -4400,6 +4400,7 @@ async function refreshFocusedSiteAnalytics() {
             .slice()
             .sort(function(left, right) { return Number(right.risk_score || 0) - Number(left.risk_score || 0); })
             .slice(0, 3);
+          const maintenanceActions = (((commandCenter.maintenance || {}).suggested_actions) || []).slice(0, 3);
           recList.innerHTML = focusSites.length
             ? focusSites.map(function(site) {
               const state = site.recommendation_review_state
@@ -4416,7 +4417,19 @@ async function refreshFocusedSiteAnalytics() {
                 + (narrativePath ? '<button class="att-action" onclick="openDrawerFromPath(\'Site Narrative\', \'' + narrativePath.replace(/'/g, '&#39;') + '\')">Narrative</button>' : '')
                 + '</div></div>';
             }).join('')
-            : '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:6px 0;line-height:1.6;">No region-specific actions required in the current window.</div>';
+            : (maintenanceActions.length
+              ? maintenanceActions.map(function(action, index) {
+                  const color = ['var(--coral)', 'var(--amber)', 'var(--teal)'][index % 3];
+                  const safeTitle = String(action.title || 'Action').replace(/'/g, '\\\'');
+                  const encodedAction = encodeURIComponent(JSON.stringify(action));
+                  return renderMaintenanceActionCard(
+                    action,
+                    color,
+                    'openDrawer(\'' + safeTitle + '\', \'' + String(action.path || '').replace(/'/g, '&#39;') + '\', JSON.parse(decodeURIComponent(\'' + encodedAction + '\')))',
+                    'executeRecommendedAction(JSON.parse(decodeURIComponent(\'' + encodedAction + '\')))'
+                  );
+                }).join('')
+              : '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:6px 0;line-height:1.6;">No region-specific actions required in the current window.</div>');
         }
       } catch (_) {
         await refreshGlobalAnalytics();
@@ -4926,6 +4939,18 @@ async function refreshNarrative() {
   } catch (_) { /* leave */ }
 }
 
+function renderMaintenanceActionCard(action, color, inspectHandler, runHandler) {
+  return '<div style="padding:11px 12px;background:var(--bg-elevated);border-left:2px solid ' + color + ';border-radius:0 2px 2px 0;">'
+    + '<div style="font-size:12px;color:var(--text-primary);line-height:1.4;">' + escapeHtml(action.title || 'Action required') + '</div>'
+    + (action.reason ? '<div style="font-size:11px;color:var(--text-secondary);margin-top:3px;line-height:1.4;">' + escapeHtml(action.reason) + '</div>' : '')
+    + '<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-tertiary);margin-top:6px;letter-spacing:0.08em;">'
+    + escapeHtml((action.method || 'POST') + ' ' + (action.path || '')) + '</div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">'
+    + '<button class="att-action subtle" onclick="' + inspectHandler + '">Inspect</button>'
+    + '<button class="att-action" onclick="' + runHandler + '">Run</button>'
+    + '</div></div>';
+}
+
 // --- Source Health ---
 // GET /v1/passive/operational-visibility → OperationalVisibilitySummary
 // regions: [{ name, state: 'healthy'|'pressured'|'degraded'|'failing' }]
@@ -5372,15 +5397,12 @@ async function refreshRecommendedActions() {
     const colors = ['var(--coral)', 'var(--amber)', 'var(--teal)', 'var(--lime)'];
     list.innerHTML = lastRecommendedActions.map((a, i) => {
       const color = colors[i % colors.length];
-      return '<div style="padding:11px 12px;background:var(--bg-elevated);border-left:2px solid ' + color + ';border-radius:0 2px 2px 0;">'
-        + '<div style="font-size:12px;color:var(--text-primary);line-height:1.4;">' + (a.title || 'Action required') + '</div>'
-        + (a.reason ? '<div style="font-size:11px;color:var(--text-secondary);margin-top:3px;line-height:1.4;">' + a.reason + '</div>' : '')
-        + '<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-tertiary);margin-top:6px;letter-spacing:0.08em;">'
-        + (a.method || 'POST') + ' ' + (a.path || '') + '</div>'
-        + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">'
-        + '<button class="att-action subtle" onclick="inspectRecommendedActionByIndex(' + i + ')">Inspect</button>'
-        + '<button class="att-action" onclick="executeRecommendedActionByIndex(' + i + ')">Run</button>'
-        + '</div></div>';
+      return renderMaintenanceActionCard(
+        a,
+        color,
+        'inspectRecommendedActionByIndex(' + i + ')',
+        'executeRecommendedActionByIndex(' + i + ')'
+      );
     }).join('');
   } catch (_) { /* leave */ }
 }
