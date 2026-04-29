@@ -267,11 +267,19 @@ fn build_source_readiness_actions(
     state: &AppState,
     region_id: Option<&str>,
 ) -> Result<Vec<PassiveCommandCenterAction>, AppError> {
-    let scheduler_enabled = env::var("SSS_PASSIVE_REGION_POLL_SECONDS")
+    let scheduler_enabled = env::var("SSS_API_ENABLE_PASSIVE_REGION_SCHEDULER")
         .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .unwrap_or(0)
-        > 0;
+        .is_some_and(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        && env::var("SSS_PASSIVE_REGION_POLL_SECONDS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(0)
+            > 0;
     let total_default_regions = default_passive_region_requests().len();
     let configured_region_count = state.passive_region_targets(1_000, false)?.len();
     let missing_region_count = total_default_regions.saturating_sub(configured_region_count);
@@ -356,12 +364,12 @@ fn build_source_readiness_actions(
                 if scheduler_enabled {
                     "No source samples have landed yet. Force a discovery and scan cycle to seed the console.".to_string()
                 } else {
-                    "The passive scheduler is off and no source samples have landed yet. Run a manual discovery and scan cycle to seed the console.".to_string()
+                    "The web console is not running the passive scheduler. Run a manual discovery and scan cycle to seed the console, or deploy sss-passive-worker for background ingestion.".to_string()
                 }
             } else if scheduler_enabled {
                 "Ready feeds exist but the console has not received source samples yet. Force a discovery and scan cycle now.".to_string()
             } else {
-                "Ready feeds exist, but the passive scheduler is off. Run one manual cycle to seed the console while the deploy stays in manual mode.".to_string()
+                "Ready feeds exist, but the web console is intentionally not running the passive scheduler. Run one manual cycle now, or deploy sss-passive-worker for continuous ingestion.".to_string()
             },
             method: "POST",
             path: "/v1/passive/regions/run".to_string(),
@@ -387,7 +395,7 @@ fn build_source_readiness_actions(
                 )
             } else {
                 format!(
-                    "{} are configured but the passive scheduler is off. Run a manual refresh pass now.",
+                    "{} are configured, but the web console is intentionally not running the passive scheduler. Run a manual refresh pass now, or deploy sss-passive-worker for continuous ingestion.",
                     lagging_sources.join(", ")
                 )
             },

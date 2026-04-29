@@ -878,7 +878,8 @@ pub async fn get_passive_source_readiness(
 ) -> Result<Json<ApiEnvelope<PassiveSourceReadinessResponse>>, ApiError> {
     let request_id = request_id(&headers);
     let scheduler = PassiveSchedulerRuntimeReadiness {
-        enabled: env_u64("SSS_PASSIVE_REGION_POLL_SECONDS").unwrap_or(0) > 0,
+        enabled: env_bool("SSS_API_ENABLE_PASSIVE_REGION_SCHEDULER", false)
+            && env_u64("SSS_PASSIVE_REGION_POLL_SECONDS").unwrap_or(0) > 0,
         poll_seconds: env_u64("SSS_PASSIVE_REGION_POLL_SECONDS"),
         retry_seconds: env_u64("SSS_PASSIVE_REGION_RETRY_SECONDS"),
         window_hours: env_u64("SSS_PASSIVE_REGION_WINDOW_HOURS"),

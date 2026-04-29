@@ -65,6 +65,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "starting passive region scheduler"
         );
         tokio::spawn(run_passive_region_scheduler(state.clone(), config));
+    } else if passive_region_scheduler_requested() {
+        tracing::info!(
+            "passive region scheduler requested for sss-api, but disabled in web service; run sss-passive-worker for background passive execution"
+        );
     }
 
     axum::serve(listener, build_router(state)).await?;
@@ -186,6 +190,10 @@ fn scheduler_config() -> Option<SchedulerConfig> {
 }
 
 fn passive_region_scheduler_config() -> Option<PassiveRegionSchedulerConfig> {
+    if !passive_region_scheduler_enabled() {
+        return None;
+    }
+
     let poll_seconds = env::var("SSS_PASSIVE_REGION_POLL_SECONDS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
@@ -221,6 +229,18 @@ fn passive_region_scheduler_config() -> Option<PassiveRegionSchedulerConfig> {
         force_discovery: bool_env("SSS_PASSIVE_REGION_FORCE_DISCOVERY", false),
         dry_run: bool_env("SSS_PASSIVE_REGION_DRY_RUN", false),
     })
+}
+
+fn passive_region_scheduler_enabled() -> bool {
+    bool_env("SSS_API_ENABLE_PASSIVE_REGION_SCHEDULER", false)
+}
+
+fn passive_region_scheduler_requested() -> bool {
+    env::var("SSS_PASSIVE_REGION_POLL_SECONDS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(0)
+        > 0
 }
 
 fn bool_env(key: &str, default: bool) -> bool {
