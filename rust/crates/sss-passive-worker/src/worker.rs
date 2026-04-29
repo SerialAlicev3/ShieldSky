@@ -76,34 +76,52 @@ impl PassiveWorker {
             );
         }
         self.record_heartbeat("running", None, "cycle_start", None)?;
+        if !self.config.enable_discovery && !self.config.enable_scan {
+            self.record_heartbeat(
+                "degraded",
+                None,
+                "cycle_complete",
+                Some("worker idle: discovery and scan both disabled"),
+            )?;
+            return Ok(Vec::new());
+        }
         let regions = self.state.passive_region_targets(10_000, true)?;
-        let mut due_regions = Vec::with_capacity(self.config.max_parallel_regions);
+        let mut due_regions = Vec::with_capacity(self.config.max_regions_per_cycle);
         for region in regions.into_iter().filter(|region| should_run(region, now)) {
             if !self.region_ready_for_run(&region.region_id, now)? {
                 continue;
             }
-            due_regions.push(region);
-            if due_regions.len() >= self.config.max_parallel_regions {
+            if due_regions.len() >= self.config.max_regions_per_cycle {
                 break;
             }
-        }
-
-        let mut region_tasks = JoinSet::new();
-        for region in due_regions {
-            let worker = self.clone();
-            region_tasks.spawn(async move { worker.process_due_region(region, now).await });
+            due_regions.push(region);
         }
 
         let mut reports = Vec::new();
-        while let Some(result) = region_tasks.join_next().await {
-            match result {
-                Ok(Ok(Some(report))) => reports.push(report),
-                Ok(Ok(None)) => {}
-                Ok(Err(error)) => return Err(error),
-                Err(error) => {
-                    return Err(AppError::SourceUnavailable(format!(
-                        "passive worker region task failed to join: {error}"
-                    )));
+        let mut pending_regions = due_regions.into_iter();
+        loop {
+            let mut region_tasks = JoinSet::new();
+            for region in pending_regions
+                .by_ref()
+                .take(self.config.max_parallel_regions)
+            {
+                let worker = self.clone();
+                region_tasks.spawn(async move { worker.process_due_region(region, now).await });
+            }
+            if region_tasks.is_empty() {
+                break;
+            }
+
+            while let Some(result) = region_tasks.join_next().await {
+                match result {
+                    Ok(Ok(Some(report))) => reports.push(report),
+                    Ok(Ok(None)) => {}
+                    Ok(Err(error)) => return Err(error),
+                    Err(error) => {
+                        return Err(AppError::SourceUnavailable(format!(
+                            "passive worker region task failed to join: {error}"
+                        )));
+                    }
                 }
             }
         }
@@ -121,6 +139,17 @@ impl PassiveWorker {
         region: PassiveRegionTarget,
         now: i64,
     ) -> Result<Option<RegionExecutionReport>, AppError> {
+        if let Some(report) = self.preflight_region_guardrail_report(&region, now) {
+            self.record_heartbeat(
+                report.log.heartbeat_status(),
+                Some(&region.region_id),
+                "region_guardrail",
+                report.log.heartbeat_detail().as_deref(),
+            )?;
+            self.state
+                .store_passive_region_run_log_entry(&report.log.as_storage_log())?;
+            return Ok(Some(report));
+        }
         if !self.try_lock_region(&region.region_id) {
             tracing::debug!(
                 region_id = %region.region_id,
@@ -456,6 +485,39 @@ impl PassiveWorker {
         }
         None
     }
+
+    fn preflight_region_guardrail_report(
+        &self,
+        region: &PassiveRegionTarget,
+        now_unix_seconds: i64,
+    ) -> Option<RegionExecutionReport> {
+        let radius = region.observation_radius_km.unwrap_or(25.0);
+        if region.scan_limit > self.config.max_scan_limit_per_region {
+            return Some(RegionExecutionReport::failed(
+                &region_run_id(&region.region_id, now_unix_seconds),
+                &region.region_id,
+                now_unix_seconds,
+                unix_seconds_now(),
+                format!(
+                    "region scan_limit {} exceeds worker guardrail {}",
+                    region.scan_limit, self.config.max_scan_limit_per_region
+                ),
+            ));
+        }
+        if radius > self.config.max_observation_radius_km {
+            return Some(RegionExecutionReport::failed(
+                &region_run_id(&region.region_id, now_unix_seconds),
+                &region.region_id,
+                now_unix_seconds,
+                unix_seconds_now(),
+                format!(
+                    "region observation radius {:.1}km exceeds worker guardrail {:.1}km",
+                    radius, self.config.max_observation_radius_km
+                ),
+            ));
+        }
+        None
+    }
 }
 
 fn lease_ttl_seconds_i64(value: u64) -> i64 {
@@ -684,15 +746,71 @@ mod tests {
         config.enable_scan = false;
         config.dry_run = true;
         config.max_parallel_regions = 1;
+        config.max_regions_per_cycle = 1;
 
         let worker = PassiveWorker::new(state.clone(), config.clone());
         let reports = worker.run_once().await.expect("worker run");
-        assert_eq!(reports.len(), 1);
+        assert!(reports.is_empty());
 
         config.max_parallel_regions = 2;
+        config.max_regions_per_cycle = 2;
         let worker = PassiveWorker::new(state, config);
         let reports = worker.run_once().await.expect("worker run");
-        assert_eq!(reports.len(), 2);
+        assert!(reports.is_empty());
+    }
+
+    #[tokio::test]
+    async fn run_once_limits_regions_per_cycle_even_when_more_are_due() {
+        let state = test_state();
+        state
+            .upsert_passive_region_target(&test_region_request("region-a"))
+            .expect("region-a stored");
+        state
+            .upsert_passive_region_target(&test_region_request("region-b"))
+            .expect("region-b stored");
+        state
+            .upsert_passive_region_target(&test_region_request("region-c"))
+            .expect("region-c stored");
+
+        let mut config = test_config();
+        config.enable_discovery = false;
+        config.enable_scan = false;
+        config.dry_run = false;
+        config.max_parallel_regions = 2;
+        config.max_regions_per_cycle = 2;
+
+        let worker = PassiveWorker::new(state, config);
+        let reports = worker.run_once().await.expect("worker run");
+        assert!(reports.is_empty());
+    }
+
+    #[tokio::test]
+    async fn region_guardrail_rejects_excessive_scan_limit() {
+        let state = test_state();
+        let mut request = test_region_request("region-a");
+        request.scan_limit = Some(150);
+        state
+            .upsert_passive_region_target(&request)
+            .expect("region stored");
+
+        let mut config = test_config();
+        config.max_scan_limit_per_region = 50;
+        let worker = PassiveWorker::new(state.clone(), config);
+        let error = worker.run_once().await.expect_err("guardrail failure");
+        assert!(error
+            .to_string()
+            .contains("scan_limit 150 exceeds worker guardrail 50"));
+        let run_log = state
+            .passive_region_run_logs(1, Some("region-a"))
+            .expect("run logs")
+            .into_iter()
+            .next()
+            .expect("run log");
+        assert_eq!(run_log.status, PassiveRegionRunStatus::Failed);
+        assert!(run_log
+            .source_errors
+            .iter()
+            .any(|error| error.contains("scan_limit 150 exceeds worker guardrail 50")));
     }
 
     #[test]
@@ -832,16 +950,25 @@ mod tests {
             poll_interval_seconds: 30,
             retry_interval_seconds: 30,
             max_parallel_regions: 4,
+            max_regions_per_cycle: 8,
             max_runtime_seconds: 20,
             lease_ttl_seconds: 120,
             heartbeat_retention_seconds: 86_400,
             window_hours: 24,
+            max_scan_limit_per_region: 100,
+            max_observation_radius_km: 75.0,
+            max_unfetched_feeds_per_region: 1,
             enable_discovery: true,
             enable_scan: true,
             feeds: WorkerFeedConfig {
                 include_adsb: true,
                 include_weather: true,
                 include_fire_smoke: true,
+            },
+            required_feeds: WorkerFeedConfig {
+                include_adsb: false,
+                include_weather: true,
+                include_fire_smoke: false,
             },
             dry_run: false,
         }

@@ -48,6 +48,8 @@ pub struct PassiveCommandCenterRegionHighlight {
     pub name: String,
     pub operational_pressure_priority: crate::map_views::MapPriority,
     pub dominant_status: Option<crate::canonical_views::CanonicalEventStatus>,
+    pub risk_delta_classification: Option<crate::canonical_views::RiskDeltaType>,
+    pub risk_delta_explanation: Option<String>,
     pub narrative_summary: String,
 }
 
@@ -59,6 +61,8 @@ pub struct PassiveCommandCenterSiteHighlight {
     pub risk_score: f64,
     pub risk_trend: crate::map_views::RiskTrend,
     pub top_canonical_status: Option<crate::canonical_views::CanonicalEventStatus>,
+    pub recommendation_review_state: Option<sss_storage::PassiveRecommendationReviewState>,
+    pub has_recommendation: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -94,6 +98,9 @@ pub struct PassiveCommandCenterAttentionItem {
     pub item_id: String,
     pub kind: PassiveCommandCenterAttentionKind,
     pub priority: MapPriority,
+    pub urgency_label: String,
+    pub age_seconds: Option<i64>,
+    pub age_bucket: Option<crate::map_views::ReviewAgeBucket>,
     pub title: String,
     pub reason: String,
     pub primary_action_label: String,
@@ -101,6 +108,7 @@ pub struct PassiveCommandCenterAttentionItem {
     pub site_id: Option<String>,
     pub canonical_event_id: Option<String>,
     pub action_path: Option<String>,
+    pub operator_state: Option<String>,
     pub confirmation_read_paths: Vec<String>,
 }
 
@@ -305,6 +313,8 @@ fn build_command_center_highlights(
                 name: region.name.clone(),
                 operational_pressure_priority: region.operational_pressure_priority,
                 dominant_status: region.dominant_status,
+                risk_delta_classification: region.risk_delta_classification,
+                risk_delta_explanation: region.risk_delta_explanation.clone(),
                 narrative_summary: region.narrative_summary.clone(),
             });
     let top_site = dashboard
@@ -318,6 +328,8 @@ fn build_command_center_highlights(
             risk_score: site.risk_score,
             risk_trend: site.risk_trend,
             top_canonical_status: site.top_canonical_status,
+            recommendation_review_state: site.recommendation_review_state,
+            has_recommendation: site.has_recommendation,
         });
     let top_event =
         dashboard
@@ -348,12 +360,16 @@ fn build_attention_queue(
     min_attention_priority: Option<MapPriority>,
 ) -> Vec<PassiveCommandCenterAttentionItem> {
     let mut items = Vec::new();
+    let now_unix_seconds = now_unix_seconds();
 
     for action in &maintenance.suggested_actions {
         items.push(PassiveCommandCenterAttentionItem {
             item_id: format!("maintenance:{}", action.action_id),
             kind: PassiveCommandCenterAttentionKind::Maintenance,
             priority: maintenance_action_priority(action),
+            urgency_label: "maintenance backlog".to_string(),
+            age_seconds: None,
+            age_bucket: None,
             title: action.title.clone(),
             reason: action.reason.clone(),
             primary_action_label: maintenance_action_label(action),
@@ -361,6 +377,7 @@ fn build_attention_queue(
             site_id: None,
             canonical_event_id: None,
             action_path: Some(action.path.clone()),
+            operator_state: None,
             confirmation_read_paths: action.confirmation_read_paths.clone(),
         });
     }
@@ -376,6 +393,14 @@ fn build_attention_queue(
                 item_id: format!("canonical:{}", event.canonical_event_id),
                 kind: PassiveCommandCenterAttentionKind::CanonicalEvent,
                 priority: event.priority,
+                urgency_label: canonical_attention_urgency(
+                    event.last_observed_at_unix_seconds,
+                    now_unix_seconds,
+                ),
+                age_seconds: Some(
+                    now_unix_seconds.saturating_sub(event.last_observed_at_unix_seconds),
+                ),
+                age_bucket: None,
                 title: format!("{} @ {}", event.event_type, event.site_name),
                 reason: event.operational_readout.clone(),
                 primary_action_label: "Focus Event".to_string(),
@@ -383,6 +408,7 @@ fn build_attention_queue(
                 site_id: Some(event.site_id.clone()),
                 canonical_event_id: Some(event.canonical_event_id.clone()),
                 action_path: None,
+                operator_state: None,
                 confirmation_read_paths: event
                     .bundle_hashes
                     .iter()
@@ -405,7 +431,7 @@ fn build_attention_queue(
             .iter()
             .filter(|site| site.site_id.is_some())
             .take(limit)
-            .map(site_attention_item),
+            .map(|site| site_attention_item(site, now_unix_seconds)),
     );
 
     items.extend(
@@ -413,7 +439,7 @@ fn build_attention_queue(
             .top_regions
             .iter()
             .take(limit)
-            .map(region_attention_item),
+            .map(|region| region_attention_item(region, now_unix_seconds)),
     );
 
     if let Some(kind) = attention_kind {
@@ -427,6 +453,12 @@ fn build_attention_queue(
         right
             .priority
             .cmp(&left.priority)
+            .then_with(|| attention_urgency_rank(left).cmp(&attention_urgency_rank(right)))
+            .then_with(|| {
+                left.age_seconds
+                    .unwrap_or(i64::MAX)
+                    .cmp(&right.age_seconds.unwrap_or(i64::MAX))
+            })
             .then_with(|| attention_kind_rank(left.kind).cmp(&attention_kind_rank(right.kind)))
             .then_with(|| left.title.cmp(&right.title))
     });
@@ -471,6 +503,9 @@ fn neows_attention_item(
         item_id: format!("neo:{}", object.neo_reference_id),
         kind: PassiveCommandCenterAttentionKind::Neo,
         priority: priority_from_risk(object.priority_score),
+        urgency_label: "orbital context".to_string(),
+        age_seconds: None,
+        age_bucket: None,
         title: object.name.clone(),
         reason: format!(
             "{} Miss distance: {}. Relative velocity: {}.",
@@ -488,37 +523,87 @@ fn neows_attention_item(
         site_id: None,
         canonical_event_id: None,
         action_path: Some(feed_path),
+        operator_state: None,
         confirmation_read_paths,
     }
 }
 
-fn site_attention_item(site: &SiteMapItem) -> PassiveCommandCenterAttentionItem {
+fn site_attention_item(
+    site: &SiteMapItem,
+    now_unix_seconds: i64,
+) -> PassiveCommandCenterAttentionItem {
     let site_id = site.site_id.clone().unwrap_or_default();
+    let priority = std::cmp::max(site.scan_priority, priority_from_risk(site.risk_score));
+    let operator_state = site_operator_state_label(site);
+    let reason = format!("{} {}", site.status_reason, site.priority_reason);
+    let age_seconds = site.recommendation_age_seconds.or_else(|| {
+        site.last_event_at_unix_seconds
+            .or(site.last_scanned_at_unix_seconds)
+            .map(|ts| now_unix_seconds.saturating_sub(ts))
+    });
     PassiveCommandCenterAttentionItem {
         item_id: format!("site:{site_id}"),
         kind: PassiveCommandCenterAttentionKind::Site,
-        priority: priority_from_risk(site.risk_score),
+        priority,
+        urgency_label: site_attention_urgency(site, age_seconds),
+        age_seconds,
+        age_bucket: site.recommendation_age_bucket,
         title: site.name.clone(),
-        reason: format!(
-            "Site risk is {:.0}% with trend {:?} and canonical state {:?}.",
-            site.risk_score * 100.0,
-            site.risk_trend,
-            site.top_canonical_status
-        ),
-        primary_action_label: "Focus Site".to_string(),
+        reason,
+        primary_action_label: if site.has_recommendation
+            && site.recommendation_review_state.is_none()
+        {
+            "Review Recommendation".to_string()
+        } else if matches!(
+            site.recommendation_review_state,
+            Some(sss_storage::PassiveRecommendationReviewState::Applied)
+        ) {
+            "Inspect Applied".to_string()
+        } else if site.observed {
+            "Open Site".to_string()
+        } else {
+            "Prime Site".to_string()
+        },
         region_id: Some(site.region_id.clone()),
         site_id: Some(site_id),
         canonical_event_id: None,
-        action_path: None,
-        confirmation_read_paths: Vec::new(),
+        action_path: site.overview_path.clone(),
+        operator_state,
+        confirmation_read_paths: site
+            .overview_path
+            .iter()
+            .cloned()
+            .chain(site.narrative_path.iter().cloned())
+            .chain(
+                site.site_id
+                    .iter()
+                    .map(|site_id| format!("/v1/orchestrator/sites/{site_id}/decisions?limit=5")),
+            )
+            .chain(
+                site.site_id
+                    .iter()
+                    .map(|site_id| format!("/v1/orchestrator/sites/{site_id}/reviews?limit=5")),
+            )
+            .collect(),
     }
 }
 
-fn region_attention_item(region: &RegionMapItem) -> PassiveCommandCenterAttentionItem {
+fn region_attention_item(
+    region: &RegionMapItem,
+    now_unix_seconds: i64,
+) -> PassiveCommandCenterAttentionItem {
+    let age_seconds = region.pending_review_oldest_age_seconds.or_else(|| {
+        region
+            .latest_run_finished_at_unix_seconds
+            .map(|ts| now_unix_seconds.saturating_sub(ts))
+    });
     PassiveCommandCenterAttentionItem {
         item_id: format!("region:{}", region.region_id),
         kind: PassiveCommandCenterAttentionKind::Region,
         priority: region.operational_pressure_priority,
+        urgency_label: region_attention_urgency(region, age_seconds),
+        age_seconds,
+        age_bucket: region.pending_review_age_bucket,
         title: region.name.clone(),
         reason: region.operational_summary.clone(),
         primary_action_label: "Open Region".to_string(),
@@ -526,6 +611,7 @@ fn region_attention_item(region: &RegionMapItem) -> PassiveCommandCenterAttentio
         site_id: None,
         canonical_event_id: None,
         action_path: Some(format!("/v1/passive/regions/{}/overview", region.region_id)),
+        operator_state: region_operator_state_label(region),
         confirmation_read_paths: vec![
             format!("/v1/passive/map/sites?region_id={}", region.region_id),
             format!(
@@ -536,11 +622,110 @@ fn region_attention_item(region: &RegionMapItem) -> PassiveCommandCenterAttentio
     }
 }
 
+fn site_operator_state_label(site: &SiteMapItem) -> Option<String> {
+    match site.recommendation_review_state {
+        Some(sss_storage::PassiveRecommendationReviewState::Reviewed) => {
+            Some("reviewed".to_string())
+        }
+        Some(sss_storage::PassiveRecommendationReviewState::Applied) => Some("applied".to_string()),
+        Some(sss_storage::PassiveRecommendationReviewState::Dismissed) => {
+            Some("dismissed".to_string())
+        }
+        None if site.has_recommendation => Some("pending_review".to_string()),
+        None => None,
+    }
+}
+
+fn region_operator_state_label(region: &RegionMapItem) -> Option<String> {
+    if region.recommendation_pending_review_count > 0 {
+        Some("pending_review".to_string())
+    } else if region.recommendation_applied_count > 0 {
+        Some("applied".to_string())
+    } else if region.recommendation_reviewed_count > 0 {
+        Some("reviewed".to_string())
+    } else if region.recommendation_dismissed_count > 0 {
+        Some("dismissed".to_string())
+    } else {
+        None
+    }
+}
+
 fn maintenance_action_priority(action: &PassiveCommandCenterAction) -> MapPriority {
     match action.action_id.as_str() {
         "prune-stale-heartbeats" => MapPriority::High,
         "prune-source-health-samples" => MapPriority::Medium,
         _ => MapPriority::Low,
+    }
+}
+
+fn canonical_attention_urgency(
+    last_observed_at_unix_seconds: i64,
+    now_unix_seconds: i64,
+) -> String {
+    let age_seconds = now_unix_seconds.saturating_sub(last_observed_at_unix_seconds);
+    if age_seconds <= 900 {
+        "new signal".to_string()
+    } else if age_seconds <= 3_600 {
+        "active now".to_string()
+    } else {
+        "watching".to_string()
+    }
+}
+
+fn site_attention_urgency(site: &SiteMapItem, age_seconds: Option<i64>) -> String {
+    if site.has_recommendation && site.recommendation_review_state.is_none() {
+        return match age_seconds {
+            Some(seconds) if seconds > 21_600 => "stale pending review".to_string(),
+            Some(seconds) if seconds > 3_600 => "pending review".to_string(),
+            _ => "new recommendation".to_string(),
+        };
+    }
+    if matches!(
+        site.recommendation_review_state,
+        Some(sss_storage::PassiveRecommendationReviewState::Applied)
+    ) {
+        return "applied action".to_string();
+    }
+    if site.elevated {
+        return "elevated site".to_string();
+    }
+    "monitoring".to_string()
+}
+
+fn region_attention_urgency(region: &RegionMapItem, age_seconds: Option<i64>) -> String {
+    if region.recommendation_pending_review_count > 0 {
+        return if age_seconds.is_some_and(|seconds| seconds > 21_600) {
+            "stale regional backlog".to_string()
+        } else {
+            "needs review now".to_string()
+        };
+    }
+    if region.recent_failed_run_count > 0 || region.stale_worker_count > 0 {
+        return "degraded runtime".to_string();
+    }
+    if region.seeds_elevated > 0 || region.recent_events > 0 {
+        return "active pressure".to_string();
+    }
+    "stable watch".to_string()
+}
+
+fn attention_urgency_rank(item: &PassiveCommandCenterAttentionItem) -> u8 {
+    match item.urgency_label.as_str() {
+        "needs review now" => 0,
+        "new recommendation" => 1,
+        "new signal" => 2,
+        "active now" => 3,
+        "stale pending review" => 4,
+        "pending review" => 5,
+        "degraded runtime" => 6,
+        "active pressure" => 7,
+        "applied action" => 8,
+        "watching" => 9,
+        "stable watch" => 10,
+        "monitoring" => 11,
+        "maintenance backlog" => 12,
+        "orbital context" => 13,
+        _ => 20,
     }
 }
 

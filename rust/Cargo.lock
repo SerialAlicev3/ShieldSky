@@ -1653,6 +1653,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sss-core",
+ "sss-forecast",
  "sss-ingest",
  "sss-passive-scanner",
  "sss-site-registry",
@@ -1669,6 +1670,15 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "sgp4",
+]
+
+[[package]]
+name = "sss-forecast"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "sss-site-registry",
+ "uuid",
 ]
 
 [[package]]

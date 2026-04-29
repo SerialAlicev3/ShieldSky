@@ -75,6 +75,27 @@ pub struct PredictionSnapshot {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PassiveRecommendationReviewState {
+    Reviewed,
+    Applied,
+    Dismissed,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PassiveRecommendationReview {
+    pub review_id: String,
+    pub site_id: String,
+    pub snapshot_id: String,
+    pub request_id: String,
+    pub endpoint: String,
+    pub state: PassiveRecommendationReviewState,
+    pub actor: Option<String>,
+    pub rationale: Option<String>,
+    pub evidence_bundle_hash: Option<String>,
+    pub decided_at_unix_seconds: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PassiveSeedClassificationStatus {
     Discovered,
     Observed,
@@ -1794,6 +1815,58 @@ impl SqliteStore {
         })
     }
 
+    pub fn store_passive_recommendation_review(
+        &self,
+        review: &PassiveRecommendationReview,
+    ) -> Result<(), StorageError> {
+        self.with_connection(|connection| {
+            connection.execute(
+                "INSERT OR REPLACE INTO passive_recommendation_reviews
+                 (review_id, site_id, snapshot_id, request_id, endpoint, state, actor, rationale,
+                  evidence_bundle_hash, decided_at_unix_seconds, payload_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                params![
+                    review.review_id,
+                    review.site_id,
+                    review.snapshot_id,
+                    review.request_id,
+                    review.endpoint,
+                    to_json(&review.state)?,
+                    review.actor,
+                    review.rationale,
+                    review.evidence_bundle_hash,
+                    review.decided_at_unix_seconds,
+                    to_json(review)?,
+                ],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub fn passive_recommendation_reviews(
+        &self,
+        site_id: &str,
+        limit: usize,
+    ) -> Result<Vec<PassiveRecommendationReview>, StorageError> {
+        self.with_connection(|connection| {
+            let mut statement = connection.prepare(
+                "SELECT payload_json FROM passive_recommendation_reviews
+                 WHERE site_id = ?1
+                 ORDER BY decided_at_unix_seconds DESC, id DESC
+                 LIMIT ?2",
+            )?;
+            let rows = statement.query_map(
+                params![site_id, i64::try_from(limit).unwrap_or(i64::MAX)],
+                |row| row.get::<_, String>(0),
+            )?;
+            rows.map(|row| {
+                row.map_err(StorageError::from)
+                    .and_then(|json| from_json(&json))
+            })
+            .collect()
+        })
+    }
+
     pub fn request_history(
         &self,
         object_id: &str,
@@ -1986,6 +2059,23 @@ impl SqliteStore {
                 );
                 CREATE INDEX IF NOT EXISTS idx_prediction_snapshots_object_time
                     ON prediction_snapshots(object_id, generated_at_unix_seconds DESC);
+
+                CREATE TABLE IF NOT EXISTS passive_recommendation_reviews (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    review_id TEXT NOT NULL UNIQUE,
+                    site_id TEXT NOT NULL,
+                    snapshot_id TEXT NOT NULL,
+                    request_id TEXT NOT NULL,
+                    endpoint TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    actor TEXT,
+                    rationale TEXT,
+                    evidence_bundle_hash TEXT,
+                    decided_at_unix_seconds INTEGER NOT NULL,
+                    payload_json TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_passive_recommendation_reviews_site_time
+                    ON passive_recommendation_reviews(site_id, decided_at_unix_seconds DESC);
 
                 CREATE TABLE IF NOT EXISTS passive_site_profiles (
                     site_id TEXT PRIMARY KEY,

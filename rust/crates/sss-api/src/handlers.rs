@@ -81,6 +81,11 @@ pub struct PredictionSnapshotsQuery {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct PassiveRecommendationReviewsQuery {
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct PassiveObservationsQuery {
     pub limit: Option<usize>,
     pub source_kind: Option<sss_passive_scanner::PassiveSourceKind>,
@@ -89,6 +94,35 @@ pub struct PassiveObservationsQuery {
 #[derive(Debug, Clone, Deserialize)]
 pub struct PassiveSiteCorpusQuery {
     pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PassiveSiteForecastQuery {
+    pub horizon_hours: Option<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PassiveSiteRecommendationReviewRequest {
+    pub state: sss_storage::PassiveRecommendationReviewState,
+    pub actor: Option<String>,
+    pub rationale: Option<String>,
+    pub snapshot_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PassiveRecommendationReviewView {
+    pub review_id: String,
+    pub site_id: String,
+    pub snapshot_id: String,
+    pub request_id: String,
+    pub endpoint: String,
+    pub state: sss_storage::PassiveRecommendationReviewState,
+    pub actor: Option<String>,
+    pub rationale: Option<String>,
+    pub evidence_bundle_hash: Option<String>,
+    pub decided_at_unix_seconds: i64,
+    pub age_seconds: i64,
+    pub age_bucket: crate::map_views::ReviewAgeBucket,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1112,6 +1146,139 @@ pub async fn get_passive_site_narrative(
     let days = query.days.unwrap_or(30).clamp(1, 365);
     let response = state
         .passive_risk_history_narrative(&site_id, days)
+        .map_err(|error| app_error_to_api_error(request_id.clone(), error))?;
+    Ok(Json(ApiEnvelope::new(request_id, response)))
+}
+
+pub async fn get_passive_site_solar_forecast(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(site_id): Path<String>,
+    Query(query): Query<PassiveSiteForecastQuery>,
+) -> Result<Json<ApiEnvelope<sss_forecast::SolarForecastResponse>>, ApiError> {
+    let request_id = request_id(&headers);
+    let horizon_hours = query.horizon_hours.unwrap_or(24).clamp(1, 72);
+    let response = state
+        .passive_site_solar_forecast(&request_id, &site_id, horizon_hours)
+        .await
+        .map_err(|error| app_error_to_api_error(request_id.clone(), error))?;
+    Ok(Json(ApiEnvelope::new(request_id, response)))
+}
+
+pub async fn get_passive_site_load_forecast(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(site_id): Path<String>,
+    Query(query): Query<PassiveSiteForecastQuery>,
+) -> Result<Json<ApiEnvelope<sss_forecast::LoadForecastResponse>>, ApiError> {
+    let request_id = request_id(&headers);
+    let horizon_hours = query.horizon_hours.unwrap_or(24).clamp(1, 72);
+    let response = state
+        .passive_site_load_forecast(&request_id, &site_id, horizon_hours)
+        .await
+        .map_err(|error| app_error_to_api_error(request_id.clone(), error))?;
+    Ok(Json(ApiEnvelope::new(request_id, response)))
+}
+
+pub async fn get_passive_site_scenario_forecast(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(site_id): Path<String>,
+    Query(query): Query<PassiveSiteForecastQuery>,
+) -> Result<Json<ApiEnvelope<sss_forecast::ScenarioForecastResponse>>, ApiError> {
+    let request_id = request_id(&headers);
+    let horizon_hours = query.horizon_hours.unwrap_or(24).clamp(1, 72);
+    let response = state
+        .passive_site_scenario_forecast(&request_id, &site_id, horizon_hours)
+        .await
+        .map_err(|error| app_error_to_api_error(request_id.clone(), error))?;
+    Ok(Json(ApiEnvelope::new(request_id, response)))
+}
+
+pub async fn recommend_passive_site_action(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(site_id): Path<String>,
+    Json(request): Json<sss_forecast::OrchestratorRecommendationRequest>,
+) -> Result<Json<ApiEnvelope<sss_forecast::OrchestratorRecommendation>>, ApiError> {
+    let request_id = request_id(&headers);
+    let response = state
+        .passive_site_recommendation(&request_id, &site_id, &request)
+        .await
+        .map_err(|error| app_error_to_api_error(request_id.clone(), error))?;
+    Ok(Json(ApiEnvelope::new(request_id, response)))
+}
+
+pub async fn get_passive_site_orchestrator_decisions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(site_id): Path<String>,
+    Query(query): Query<PredictionSnapshotsQuery>,
+) -> Result<Json<ApiEnvelope<Vec<sss_storage::PredictionSnapshot>>>, ApiError> {
+    let request_id = request_id(&headers);
+    let limit = query.limit.unwrap_or(10).clamp(1, 100);
+    let response = state
+        .passive_site_orchestrator_decisions(&site_id, limit)
+        .map_err(|error| ApiError::storage(request_id.clone(), error.to_string()))?;
+    Ok(Json(ApiEnvelope::new(request_id, response)))
+}
+
+pub async fn get_passive_site_recommendation_reviews(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(site_id): Path<String>,
+    Query(query): Query<PassiveRecommendationReviewsQuery>,
+) -> Result<Json<ApiEnvelope<Vec<PassiveRecommendationReviewView>>>, ApiError> {
+    let request_id = request_id(&headers);
+    let limit = query.limit.unwrap_or(10).clamp(1, 100);
+    let now = crate::state::now_unix_seconds();
+    let response = state
+        .passive_site_recommendation_reviews(&site_id, limit)
+        .map_err(|error| ApiError::storage(request_id.clone(), error.to_string()))?
+        .into_iter()
+        .map(|review| {
+            let age_seconds = now.saturating_sub(review.decided_at_unix_seconds);
+            let age_bucket = if age_seconds <= 6 * 3_600 {
+                crate::map_views::ReviewAgeBucket::New
+            } else if age_seconds <= 24 * 3_600 {
+                crate::map_views::ReviewAgeBucket::Aging
+            } else {
+                crate::map_views::ReviewAgeBucket::Stale
+            };
+            PassiveRecommendationReviewView {
+                review_id: review.review_id,
+                site_id: review.site_id,
+                snapshot_id: review.snapshot_id,
+                request_id: review.request_id,
+                endpoint: review.endpoint,
+                state: review.state,
+                actor: review.actor,
+                rationale: review.rationale,
+                evidence_bundle_hash: review.evidence_bundle_hash,
+                decided_at_unix_seconds: review.decided_at_unix_seconds,
+                age_seconds,
+                age_bucket,
+            }
+        })
+        .collect::<Vec<_>>();
+    Ok(Json(ApiEnvelope::new(request_id, response)))
+}
+
+pub async fn review_passive_site_recommendation(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(site_id): Path<String>,
+    Json(request): Json<PassiveSiteRecommendationReviewRequest>,
+) -> Result<Json<ApiEnvelope<sss_storage::PassiveRecommendationReview>>, ApiError> {
+    let request_id = request_id(&headers);
+    let response = state
+        .set_passive_site_recommendation_review(
+            &site_id,
+            request.state,
+            request.actor,
+            request.rationale,
+            request.snapshot_id.as_ref(),
+        )
         .map_err(|error| app_error_to_api_error(request_id.clone(), error))?;
     Ok(Json(ApiEnvelope::new(request_id, response)))
 }
@@ -2270,10 +2437,25 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
     background: var(--amber-dim);
     border-color: var(--amber);
   }
+  .att-action.subtle {
+    color: var(--text-secondary);
+    border-color: var(--line-strong);
+  }
+  .att-action.subtle:hover {
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+    border-color: var(--text-secondary);
+  }
 
   /* Risk trend mini chart */
   .chart-container {
     padding: 14px 0 4px;
+  }
+  .chart-context {
+    margin-top: 10px;
+    font-size: 11px;
+    line-height: 1.55;
+    color: var(--text-secondary);
   }
 
   .chart-title {
@@ -2382,6 +2564,76 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
   .timeline-container {
     position: relative;
     padding: 12px 16px;
+  }
+  .timeline-summary {
+    position: absolute;
+    left: 16px;
+    top: -2px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+  .drawer {
+    position: fixed;
+    top: 60px;
+    right: 0;
+    width: min(520px, 92vw);
+    height: calc(100vh - 60px);
+    background: var(--bg-panel);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border-left: 1px solid var(--line-strong);
+    transform: translateX(100%);
+    transition: transform 0.22s ease;
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+  }
+  .drawer.visible { transform: translateX(0); }
+  .drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--line);
+  }
+  .drawer-title {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+  .drawer-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 18px;
+    cursor: pointer;
+  }
+  .drawer-path {
+    padding: 0 18px 12px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-tertiary);
+    letter-spacing: 0.08em;
+    word-break: break-all;
+  }
+  .drawer-body {
+    flex: 1;
+    overflow: auto;
+    padding: 14px 18px 20px;
+  }
+  .drawer-pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 1.6;
+    color: var(--text-secondary);
   }
 
   .timeline-track {
@@ -2589,8 +2841,69 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
     letter-spacing: 0.1em;
     margin-bottom: 12px;
   }
+  .focus-detail {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    color: var(--text-tertiary);
+    letter-spacing: 0.08em;
+    line-height: 1.6;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  .focus-review {
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    color: var(--text-secondary);
+    line-height: 1.7;
+    margin-top: 10px;
+    white-space: pre-line;
+  }
+  .op-review-strip {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .op-review-pill {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 5px 8px;
+  }
+  .op-review-pill.pending {
+    color: var(--amber);
+    border-color: rgba(241, 201, 107, 0.28);
+  }
+  .op-review-pill.applied {
+    color: var(--teal);
+    border-color: rgba(79, 224, 208, 0.28);
+  }
+  .op-review-pill.dismissed {
+    color: var(--coral);
+    border-color: rgba(255, 124, 110, 0.28);
+  }
   .focus-divider { border: none; border-top: 1px solid var(--line); margin: 10px 0; }
-  .focus-actions { display: flex; gap: 8px; }
+  .focus-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .focus-links {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+  .focus-state {
+    margin-top: 8px;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
 
   /* Load animation — staggered reveals */
   .console > * {
@@ -2749,6 +3062,13 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
     </div>
 
     <div class="chip-group">
+      <button class="chip active" data-review-state="all">All States</button>
+      <button class="chip" data-review-state="pending_review">Pending</button>
+      <button class="chip" data-review-state="applied">Applied</button>
+      <button class="chip" data-review-state="dismissed">Dismissed</button>
+    </div>
+
+    <div class="chip-group">
       <button class="chip" data-window="24h">24h</button>
       <button class="chip active" data-window="72h">72h</button>
       <button class="chip" data-window="7d">7d</button>
@@ -2893,6 +3213,7 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
       <div class="op-message" id="op-message">
         Connecting to operational feeds&hellip;
       </div>
+      <div class="op-review-strip" id="op-review-strip"></div>
     </div>
 
     <!-- Legend -->
@@ -2939,10 +3260,14 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
       <div class="focus-ftitle" id="focus-title">&mdash;</div>
       <div class="focus-reason" id="focus-reason"></div>
       <div class="focus-coords" id="focus-coords"></div>
+      <div class="focus-detail" id="focus-detail"></div>
       <hr class="focus-divider">
       <div class="focus-actions">
         <button class="att-action" id="focus-primary-btn">Open &rarr;</button>
       </div>
+      <div class="focus-links" id="focus-links"></div>
+      <div class="focus-state" id="focus-state"></div>
+      <div class="focus-review" id="focus-review"></div>
     </div>
 
   </main>
@@ -3012,6 +3337,7 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
         <div class="chart-x-labels">
           <span>-72H</span><span>-48H</span><span>-24H</span><span>NOW</span>
         </div>
+        <div class="chart-context" id="risk-context">Waiting for focused analytics.</div>
       </div>
     </div>
 
@@ -3041,6 +3367,7 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
     </div>
 
     <div class="timeline-container" id="timeline">
+      <div class="timeline-summary" id="timeline-summary">Event memory and forecast windows will appear here.</div>
       <div class="timeline-track"></div>
       <div class="future-window" style="left: 60%; right: 0;"></div>
 
@@ -3065,6 +3392,17 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
     </div>
   </footer>
 
+</div>
+
+<div id="data-drawer" class="drawer">
+  <div class="drawer-header">
+    <div class="drawer-title" id="drawer-title">Operational Detail</div>
+    <button class="drawer-close" id="drawer-close-btn">&#215;</button>
+  </div>
+  <div class="drawer-path" id="drawer-path"></div>
+  <div class="drawer-body">
+    <pre class="drawer-pre" id="drawer-content">Select evidence, replay, or operational detail to inspect it here.</pre>
+  </div>
 </div>
 
 <script>
@@ -3191,29 +3529,62 @@ clickHandler.setInputAction(function(click) {
     lng = Cesium.Math.toDegrees(carto.longitude);
   }
   openFocusPanel({
-    kind:   (props.kind && props.kind.getValue()) || 'site',
-    title:  (props.label && props.label.getValue()) || (ent.name) || 'Unknown',
-    reason: (props.reason && props.reason.getValue()) || '',
-    lat, lng,
+    kind: propValue(props, 'kind') || 'site',
+    title: propValue(props, 'label') || ent.name || 'Unknown',
+    reason: propValue(props, 'reason') || '',
+    lat,
+    lng,
+    siteId: propValue(props, 'site_id') || '',
+    regionId: propValue(props, 'region_id') || '',
+    actionPath: propValue(props, 'action_path') || '',
+    narrativePath: propValue(props, 'narrative_path') || '',
+    operatorState: propValue(props, 'operator_state') || '',
   });
 }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
 document.getElementById('focus-close-btn').addEventListener('click', () => {
   document.getElementById('focus-panel').classList.remove('visible');
   _focusCoords = { lat: null, lng: null };
+  FOCUS_STATE.kind = null;
+  FOCUS_STATE.siteId = null;
+  FOCUS_STATE.regionId = null;
+  FOCUS_STATE.actionPath = null;
+  FOCUS_STATE.narrativePath = null;
+  FOCUS_STATE.lastRecommendation = null;
+  setFocusStateText('');
+  const focusReview = document.getElementById('focus-review');
+  if (focusReview) focusReview.textContent = '';
+  refreshGlobalAnalytics().catch(() => {});
 });
+document.getElementById('drawer-close-btn').addEventListener('click', closeDrawer);
 
 document.getElementById('focus-primary-btn').addEventListener('click', () => {
-  if (_focusCoords.lat != null) {
+  if (FOCUS_STATE.actionPath) {
+    openDrawerFromPath('Primary Focus', FOCUS_STATE.actionPath).catch(() => {});
+  } else if (_focusCoords.lat != null) {
     focusOnGlobe(_focusCoords.lat, _focusCoords.lng, 180000);
   }
 });
 
 // --- Globe data cache + focus system ---
-const GLOBE_DATA = { regions: [], events: [] };
+const GLOBE_DATA = { regions: [], sites: [], events: [] };
 let lastAttentionItems = [];
+let lastRecommendedActions = [];
 let _focusCoords = { lat: null, lng: null };
+const FOCUS_STATE = {
+  kind: null,
+  siteId: null,
+  regionId: null,
+  actionPath: null,
+  narrativePath: null,
+  evidencePath: null,
+  replayPath: null,
+  title: null,
+  lastRecommendation: null,
+};
 const PRESSURE_HISTORY = []; // circular buffer { t, score }
+const FORECAST_ENTITIES = [];
+const RECOMMENDATION_STATE = {};
 
 function focusOnGlobe(lat, lng, altM) {
   viewer.camera.flyTo({
@@ -3223,12 +3594,740 @@ function focusOnGlobe(lat, lng, altM) {
   });
 }
 
-function openFocusPanel({ kind, title, reason, lat, lng }) {
+function propValue(props, key) {
+  return props && props[key] ? props[key].getValue() : null;
+}
+
+function severityClassFromScore(score) {
+  if (score >= 0.85) return 'critical';
+  if (score >= 0.65) return 'elevated';
+  if (score >= 0.35) return 'active';
+  return 'resolved';
+}
+
+function setFocusPrimaryButton(label, path) {
+  const btn = document.getElementById('focus-primary-btn');
+  if (!btn) return;
+  btn.textContent = label || 'Open →';
+  btn.disabled = false;
+  btn.style.opacity = '1';
+  FOCUS_STATE.actionPath = path || null;
+}
+
+function setFocusStateText(text) {
+  const stateEl = document.getElementById('focus-state');
+  if (!stateEl) return;
+  stateEl.textContent = text || '';
+}
+
+function formatReviewHistoryPayload(payload) {
+  if (!Array.isArray(payload)) return null;
+  if (!payload.length) return 'No review history recorded yet.';
+  return payload.map(function(review, index) {
+    const state = humanReviewState(review.state || '');
+    const actor = review.actor ? 'ACTOR      ' + review.actor : 'ACTOR      operator';
+    const rationale = review.rationale ? 'RATIONALE  ' + review.rationale : 'RATIONALE  none recorded';
+    const snapshot = review.snapshot_id ? 'SNAPSHOT   ' + review.snapshot_id : '';
+    const evidence = review.evidence_bundle_hash ? 'EVIDENCE   ' + review.evidence_bundle_hash : '';
+    const age = review.age_bucket ? 'AGE        ' + String(review.age_bucket).toUpperCase() + ' · ' + tAgo(review.decided_at_unix_seconds) : '';
+    return [
+      '#' + String(index + 1).padStart(2, '0') + ' · ' + String(state || 'reviewed').toUpperCase(),
+      age,
+      actor,
+      rationale,
+      snapshot,
+      evidence,
+    ].filter(Boolean).join('\n');
+  }).join('\n\n');
+}
+
+function formatEvidencePayload(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const finding = payload.finding || payload.summary || payload.description || 'Evidence bundle loaded.';
+  const assessment = payload.assessment || payload.risk_summary || '';
+  const confidence = payload.confidence != null ? ('CONFIDENCE  ' + Math.round(Number(payload.confidence) * 100) + '%') : '';
+  const bundleHash = payload.bundle_hash ? ('BUNDLE      ' + payload.bundle_hash) : '';
+  const sources = Array.isArray(payload.evidence)
+    ? ('EVIDENCE    ' + payload.evidence.length + ' captured item' + (payload.evidence.length === 1 ? '' : 's'))
+    : '';
+  return [
+    'FINDING     ' + finding,
+    assessment ? 'ASSESSMENT  ' + assessment : '',
+    confidence,
+    bundleHash,
+    sources,
+  ].filter(Boolean).join('\n');
+}
+
+function formatReplayPayload(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const executionId = payload.execution_id || payload.manifest_hash || payload.replay_manifest_hash || '';
+  const status = payload.status || payload.result || 'ready';
+  const requestId = payload.request_id || '';
+  const steps = Array.isArray(payload.steps)
+    ? ('STEPS       ' + payload.steps.length)
+    : (Array.isArray(payload.inputs) ? 'INPUTS      ' + payload.inputs.length : '');
+  const summary = payload.summary || payload.description || payload.outcome || 'Replay artifact loaded.';
+  return [
+    executionId ? 'REPLAY      ' + executionId : 'REPLAY      ready',
+    'STATUS      ' + status,
+    requestId ? 'REQUEST     ' + requestId : '',
+    steps,
+    'SUMMARY     ' + summary,
+  ].filter(Boolean).join('\n');
+}
+
+function formatDrawerPayload(path, payload) {
+  if (path && path.indexOf('/reviews') >= 0) {
+    const formattedReviews = formatReviewHistoryPayload(payload);
+    if (formattedReviews) return formattedReviews;
+  }
+  if (path && path.indexOf('/evidence/') >= 0) {
+    const formattedEvidence = formatEvidencePayload(payload);
+    if (formattedEvidence) return formattedEvidence;
+  }
+  if (path && path.indexOf('/replay/') >= 0) {
+    const formattedReplay = formatReplayPayload(payload);
+    if (formattedReplay) return formattedReplay;
+  }
+  return typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
+}
+
+function openDrawer(title, path, payload) {
+  const drawer = document.getElementById('data-drawer');
+  const titleEl = document.getElementById('drawer-title');
+  const pathEl = document.getElementById('drawer-path');
+  const contentEl = document.getElementById('drawer-content');
+  if (!drawer || !titleEl || !pathEl || !contentEl) return;
+  const focusState = FOCUS_STATE.siteId && RECOMMENDATION_STATE[FOCUS_STATE.siteId]
+    ? ' · ' + String(RECOMMENDATION_STATE[FOCUS_STATE.siteId]).toUpperCase()
+    : '';
+  titleEl.textContent = (title || 'Operational Detail') + focusState;
+  pathEl.textContent = path || '';
+  contentEl.textContent = formatDrawerPayload(path, payload);
+  drawer.classList.add('visible');
+}
+
+async function openDrawerFromPath(title, path) {
+  if (!path) return;
+  try {
+    const payload = await API.get(path);
+    openDrawer(title, path, payload);
+  } catch (error) {
+    openDrawer(title, path, 'Failed to load operational detail: ' + String(error.message || error));
+  }
+}
+
+function closeDrawer() {
+  const drawer = document.getElementById('data-drawer');
+  if (!drawer) return;
+  drawer.classList.remove('visible');
+}
+
+function setFocusQuickLinks(links) {
+  const container = document.getElementById('focus-links');
+  if (!container) return;
+  const validLinks = (links || []).filter(function(link) { return link && link.label && link.path; });
+  if (!validLinks.length) {
+    container.innerHTML = '';
+    return;
+  }
+  container.innerHTML = validLinks.map(function(link) {
+    const cls = link.warn ? 'att-action warn' : 'att-action subtle';
+    const label = String(link.label).replace(/</g, '&lt;');
+    const safeTitle = label.replace(/'/g, '&#39;');
+    const path = String(link.path).replace(/'/g, '&#39;');
+    return '<button class="' + cls + '" onclick="openDrawerFromPath(\'' + safeTitle + '\', \'' + path + '\')">' + label + '</button>';
+  }).join('');
+}
+
+function ageBucketLabel(bucket) {
+  const value = String(bucket || '').toLowerCase();
+  if (!value) return '';
+  if (value === 'new') return 'fresh';
+  return value.replace(/_/g, ' ');
+}
+
+function setRiskContext(text) {
+  const contextEl = document.getElementById('risk-context');
+  if (!contextEl) return;
+  contextEl.textContent = text || 'Waiting for focused analytics.';
+}
+
+function setTimelineSummary(text) {
+  const summaryEl = document.getElementById('timeline-summary');
+  if (!summaryEl) return;
+  summaryEl.textContent = text || 'Event memory and forecast windows will appear here.';
+}
+
+function renderOperationalReviewStrip(counts) {
+  const strip = document.getElementById('op-review-strip');
+  if (!strip) return;
+  const pending = Number((counts && counts.pending) || 0);
+  const applied = Number((counts && counts.applied) || 0);
+  const dismissed = Number((counts && counts.dismissed) || 0);
+  const reviewed = Number((counts && counts.reviewed) || 0);
+  const pills = [];
+  if (pending > 0) pills.push('<span class="op-review-pill pending">' + pending + ' pending review</span>');
+  if (applied > 0) pills.push('<span class="op-review-pill applied">' + applied + ' applied</span>');
+  if (reviewed > 0) pills.push('<span class="op-review-pill">' + reviewed + ' reviewed</span>');
+  if (dismissed > 0) pills.push('<span class="op-review-pill dismissed">' + dismissed + ' dismissed</span>');
+  strip.innerHTML = pills.length
+    ? pills.join('')
+    : '<span class="op-review-pill">No operator review backlog</span>';
+}
+
+function forecastLayerEnabled() {
+  const toggle = document.querySelector('.legend-toggle[data-layer="forecast"]');
+  return !toggle || toggle.classList.contains('on');
+}
+
+function entityVisibleForFilter(kind, operatorState) {
+  if (CONSOLE_STATE.filter === 'site') return kind === 'site';
+  if (CONSOLE_STATE.filter === 'regional') return kind === 'region';
+  if (CONSOLE_STATE.filter === 'incident') return kind === 'canonical_event';
+  if (!reviewStateMatches(operatorState) && (kind === 'site' || kind === 'region')) return false;
+  return true;
+}
+
+function clearForecastOverlay() {
+  while (FORECAST_ENTITIES.length) {
+    const entity = FORECAST_ENTITIES.pop();
+    if (entity) viewer.entities.remove(entity);
+  }
+}
+
+function renderForecastOverlaySite(siteId, lat, lng, points, siteLabel) {
+  if (lat == null || lng == null || !points || !points.length) return;
+  const stressed = points
+    .filter(function(point) {
+      return Number(point.reserve_stress_index || 0) >= 0.45 || Number(point.modeled_price_index || 0) >= 0.7;
+    })
+    .slice(0, 4);
+  stressed.forEach(function(point, index) {
+    const stress = Number(point.reserve_stress_index || 0);
+    const price = Number(point.modeled_price_index || 0);
+    const level = stress >= 0.75 ? 'critical' : stress >= 0.55 ? 'elevated' : 'active';
+    const color = SITE_COLORS[level] || SITE_COLORS.active;
+    const entity = viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(lng, lat),
+      point: {
+        pixelSize: 7 + index,
+        color: color.withAlpha(0.95),
+        outlineColor: Cesium.Color.WHITE.withAlpha(0.4),
+        outlineWidth: 1,
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+      },
+      label: {
+        text: 'T+' + point.offset_hours + 'H',
+        font: '9px monospace',
+        fillColor: color,
+        outlineColor: Cesium.Color.BLACK,
+        outlineWidth: 2,
+        style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+        pixelOffset: new Cesium.Cartesian2(14, -10 - (index * 12)),
+        showBackground: true,
+        backgroundColor: Cesium.Color.fromCssColorString('#07111B').withAlpha(0.75),
+        scale: 0.9,
+        heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+      },
+      show: forecastLayerEnabled(),
+      properties: {
+        kind: 'site',
+        layer: 'forecast',
+        site_id: siteId,
+        label: (siteLabel ? siteLabel + ' · ' : '') + 'Forecast T+' + point.offset_hours + 'H',
+        action_path: '/v1/forecast/sites/' + siteId + '/scenario?horizon_hours=24',
+        reason: 'Reserve stress ' + (stress * 100).toFixed(0) + '% · price index ' + (price * 100).toFixed(0) + '%.',
+      },
+    });
+    FORECAST_ENTITIES.push(entity);
+  });
+}
+
+function renderForecastOverlay(siteId, lat, lng, points, siteLabel) {
+  clearForecastOverlay();
+  renderForecastOverlaySite(siteId, lat, lng, points, siteLabel);
+}
+
+async function renderRegionalForecastOverlay(regionId) {
+  clearForecastOverlay();
+  if (!regionId) return;
+  try {
+    const siteData = await API.get('/v1/passive/map/sites?region_id=' + encodeURIComponent(regionId));
+    const sites = (siteData.sites || [])
+      .filter(function(site) { return site.site_id && site.coordinates; })
+      .sort(function(left, right) { return Number(right.risk_score || 0) - Number(left.risk_score || 0); })
+      .slice(0, 3);
+    const scenarios = await Promise.all(sites.map(function(site) {
+      return API.get('/v1/forecast/sites/' + encodeURIComponent(site.site_id) + '/scenario?horizon_hours=24')
+        .then(function(scenario) { return { site, scenario }; })
+        .catch(function() { return null; });
+    }));
+    scenarios.filter(Boolean).forEach(function(entry) {
+      renderForecastOverlaySite(
+        entry.site.site_id,
+        entry.site.coordinates.lat,
+        entry.site.coordinates.lon,
+        entry.scenario.points || [],
+        entry.site.name || entry.site.seed_key || 'Site'
+      );
+    });
+  } catch (_) { /* leave */ }
+}
+
+async function setRecommendationState(siteId, stateLabel) {
+  if (!siteId || !stateLabel) return;
+  const snapshotId = FOCUS_STATE.lastRecommendation && FOCUS_STATE.lastRecommendation.snapshot_id
+    ? FOCUS_STATE.lastRecommendation.snapshot_id
+    : null;
+  await API.post('/v1/orchestrator/sites/' + encodeURIComponent(siteId) + '/reviews', {
+    state: String(stateLabel).charAt(0).toUpperCase() + String(stateLabel).slice(1),
+    actor: 'operator_console',
+    rationale: 'Recorded from command center focus panel',
+    snapshot_id: snapshotId,
+  });
+  RECOMMENDATION_STATE[siteId] = stateLabel;
+  setFocusStateText('RECOMMENDATION ' + String(stateLabel).toUpperCase());
+  if (FOCUS_STATE.siteId === siteId) {
+    refreshFocusedSiteAnalytics().catch(() => {});
+  }
+}
+
+async function executeRecommendedAction(action) {
+  if (!action || !action.path) return;
+  const list = document.getElementById('recommended-actions-list');
+  if (list) list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:6px 0;line-height:1.6;">Executing action…</div>';
+  let payload = {};
+  if (action.path.indexOf('/worker/heartbeats/prune') >= 0) {
+    payload = { older_than_seconds: 86400 };
+  } else if (action.path.indexOf('/source-health/samples/prune') >= 0) {
+    payload = { older_than_seconds: 2592000, dry_run: false };
+  }
+  try {
+    const result = await API.post(action.path, payload);
+    openDrawer(action.title || 'Action result', action.path, result);
+  } catch (error) {
+    openDrawer(action.title || 'Action failed', action.path, 'Failed to execute: ' + String(error.message || error));
+  }
+  await refreshAll();
+}
+
+async function executeRecommendedActionByIndex(index) {
+  const action = lastRecommendedActions[index];
+  if (!action) return;
+  await executeRecommendedAction(action);
+}
+
+function inspectRecommendedActionByIndex(index) {
+  const action = lastRecommendedActions[index];
+  if (!action) return;
+  openDrawer(action.title || 'Recommended action', action.path || '', action);
+}
+
+function pushPressureHistory(points) {
+  PRESSURE_HISTORY.length = 0;
+  (points || []).slice(-12).forEach(function(point) {
+    PRESSURE_HISTORY.push(point);
+  });
+}
+
+function renderTimelineEntries(entries) {
+  const strip = document.getElementById('timeline-events');
+  if (!strip) return;
+  if (!entries || !entries.length) {
+    strip.innerHTML = '';
+    return;
+  }
+  const now = Date.now();
+  const start = now - 36 * 3600 * 1000;
+  const total = 72 * 3600 * 1000;
+  strip.innerHTML = entries
+    .map(function(entry) {
+      const ts = (entry.target_epoch_unix_seconds || entry.last_observed_at_unix_seconds || 0) * 1000;
+      const pct = Math.max(2, Math.min(97, ((ts - start) / total) * 100));
+      const cls = entry.forecast ? 'forecast' : (entry.className || sevCls(entry.severity));
+      const title = (entry.title || 'event').replace(/'/g, '');
+      const reason = (entry.reason || '').replace(/'/g, ' ').substring(0, 120);
+      const kind = entry.kind || (entry.forecast ? 'site' : 'canonical_event');
+      const lat = entry.lat != null ? entry.lat : 'null';
+      const lng = entry.lng != null ? entry.lng : 'null';
+      const siteId = entry.siteId ? String(entry.siteId).replace(/'/g, '') : '';
+      const regionId = entry.regionId ? String(entry.regionId).replace(/'/g, '') : '';
+      const actionPath = entry.actionPath ? String(entry.actionPath).replace(/'/g, '') : '';
+      const evidencePath = entry.evidencePath ? String(entry.evidencePath).replace(/'/g, '') : '';
+      const replayPath = entry.replayPath ? String(entry.replayPath).replace(/'/g, '') : '';
+      const style = cls === 'forecast'
+        ? 'left:' + pct.toFixed(1) + '%;cursor:pointer;'
+        : 'left:' + pct.toFixed(1) + '%;cursor:pointer;';
+      return '<div class="timeline-event ' + cls + '" '
+        + 'style="' + style + '" '
+        + 'title="' + title + '" '
+        + 'onclick="openFocusPanel({kind:\'' + kind + '\',title:\'' + title + '\',reason:\'' + reason + '\',lat:' + lat + ',lng:' + lng + ',siteId:\'' + siteId + '\',regionId:\'' + regionId + '\',actionPath:\'' + actionPath + '\',evidencePath:\'' + evidencePath + '\',replayPath:\'' + replayPath + '\'})">'
+        + '<div class="timeline-event-label">' + title + '</div></div>';
+    })
+    .join('');
+}
+
+async function refreshGlobalAnalytics() {
+  try {
+    clearForecastOverlay();
+    const data = await API.get('/v1/passive/command-center/summary');
+    const topSite = data.dashboard && data.dashboard.top_sites ? data.dashboard.top_sites[0] : null;
+    const topRegion = data.highlights ? data.highlights.top_region : null;
+    const pressure = topSite ? Number(topSite.risk_score || 0) : 0;
+    const reviewCounts = (data.dashboard && data.dashboard.regions ? data.dashboard.regions : []).reduce(function(acc, region) {
+      acc.pending += Number(region.recommendation_pending_review_count || 0);
+      acc.reviewed += Number(region.recommendation_reviewed_count || 0);
+      acc.applied += Number(region.recommendation_applied_count || 0);
+      acc.dismissed += Number(region.recommendation_dismissed_count || 0);
+      return acc;
+    }, { pending: 0, reviewed: 0, applied: 0, dismissed: 0 });
+    PRESSURE_HISTORY.push({ t: Date.now(), score: pressure });
+    if (PRESSURE_HISTORY.length > 12) PRESSURE_HISTORY.shift();
+    const titleEl = document.getElementById('risk-trend-title');
+    if (titleEl) titleEl.textContent = topRegion ? topRegion.name + ' Risk' : 'Region Risk';
+    const windowEl = document.getElementById('risk-trend-window');
+    if (windowEl) windowEl.textContent = CONSOLE_STATE.window.toUpperCase();
+    updateRiskTrend(pressure);
+    setRiskContext(topRegion
+      ? semanticRiskDeltaSentence(
+          topRegion.risk_delta_classification,
+          topRegion.risk_delta_explanation || (topRegion.name + ' is carrying the dominant regional pressure in the current ' + CONSOLE_STATE.window.toUpperCase() + ' window.')
+        )
+      : (topSite
+        ? semanticRiskDeltaSentence(
+            topSite.risk_delta_classification,
+            topSite.risk_delta_explanation || ('Top site ' + topSite.name + ' is carrying ' + (pressure * 100).toFixed(0) + '% modeled pressure in the current ' + CONSOLE_STATE.window.toUpperCase() + ' window.')
+          )
+        : 'No focused site selected. Global pressure reflects the most elevated monitored surface.'));
+    renderTimelineEntries((data.dashboard && data.dashboard.top_canonical_events) || []);
+    setTimelineSummary('Global timeline showing canonical event memory across the current command window.');
+    setFocusPrimaryButton('Open →', null);
+    setFocusQuickLinks([]);
+    setFocusStateText('');
+    renderOperationalReviewStrip(reviewCounts);
+  } catch (_) { /* leave */ }
+}
+
+async function refreshFocusedSiteAnalytics() {
+  if (FOCUS_STATE.kind !== 'site' || !FOCUS_STATE.siteId) {
+    if (FOCUS_STATE.kind === 'region' && FOCUS_STATE.regionId) {
+      try {
+        const regionId = FOCUS_STATE.regionId;
+        const [overview, siteData, commandCenter] = await Promise.all([
+          API.get('/v1/passive/regions/' + encodeURIComponent(regionId) + '/overview'),
+          API.get('/v1/passive/map/sites?region_id=' + encodeURIComponent(regionId)),
+          API.get('/v1/passive/command-center/summary'),
+        ]);
+        const sites = (siteData.sites || []).slice();
+        const pendingSites = sites.filter(function(site) {
+          return !site.recommendation_review_state && site.has_recommendation;
+        });
+        const appliedSites = sites.filter(function(site) {
+          return String(site.recommendation_review_state || '').toLowerCase() === 'applied';
+        });
+        const reviewedSites = sites.filter(function(site) {
+          return String(site.recommendation_review_state || '').toLowerCase() === 'reviewed';
+        });
+        const dismissedSites = sites.filter(function(site) {
+          return String(site.recommendation_review_state || '').toLowerCase() === 'dismissed';
+        });
+        const observedSites = sites.filter(function(site) { return !!site.observed; });
+        const elevatedSites = sites.filter(function(site) { return !!site.elevated; });
+        const topRiskSite = sites
+          .slice()
+          .sort(function(left, right) { return Number(right.risk_score || 0) - Number(left.risk_score || 0); })[0];
+        const focusDetail = document.getElementById('focus-detail');
+        if (focusDetail) {
+          focusDetail.textContent =
+            'SITES ' + sites.length
+            + ' · OBSERVED ' + observedSites.length
+            + ' · ELEVATED ' + elevatedSites.length
+            + ' · PENDING REVIEW ' + pendingSites.length;
+        }
+        const focusReason = document.getElementById('focus-reason');
+        if (focusReason) {
+          focusReason.textContent = overview.narrative || ('Regional monitoring active across ' + sites.length + ' site candidates.');
+        }
+        const narEl = document.getElementById('narrative-text');
+        const metaEl = document.getElementById('narrative-meta');
+        if (narEl) {
+          narEl.textContent = overview.narrative || 'Regional monitoring active.';
+          narEl.style.color = '';
+        }
+        if (metaEl) {
+          metaEl.innerHTML =
+            '<span>SITES · ' + sites.length + '</span>' +
+            '<span>PENDING REVIEW · ' + pendingSites.length + '</span>' +
+            '<span>ELEVATED · ' + elevatedSites.length + '</span>';
+        }
+        setFocusQuickLinks([
+          { label: 'Region Overview', path: '/v1/passive/regions/' + encodeURIComponent(regionId) + '/overview' },
+          { label: 'Region Sites', path: '/v1/passive/map/sites?region_id=' + encodeURIComponent(regionId) },
+          { label: 'Command Summary', path: '/v1/passive/command-center/summary' },
+        ]);
+        setFocusPrimaryButton('Open Region →', '/v1/passive/regions/' + encodeURIComponent(regionId) + '/overview');
+        setFocusStateText(pendingSites.length > 0 ? 'REGION NEEDS REVIEW' : 'REGION FORECAST OVERLAY ACTIVE');
+        const focusReview = document.getElementById('focus-review');
+        if (focusReview) {
+          focusReview.textContent =
+            'PENDING · ' + pendingSites.length
+            + '\nREVIEWED · ' + reviewedSites.length
+            + '\nAPPLIED · ' + appliedSites.length
+            + '\nDISMISSED · ' + dismissedSites.length;
+        }
+        setRiskContext(
+          semanticRiskDeltaSentence(
+            overview.risk_delta_classification || (topRiskSite && topRiskSite.risk_delta_classification),
+            overview.risk_delta_explanation || (topRiskSite && topRiskSite.risk_delta_explanation) || (topRiskSite ? ('Top regional site ' + topRiskSite.name + ' is carrying ' + (Number(topRiskSite.risk_score || 0) * 100).toFixed(0) + '% modeled pressure.') : 'Regional risk context will appear as monitored sites accumulate live signals.')
+          )
+        );
+        renderOperationalReviewStrip({
+          pending: pendingSites.length,
+          reviewed: reviewedSites.length,
+          applied: appliedSites.length,
+          dismissed: dismissedSites.length,
+        });
+        const topEvents = (((commandCenter.dashboard || {}).top_canonical_events) || [])
+          .filter(function(event) { return event.region_id === regionId; })
+          .slice(0, 6);
+        renderTimelineEntries(topEvents);
+        setTimelineSummary(
+          pendingSites.length > 0
+            ? (pendingSites.length + ' site recommendation' + (pendingSites.length === 1 ? '' : 's') + ' waiting on operator review in this region.')
+            : 'Regional timeline showing canonical memory for the selected command surface.'
+        );
+        const recList = document.getElementById('recommended-actions-list');
+        if (recList) {
+          const focusSites = (pendingSites.length ? pendingSites : sites)
+            .slice()
+            .sort(function(left, right) { return Number(right.risk_score || 0) - Number(left.risk_score || 0); })
+            .slice(0, 3);
+          recList.innerHTML = focusSites.length
+            ? focusSites.map(function(site) {
+              const state = site.recommendation_review_state
+                ? humanReviewState(site.recommendation_review_state)
+                : (site.has_recommendation ? 'pending review' : 'monitoring');
+              const path = site.overview_path || ('/v1/passive/sites/' + encodeURIComponent(site.site_id || '') + '/overview');
+              const narrativePath = site.narrative_path || '';
+              return '<div style="padding:11px 12px;background:var(--bg-elevated);border-left:2px solid var(--amber);border-radius:0 2px 2px 0;">'
+                + '<div style="font-size:12px;color:var(--text-primary);line-height:1.4;">' + escapeHtml(site.name || site.seed_key || 'Site') + '</div>'
+                + '<div style="font-size:11px;color:var(--text-secondary);margin-top:3px;line-height:1.4;">' + escapeHtml(site.status_reason || site.priority_reason || 'Site candidate under regional watch.') + '</div>'
+                + '<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-tertiary);margin-top:6px;letter-spacing:0.08em;">STATE ' + escapeHtml(String(state).toUpperCase()) + ' · RISK ' + (Number(site.risk_score || 0) * 100).toFixed(0) + '%</div>'
+                + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">'
+                + '<button class="att-action subtle" onclick="openDrawerFromPath(\'Site Overview\', \'' + path.replace(/'/g, '&#39;') + '\')">Inspect</button>'
+                + (narrativePath ? '<button class="att-action" onclick="openDrawerFromPath(\'Site Narrative\', \'' + narrativePath.replace(/'/g, '&#39;') + '\')">Narrative</button>' : '')
+                + '</div></div>';
+            }).join('')
+            : '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:6px 0;line-height:1.6;">No region-specific actions required in the current window.</div>';
+        }
+      } catch (_) {
+        await refreshGlobalAnalytics();
+      }
+      await renderRegionalForecastOverlay(FOCUS_STATE.regionId);
+      return;
+    }
+    await refreshGlobalAnalytics();
+    return;
+  }
+  try {
+    const siteId = FOCUS_STATE.siteId;
+    const [overview, scenario, recommendation, decisions, reviews] = await Promise.all([
+      API.get('/v1/passive/sites/' + encodeURIComponent(siteId) + '/overview?limit=12'),
+      API.get('/v1/forecast/sites/' + encodeURIComponent(siteId) + '/scenario?horizon_hours=24'),
+      API.post('/v1/orchestrator/sites/' + encodeURIComponent(siteId) + '/recommend', {
+        horizon_hours: 24,
+        battery_state_of_charge: 0.45,
+        reserve_margin_ratio: 0.18,
+        price_signal_bias: 0.0,
+      }),
+      API.get('/v1/orchestrator/sites/' + encodeURIComponent(siteId) + '/decisions?limit=5').catch(function() { return []; }),
+      API.get('/v1/orchestrator/sites/' + encodeURIComponent(siteId) + '/reviews?limit=5').catch(function() { return []; }),
+    ]);
+
+    FOCUS_STATE.lastRecommendation = recommendation;
+    FOCUS_STATE.narrativePath = '/v1/passive/sites/' + encodeURIComponent(siteId) + '/narrative?days=30';
+    FOCUS_STATE.actionPath = '/v1/passive/sites/' + encodeURIComponent(siteId) + '/overview';
+
+    const narEl = document.getElementById('narrative-text');
+    const metaEl = document.getElementById('narrative-meta');
+    if (narEl) {
+      narEl.textContent = (overview.risk_history_narrative && overview.risk_history_narrative.narrative)
+        || recommendation.operational_reason
+        || 'Focused site analytics active.';
+      narEl.style.color = '';
+    }
+    if (metaEl) {
+      metaEl.innerHTML =
+        '<span>EVENTS · ' + ((overview.recent_events || []).length) + '</span>' +
+        '<span>PATTERNS · ' + ((overview.recurring_patterns || []).length) + '</span>' +
+        '<span>FORECAST · ' + (scenario.horizon_hours || 24) + 'H</span>';
+    }
+    const focusDetail = document.getElementById('focus-detail');
+    if (focusDetail) {
+      const confidence = Number(recommendation.confidence || 0) * 100;
+      const sourceCount = overview.seed_lifecycle ? Number(overview.seed_lifecycle.source_count || 0) : 0;
+      focusDetail.textContent =
+        'CONFIDENCE ' + confidence.toFixed(0) + '% · SOURCES ' + sourceCount + ' · ACTION ' + String(recommendation.action || 'monitor_only').replace(/_/g, ' ');
+    }
+
+    const focusReason = document.getElementById('focus-reason');
+    if (focusReason) {
+      focusReason.textContent = recommendation.operational_reason + ' ' + recommendation.expected_benefit;
+    }
+    setFocusPrimaryButton('Open Overview →', FOCUS_STATE.actionPath);
+    const provenance = overview.risk_history_narrative ? overview.risk_history_narrative.provenance : null;
+    setFocusQuickLinks([
+      { label: 'Narrative', path: '/v1/passive/sites/' + encodeURIComponent(siteId) + '/narrative?days=30' },
+      { label: 'Forecast', path: '/v1/forecast/sites/' + encodeURIComponent(siteId) + '/scenario?horizon_hours=24' },
+      { label: 'Reviews', path: '/v1/orchestrator/sites/' + encodeURIComponent(siteId) + '/reviews?limit=10' },
+      provenance && provenance.bundle_hashes && provenance.bundle_hashes[0]
+        ? { label: 'Evidence', path: '/v1/evidence/' + provenance.bundle_hashes[0], warn: true }
+        : null,
+      provenance && provenance.manifest_hashes && provenance.manifest_hashes[0]
+        ? { label: 'Replay', path: '/v1/replay/' + provenance.manifest_hashes[0], warn: true }
+        : null,
+    ]);
+    const latestReview = Array.isArray(reviews) && reviews.length ? reviews[0] : null;
+    const recommendationState = latestReview && latestReview.state
+      ? String(latestReview.state).toLowerCase()
+      : RECOMMENDATION_STATE[siteId];
+    if (recommendationState) {
+      RECOMMENDATION_STATE[siteId] = recommendationState;
+    }
+    setFocusStateText(recommendationState ? ('RECOMMENDATION ' + String(recommendationState).toUpperCase()) : 'RECOMMENDATION PENDING REVIEW');
+    const focusReview = document.getElementById('focus-review');
+    if (focusReview) {
+      if (latestReview) {
+        focusReview.textContent =
+          'LAST REVIEW · ' + tAgo(latestReview.decided_at_unix_seconds)
+          + '\nSTATE · ' + humanReviewState(latestReview.state || recommendationState || '')
+          + (latestReview.actor ? '\nACTOR · ' + latestReview.actor : '')
+          + (latestReview.rationale ? '\nRATIONALE · ' + latestReview.rationale : '');
+      } else {
+        focusReview.textContent = recommendationState === 'pending_review'
+          ? 'LAST REVIEW · Awaiting operator decision'
+          : '';
+      }
+    }
+    renderOperationalReviewStrip({
+      pending: recommendationState === 'pending_review' ? 1 : 0,
+      reviewed: recommendationState === 'reviewed' ? 1 : 0,
+      applied: recommendationState === 'applied' ? 1 : 0,
+      dismissed: recommendationState === 'dismissed' ? 1 : 0,
+    });
+
+    const riskTitleEl = document.getElementById('risk-trend-title');
+    const riskWindowEl = document.getElementById('risk-trend-window');
+    if (riskTitleEl) riskTitleEl.textContent = (overview.site && overview.site.site && overview.site.site.name ? overview.site.site.name : FOCUS_STATE.title || 'Site') + ' Risk';
+    if (riskWindowEl) riskWindowEl.textContent = (scenario.horizon_hours || 24) + 'H';
+    setRiskContext(semanticRiskDeltaSentence(
+      overview.risk_history_narrative && overview.risk_history_narrative.risk_direction,
+      (overview.site && overview.site.risk_delta_explanation)
+        || (overview.risk_history_narrative && overview.risk_history_narrative.narrative)
+        || recommendation.expected_benefit
+    ));
+
+    const historyPoints = ((overview.temporal_evolution || []).slice(-12)).map(function(point) {
+      return {
+        t: point.window_end_unix_seconds,
+        score: Math.max(Number(point.peak_risk || 0), Number(point.cumulative_risk || 0)),
+      };
+    });
+    if (historyPoints.length) {
+      pushPressureHistory(historyPoints);
+      updateRiskTrend(historyPoints[historyPoints.length - 1].score);
+    } else {
+      const forecastPoints = (scenario.points || []).slice(0, 12).map(function(point) {
+        return { t: point.target_epoch_unix_seconds, score: Number(point.reserve_stress_index || 0) };
+      });
+      pushPressureHistory(forecastPoints);
+      updateRiskTrend(forecastPoints.length ? forecastPoints[forecastPoints.length - 1].score : 0);
+    }
+
+    const recentEntries = (overview.recent_events || []).map(function(event) {
+      return {
+        kind: 'canonical_event',
+        title: (event.site_name || event.threat_type || 'event').toUpperCase(),
+        reason: event.summary || '',
+        severity: severityClassFromScore(Number(event.risk_score || 0)),
+        last_observed_at_unix_seconds: event.observed_at_unix_seconds,
+        lat: _focusCoords.lat,
+        lng: _focusCoords.lng,
+        siteId: siteId,
+        actionPath: '/v1/passive/sites/' + encodeURIComponent(siteId) + '/overview',
+      };
+    });
+    const forecastEntries = (scenario.points || [])
+      .filter(function(point) {
+        return Number(point.reserve_stress_index || 0) >= 0.45 || Number(point.modeled_price_index || 0) >= 0.7;
+      })
+      .slice(0, 6)
+      .map(function(point) {
+        const stress = Number(point.reserve_stress_index || 0);
+        return {
+          kind: 'site',
+          title: 'FORECAST T+' + point.offset_hours + 'H',
+          reason: 'Reserve stress ' + (stress * 100).toFixed(0) + '% · price index ' + (Number(point.modeled_price_index || 0) * 100).toFixed(0) + '%.',
+          forecast: true,
+          className: 'forecast',
+          target_epoch_unix_seconds: point.target_epoch_unix_seconds,
+          lat: _focusCoords.lat,
+          lng: _focusCoords.lng,
+          siteId: siteId,
+          actionPath: '/v1/forecast/sites/' + encodeURIComponent(siteId) + '/scenario?horizon_hours=24',
+        };
+      });
+    renderTimelineEntries(recentEntries.concat(forecastEntries));
+    setTimelineSummary(
+      ((overview.recent_events || []).length) + ' recent event' + (((overview.recent_events || []).length) === 1 ? '' : 's')
+      + ' · ' + forecastEntries.length + ' forecast window' + (forecastEntries.length === 1 ? '' : 's')
+      + ' promoted into the next ' + (scenario.horizon_hours || 24) + 'h.'
+    );
+    renderForecastOverlay(
+      siteId,
+      _focusCoords.lat,
+      _focusCoords.lng,
+      scenario.points || [],
+      overview.site && overview.site.site ? overview.site.site.name : ''
+    );
+
+    const recList = document.getElementById('recommended-actions-list');
+    if (recList) {
+      const decisionCount = Array.isArray(decisions) ? decisions.length : 0;
+      const reviewed = RECOMMENDATION_STATE[siteId];
+      const reviewMeta = latestReview
+        ? ('LAST REVIEW ' + tAgo(latestReview.decided_at_unix_seconds)
+          + (latestReview.actor ? ' · ' + escapeHtml(latestReview.actor) : '')
+          + (latestReview.rationale ? '<br>' + escapeHtml(latestReview.rationale) : ''))
+        : 'AWAITING OPERATOR DECISION';
+      recList.innerHTML =
+        '<div style="padding:11px 12px;background:var(--bg-elevated);border-left:2px solid var(--teal);border-radius:0 2px 2px 0;">'
+        + '<div style="font-size:12px;color:var(--text-primary);line-height:1.4;">' + escapeHtml(String(recommendation.action || 'monitor_only').replace(/_/g, ' ').toUpperCase()) + '</div>'
+        + '<div style="font-size:11px;color:var(--text-secondary);margin-top:3px;line-height:1.4;">' + escapeHtml(recommendation.expected_benefit || 'Operational recommendation ready.') + '</div>'
+        + '<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-tertiary);margin-top:6px;letter-spacing:0.08em;">'
+        + 'CONFIDENCE ' + (Number(recommendation.confidence || 0) * 100).toFixed(0) + '% · DECISIONS ' + decisionCount
+        + (reviewed ? ' · STATE ' + String(reviewed).toUpperCase() : '')
+        + '</div>'
+        + '<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-secondary);margin-top:8px;line-height:1.7;">' + reviewMeta + '</div>'
+        + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">'
+        + '<button class="att-action subtle" onclick="setRecommendationState(\'' + siteId + '\', \'reviewed\').catch(() => {})">Review</button>'
+        + '<button class="att-action" onclick="setRecommendationState(\'' + siteId + '\', \'applied\').catch(() => {})">Apply</button>'
+        + '<button class="att-action warn" onclick="setRecommendationState(\'' + siteId + '\', \'dismissed\').catch(() => {})">Dismiss</button>'
+        + '<button class="att-action subtle" onclick="openDrawerFromPath(\'Recommendation Reviews\', \'/v1/orchestrator/sites/' + encodeURIComponent(siteId) + '/reviews?limit=10\')">History</button>'
+        + '</div></div>';
+    }
+  } catch (_) { /* leave */ }
+}
+
+function openFocusPanel({ kind, title, reason, lat, lng, siteId, regionId, actionPath, narrativePath, evidencePath, replayPath, operatorState }) {
   const panel   = document.getElementById('focus-panel');
   const fKind   = document.getElementById('focus-kind');
   const fTitle  = document.getElementById('focus-title');
   const fReason = document.getElementById('focus-reason');
   const fCoords = document.getElementById('focus-coords');
+  const focusReview = document.getElementById('focus-review');
   if (!panel) return;
   const kindLabel = { site: 'SITE', region: 'REGION', canonical_event: 'EVENT', neo: 'NEO', maintenance: 'MAINTENANCE' }[kind] || (kind || 'SITE').toUpperCase();
   const kindCls   = kind === 'region' ? 'region' : kind === 'canonical_event' ? 'event' : '';
@@ -3237,13 +4336,32 @@ function openFocusPanel({ kind, title, reason, lat, lng }) {
   fTitle.textContent  = title || '\u2014';
   fReason.textContent = reason || '';
   fCoords.textContent = lat != null ? lat.toFixed(4) + '\u00b0N \u00b7 ' + lng.toFixed(4) + '\u00b0' : '';
+  const focusDetail = document.getElementById('focus-detail');
+  if (focusDetail) focusDetail.textContent = '';
+  if (focusReview) focusReview.textContent = '';
   _focusCoords = { lat, lng };
+  FOCUS_STATE.kind = kind || null;
+  FOCUS_STATE.siteId = siteId || null;
+  FOCUS_STATE.regionId = regionId || null;
+  FOCUS_STATE.actionPath = actionPath || null;
+  FOCUS_STATE.narrativePath = narrativePath || null;
+  FOCUS_STATE.evidencePath = evidencePath || null;
+  FOCUS_STATE.replayPath = replayPath || null;
+  FOCUS_STATE.title = title || null;
   panel.classList.add('visible');
   if (lat != null) focusOnGlobe(lat, lng);
+  setFocusPrimaryButton(actionPath ? 'Open →' : 'Recenter →', actionPath || null);
+  setFocusQuickLinks([
+    narrativePath ? { label: 'Narrative', path: narrativePath } : null,
+    evidencePath ? { label: 'Evidence', path: evidencePath, warn: true } : null,
+    replayPath ? { label: 'Replay', path: replayPath, warn: true } : null,
+  ].filter(Boolean));
+  setFocusStateText(operatorState ? ('RECOMMENDATION ' + String(operatorState).replace(/_/g, ' ').toUpperCase()) : '');
+  refreshFocusedSiteAnalytics().catch(() => {});
 }
 
 // --- Console state (filter + time window) ---
-const CONSOLE_STATE = { filter: 'global', window: '72h' };
+const CONSOLE_STATE = { filter: 'global', reviewState: 'all', window: '72h' };
 function windowAfterUnix() {
   const secs = { '24h': 86400, '72h': 259200, '7d': 604800, '30d': 2592000 };
   return Math.floor(Date.now() / 1000) - (secs[CONSOLE_STATE.window] || 259200);
@@ -3256,6 +4374,7 @@ document.querySelectorAll('.chip-group').forEach(group => {
       group.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
       chip.classList.add('active');
       if (chip.dataset.filter) CONSOLE_STATE.filter = chip.dataset.filter;
+      if (chip.dataset.reviewState) CONSOLE_STATE.reviewState = chip.dataset.reviewState;
       if (chip.dataset.window) CONSOLE_STATE.window = chip.dataset.window;
       refreshAll();
     });
@@ -3292,13 +4411,50 @@ document.querySelectorAll('.legend-toggle').forEach(t => {
       if (r && r.bbox) {
         const lat = (r.bbox.south + r.bbox.north) / 2;
         const lng = (r.bbox.west  + r.bbox.east)  / 2;
-        openFocusPanel({ kind: 'region', title: r.name || r.region_id, reason: (r.seeds_elevated || 0) + ' seeds elevated \u00b7 ' + (r.seeds_known || 0) + ' indexed', lat: lat, lng: lng });
+        openFocusPanel({
+          kind: 'region',
+          title: r.name || r.region_id,
+          reason: (r.seeds_elevated || 0) + ' seeds elevated \u00b7 ' + (r.seeds_known || 0) + ' indexed',
+          lat: lat,
+          lng: lng,
+          regionId: r.region_id || '',
+          actionPath: '/v1/passive/regions/' + r.region_id + '/overview',
+          operatorState: r.recommendation_pending_review_count > 0 ? 'pending_review' : (r.recommendation_applied_count > 0 ? 'applied' : (r.recommendation_reviewed_count > 0 ? 'reviewed' : (r.recommendation_dismissed_count > 0 ? 'dismissed' : ''))),
+        });
+        input.value = '';
+        return;
+      }
+      const s = GLOBE_DATA.sites.find(function(s) { return ((s.name || '') + ' ' + (s.seed_key || '')).toLowerCase().includes(q); });
+      if (s && s.coordinates) {
+        openFocusPanel({
+          kind: 'site',
+          title: s.name || s.seed_key || 'Site',
+          reason: s.status_reason || s.priority_reason || '',
+          lat: s.coordinates.lat,
+          lng: s.coordinates.lon,
+          siteId: s.site_id || '',
+          regionId: s.region_id || '',
+          actionPath: s.overview_path || '',
+          narrativePath: s.narrative_path || '',
+          operatorState: s.recommendation_review_state ? String(s.recommendation_review_state).toLowerCase() : (s.has_recommendation ? 'pending_review' : ''),
+        });
         input.value = '';
         return;
       }
       const ev = GLOBE_DATA.events.find(function(e) { return ((e.site_name || '') + ' ' + (e.event_type || '') + ' ' + (e.summary || '')).toLowerCase().includes(q); });
       if (ev && ev.coordinates) {
-        openFocusPanel({ kind: 'canonical_event', title: ev.site_name || ev.event_type || 'Event', reason: ev.summary || ev.operational_readout || '', lat: ev.coordinates.lat, lng: ev.coordinates.lon });
+        openFocusPanel({
+          kind: 'canonical_event',
+          title: ev.site_name || ev.event_type || 'Event',
+          reason: ev.summary || ev.operational_readout || '',
+          lat: ev.coordinates.lat,
+          lng: ev.coordinates.lon,
+          siteId: ev.site_id || '',
+          regionId: ev.region_id || '',
+          actionPath: ev.site_id ? '/v1/passive/sites/' + ev.site_id + '/overview' : '',
+          evidencePath: ev.bundle_hashes && ev.bundle_hashes[0] ? '/v1/evidence/' + ev.bundle_hashes[0] : '',
+          replayPath: ev.manifest_hashes && ev.manifest_hashes[0] ? '/v1/replay/' + ev.manifest_hashes[0] : '',
+        });
         input.value = '';
       }
     }, 350);
@@ -3332,6 +4488,16 @@ const API = {
     const json = await res.json();
     if (!res.ok) throw new Error((json.error && json.error.message) || 'HTTP ' + res.status);
     return json.data !== undefined ? json.data : json;
+  },
+  async post(path, payload) {
+    const res = await fetch(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload || {}),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error((json.error && json.error.message) || 'HTTP ' + res.status);
+    return json.data !== undefined ? json.data : json;
   }
 };
 
@@ -3343,6 +4509,42 @@ function tAgo(ts) {
   if (d < 3600)  return Math.floor(d / 60) + 'm ago';
   if (d < 86400) return Math.floor(d / 3600) + 'h ago';
   return Math.floor(d / 86400) + 'd ago';
+}
+
+function escapeHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function humanReviewState(stateValue) {
+  const value = String(stateValue || '').toLowerCase();
+  if (!value) return '';
+  return value.replace(/_/g, ' ');
+}
+
+function semanticRiskDeltaLabel(deltaValue) {
+  const value = String(deltaValue || '').toLowerCase();
+  if (!value) return '';
+  if (value === 'spike') return 'spiking';
+  if (value === 'increase') return 'rising';
+  if (value === 'decrease') return 'cooling';
+  return 'stable';
+}
+
+function semanticRiskDeltaSentence(label, explanation) {
+  const cleanLabel = semanticRiskDeltaLabel(label);
+  if (!cleanLabel && !explanation) return 'Pressure is steady in the current window.';
+  if (!cleanLabel) return explanation;
+  return 'Risk is ' + cleanLabel + (explanation ? '. ' + explanation : '.');
+}
+
+function reviewStateMatches(stateValue) {
+  if (!CONSOLE_STATE.reviewState || CONSOLE_STATE.reviewState === 'all') return true;
+  return String(stateValue || '') === CONSOLE_STATE.reviewState;
 }
 
 // CanonicalPassiveEvent.severity → CSS marker class
@@ -3430,36 +4632,43 @@ async function refreshNarrative() {
 // regions: [{ name, state: 'healthy'|'pressured'|'degraded'|'failing' }]
 async function refreshSourceHealth() {
   try {
-    const data    = await API.get('/v1/passive/operational-visibility');
+    const data    = await API.get('/v1/passive/command-center/summary');
     const grid    = document.getElementById('source-health-list');
     const cnt     = document.getElementById('source-count');
     const sysEl   = document.getElementById('sys-sources');
     if (!grid) return;
-    const regions = data.regions || [];
-    if (!regions.length) {
-      grid.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">No regions configured.</div>';
+    const sources = (data.dashboard && data.dashboard.source_health) || [];
+    if (!sources.length) {
+      grid.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">No source health samples available yet.</div>';
       if (cnt) cnt.textContent = '\u2014';
-      if (sysEl) sysEl.textContent = 'no regions';
+      if (sysEl) sysEl.textContent = 'no feeds';
       return;
     }
-    const score = { healthy: 97, pressured: 62, degraded: 35, failing: 14 };
-    const cls   = { healthy: 'healthy', pressured: 'degraded', degraded: 'degraded', failing: 'failing' };
-    const nHealthy = regions.filter(r => r.state === 'healthy').length;
-    if (cnt)   cnt.textContent  = nHealthy + ' / ' + regions.length;
-    if (sysEl) sysEl.textContent = nHealthy + ' / ' + regions.length + ' regions';
-    grid.innerHTML = regions.map(r => {
-      const sc = score[r.state] || 50;
-      const cl = cls[r.state]   || 'degraded';
-      const nm = (r.name || r.region_id || 'REGION').toUpperCase().substring(0, 14);
+    const scoreByStatus = { healthy: 97, watch: 72, degraded: 38, stale: 16 };
+    const classByStatus = { healthy: 'healthy', watch: 'degraded', degraded: 'degraded', stale: 'failing' };
+    const healthyCount = sources.filter(function(source) { return String(source.health_status || '').toLowerCase() === 'healthy'; }).length;
+    if (cnt) cnt.textContent = healthyCount + ' / ' + sources.length;
+    if (sysEl) sysEl.textContent = healthyCount + ' / ' + sources.length + ' feeds';
+    grid.innerHTML = sources.slice(0, 6).map(function(source) {
+      const status = String(source.health_status || 'degraded').toLowerCase();
+      const sc = scoreByStatus[status] || Math.round(Number(source.reliability_score || 0.5) * 100);
+      const cl = classByStatus[status] || 'degraded';
+      const nm = String(source.source || 'SOURCE').toUpperCase().substring(0, 14);
+      const hint = source.staleness_seconds
+        ? Math.floor(Number(source.staleness_seconds || 0) / 60) + 'm stale'
+        : (Number(source.consecutive_failure_count || 0) > 0
+          ? Number(source.consecutive_failure_count || 0) + ' failures'
+          : 'live');
       return '<div class="source-row">'
         + '<div class="source-name">' + nm + '</div>'
         + '<div class="source-bar"><div class="source-bar-fill ' + cl + '" style="width:' + sc + '%"></div></div>'
         + '<div class="source-value">' + sc + '</div>'
+        + '<div style="grid-column: 1 / span 3; font-family:var(--font-mono);font-size:9px;color:var(--text-tertiary);letter-spacing:0.08em;margin-top:4px;">' + hint + '</div>'
         + '</div>';
     }).join('');
   } catch (_) {
     const grid = document.getElementById('source-health-list');
-    if (grid) grid.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">Visibility data unavailable.</div>';
+    if (grid) grid.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">Source health unavailable.</div>';
   }
 }
 
@@ -3515,6 +4724,13 @@ async function refreshOpPicture() {
     const liveEvents = events.length;
     // total seeds known across all regions
     const seedsKnown = enabledRegions.reduce((s, r) => s + (r.seeds_known || 0), 0);
+    const reviewCounts = enabledRegions.reduce(function(acc, region) {
+      acc.pending += Number(region.recommendation_pending_review_count || 0);
+      acc.reviewed += Number(region.recommendation_reviewed_count || 0);
+      acc.applied += Number(region.recommendation_applied_count || 0);
+      acc.dismissed += Number(region.recommendation_dismissed_count || 0);
+      return acc;
+    }, { pending: 0, reviewed: 0, applied: 0, dismissed: 0 });
 
     const opR   = document.getElementById('op-regions');
     const opS   = document.getElementById('op-sites');
@@ -3529,16 +4745,27 @@ async function refreshOpPicture() {
       } else if (!liveEvents && !elevSites) {
         opMsg.innerHTML = activeRegions + ' region' + (activeRegions === 1 ? '' : 's') + ' monitored'
           + (seedsKnown > 0 ? ' \u00b7 ' + seedsKnown.toLocaleString() + ' seeds indexed' : '')
-          + ' \u00b7 awaiting scan results.';
+          + (reviewCounts.pending > 0 ? ' \u00b7 ' + reviewCounts.pending + ' recommendation review' + (reviewCounts.pending === 1 ? '' : 's') + ' pending.' : ' \u00b7 awaiting scan results.');
       } else {
         opMsg.innerHTML = '<strong>' + elevSites + ' site' + (elevSites === 1 ? '' : 's') + '</strong> elevated \u00b7 '
           + liveEvents + ' event' + (liveEvents === 1 ? '' : 's') + ' live across '
-          + activeRegions + ' region' + (activeRegions === 1 ? '' : 's') + '.';
+          + activeRegions + ' region' + (activeRegions === 1 ? '' : 's') + '.'
+          + (reviewCounts.pending > 0 ? ' ' + reviewCounts.pending + ' recommendation review' + (reviewCounts.pending === 1 ? '' : 's') + ' waiting on operator action.' : '');
       }
     }
+    renderOperationalReviewStrip(reviewCounts);
+
+    const siteResponses = await Promise.all(
+      enabledRegions.map(function(r) {
+        return API.get('/v1/passive/map/sites?region_id=' + encodeURIComponent(r.region_id))
+          .catch(function() { return { sites: [] }; });
+      })
+    );
+    const sites = siteResponses.flatMap(function(resp) { return resp.sites || []; });
 
     // Store in global cache for focus lookups
     GLOBE_DATA.regions = enabledRegions;
+    GLOBE_DATA.sites   = sites;
     GLOBE_DATA.events  = events;
 
     // Rebuild globe entities from live API data (clear previous)
@@ -3553,7 +4780,8 @@ async function refreshOpPicture() {
           position: Cesium.Cartesian3.fromDegrees(lng, lat),
           point: { pixelSize: SITE_SIZES[level] || 9, color, outlineColor: Cesium.Color.BLACK.withAlpha(0.7), outlineWidth: 1, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND },
           label: { text: r.name || r.region_id, font: '10px monospace', fillColor: Cesium.Color.WHITE.withAlpha(0.85), outlineColor: Cesium.Color.BLACK, outlineWidth: 2, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(0, -18), scale: 1.0, showBackground: false, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND },
-          properties: { kind: 'region', label: r.name || r.region_id, region_id: r.region_id, reason: (r.seeds_elevated || 0) + ' seeds elevated · ' + (r.seeds_known || 0) + ' indexed' },
+          show: entityVisibleForFilter('region', r.recommendation_pending_review_count > 0 ? 'pending_review' : (r.recommendation_applied_count > 0 ? 'applied' : (r.recommendation_reviewed_count > 0 ? 'reviewed' : (r.recommendation_dismissed_count > 0 ? 'dismissed' : '')))),
+          properties: { kind: 'region', layer: level, label: r.name || r.region_id, region_id: r.region_id, action_path: '/v1/passive/regions/' + r.region_id + '/overview', reason: (r.seeds_elevated || 0) + ' seeds elevated · ' + (r.seeds_known || 0) + ' indexed', operator_state: r.recommendation_pending_review_count > 0 ? 'pending_review' : (r.recommendation_applied_count > 0 ? 'applied' : (r.recommendation_reviewed_count > 0 ? 'reviewed' : (r.recommendation_dismissed_count > 0 ? 'dismissed' : ''))) },
         });
         // Region outline rectangle
         viewer.entities.add({
@@ -3565,6 +4793,49 @@ async function refreshOpPicture() {
             outlineWidth: 1.5,
             height: 0,
           },
+          show: entityVisibleForFilter('region', r.recommendation_pending_review_count > 0 ? 'pending_review' : (r.recommendation_applied_count > 0 ? 'applied' : (r.recommendation_reviewed_count > 0 ? 'reviewed' : (r.recommendation_dismissed_count > 0 ? 'dismissed' : '')))),
+          properties: { kind: 'region', layer: level, label: r.name || r.region_id, region_id: r.region_id, action_path: '/v1/passive/regions/' + r.region_id + '/overview', reason: r.narrative_summary || ((r.seeds_elevated || 0) + ' seeds elevated'), operator_state: r.recommendation_pending_review_count > 0 ? 'pending_review' : (r.recommendation_applied_count > 0 ? 'applied' : (r.recommendation_reviewed_count > 0 ? 'reviewed' : (r.recommendation_dismissed_count > 0 ? 'dismissed' : ''))) },
+        });
+      }
+    });
+    sites.forEach(site => {
+      if (site.coordinates) {
+        const level = site.elevated ? 'elevated' : (site.observed ? 'active' : 'healthy');
+        const color = SITE_COLORS[level] || SITE_COLORS.active;
+        viewer.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(site.coordinates.lon, site.coordinates.lat),
+          point: {
+            pixelSize: site.elevated ? 10 : (site.observed ? 8 : 6),
+            color,
+            outlineColor: Cesium.Color.BLACK.withAlpha(0.7),
+            outlineWidth: site.elevated ? 2 : 1,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
+          },
+          label: {
+            text: site.name || site.seed_key || 'Site',
+            font: '9px monospace',
+            fillColor: Cesium.Color.WHITE.withAlpha(0.72),
+            outlineColor: Cesium.Color.BLACK,
+            outlineWidth: 2,
+            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            pixelOffset: new Cesium.Cartesian2(0, 14),
+            scale: 0.9,
+            showBackground: false,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND
+          },
+          show: entityVisibleForFilter('site', site.recommendation_review_state ? String(site.recommendation_review_state).toLowerCase() : (site.has_recommendation ? 'pending_review' : '')),
+          properties: {
+            kind: 'site',
+            layer: level,
+            label: site.name || site.seed_key || 'Site',
+            site_id: site.site_id || '',
+            region_id: site.region_id || '',
+            action_path: site.overview_path || '',
+            narrative_path: site.narrative_path || '',
+            reason: site.status_reason || site.priority_reason || '',
+            operator_state: site.recommendation_review_state ? String(site.recommendation_review_state).toLowerCase() : (site.has_recommendation ? 'pending_review' : ''),
+            age_bucket: site.recommendation_age_bucket || '',
+          },
         });
       }
     });
@@ -3575,7 +4846,18 @@ async function refreshOpPicture() {
         viewer.entities.add({
           position: Cesium.Cartesian3.fromDegrees(ev.coordinates.lon, ev.coordinates.lat),
           point: { pixelSize: SITE_SIZES[level] || 9, color, outlineColor: Cesium.Color.BLACK.withAlpha(0.7), outlineWidth: 1, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND },
-          properties: { kind: 'canonical_event', label: ev.site_name || ev.event_type || 'Event', reason: ev.summary || ev.operational_readout || '' },
+          show: entityVisibleForFilter('canonical_event', ''),
+          properties: {
+            kind: 'canonical_event',
+            layer: level,
+            label: ev.site_name || ev.event_type || 'Event',
+            site_id: ev.site_id || '',
+            region_id: ev.region_id || '',
+            action_path: '/v1/passive/sites/' + ev.site_id + '/overview',
+            reason: ev.summary || ev.operational_readout || '',
+            evidence_path: ev.bundle_hashes && ev.bundle_hashes[0] ? '/v1/evidence/' + ev.bundle_hashes[0] : '',
+            replay_path: ev.manifest_hashes && ev.manifest_hashes[0] ? '/v1/replay/' + ev.manifest_hashes[0] : '',
+          },
         });
       }
     });
@@ -3597,6 +4879,7 @@ async function refreshAttentionQueue() {
     const filterKind = { regional: 'region', site: 'site', incident: 'canonical_event' }[CONSOLE_STATE.filter];
     let items = data.attention_queue || [];
     if (filterKind) items = items.filter(i => i.kind === filterKind);
+    items = items.filter(i => reviewStateMatches(i.operator_state));
     if (!items.length) {
       list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">Queue is clear.</div>';
       if (cnt) cnt.textContent = '0';
@@ -3620,10 +4903,22 @@ async function refreshAttentionQueue() {
       const km  = kindMap[item.kind] || { cls: 'evidence', label: String(item.kind || 'Item') };
       const num = String(idx + 1).padStart(2, '0');
       const lbl = item.primary_action_label || 'Open \u2192';
+      const operatorState = item.operator_state
+        ? '<span class="att-kind evidence" style="margin-left:8px;">' + String(item.operator_state).replace(/_/g, ' ') + '</span>'
+        : '';
+      const urgency = item.urgency_label
+        ? '<span class="att-kind replay" style="margin-left:8px;">' + escapeHtml(item.urgency_label) + '</span>'
+        : '';
+      const ageBucket = item.age_bucket
+        ? '<span class="att-kind subtle" style="margin-left:8px;">' + escapeHtml(ageBucketLabel(item.age_bucket)) + '</span>'
+        : '';
+      const age = item.age_seconds != null
+        ? '<span class="change-time">' + tAgo(Math.floor(Date.now() / 1000) - Number(item.age_seconds || 0)) + '</span>'
+        : '';
       return '<div class="attention-item">'
         + '<div class="priority-number ' + pc + '">' + num + '</div>'
         + '<div class="att-body">'
-        + '<div class="att-head"><span class="att-kind ' + km.cls + '">' + km.label + '</span></div>'
+        + '<div class="att-head"><span class="att-kind ' + km.cls + '">' + km.label + '</span>' + operatorState + urgency + ageBucket + age + '</div>'
         + '<div class="att-title">' + (item.title || 'Unnamed') + '</div>'
         + (item.reason ? '<div class="att-reason">' + item.reason + '</div>' : '')
         + '<button class="att-action" onclick="handleAttentionClick(' + idx + ')">' + lbl + '</button>'
@@ -3650,9 +4945,10 @@ function handleAttentionClick(idx) {
       if (first.bbox) { lat = (first.bbox.south + first.bbox.north) / 2; lng = (first.bbox.west + first.bbox.east) / 2; }
     }
   } else if (item.kind === 'site') {
-    // Sites have no separate cache — search events for a coordinate match
-    const ev = GLOBE_DATA.events.find(e => (e.site_name || '').toLowerCase() === item.title.toLowerCase());
-    if (ev && ev.coordinates) { lat = ev.coordinates.lat; lng = ev.coordinates.lon; }
+    const site = GLOBE_DATA.sites.find(s =>
+      (item.site_id && s.site_id === item.site_id) ||
+      (s.name || '').toLowerCase() === item.title.toLowerCase());
+    if (site && site.coordinates) { lat = site.coordinates.lat; lng = site.coordinates.lon; }
   } else if (item.kind === 'canonical_event' || item.kind === 'neo') {
     const ev = GLOBE_DATA.events.find(e =>
       (e.summary || e.event_type || '').toLowerCase().includes(item.title.toLowerCase()) ||
@@ -3660,7 +4956,25 @@ function handleAttentionClick(idx) {
     if (ev && ev.coordinates) { lat = ev.coordinates.lat; lng = ev.coordinates.lon; }
     // No dangerous fallback — lat stays null, panel opens without fly-to
   }
-  openFocusPanel({ kind: item.kind, title: item.title, reason: item.reason, lat, lng });
+  const evidencePath = Array.isArray(item.confirmation_read_paths)
+    ? item.confirmation_read_paths.find(function(path) { return String(path).indexOf('/v1/evidence/') === 0; }) || ''
+    : '';
+  const replayPath = Array.isArray(item.confirmation_read_paths)
+    ? item.confirmation_read_paths.find(function(path) { return String(path).indexOf('/v1/replay/') === 0; }) || ''
+    : '';
+  openFocusPanel({
+    kind: item.kind,
+    title: item.title,
+    reason: item.reason,
+    lat,
+    lng,
+    siteId: item.site_id || '',
+    regionId: item.region_id || '',
+    actionPath: item.action_path || (item.site_id ? '/v1/passive/sites/' + item.site_id + '/overview' : (item.region_id ? '/v1/passive/regions/' + item.region_id + '/overview' : '')),
+    operatorState: item.operator_state || '',
+    evidencePath: evidencePath,
+    replayPath: replayPath,
+  });
 }
 
 // --- Recommended Actions ---
@@ -3671,18 +4985,23 @@ async function refreshRecommendedActions() {
     const list    = document.getElementById('recommended-actions-list');
     if (!list) return;
     const actions = (data.maintenance || {}).suggested_actions || [];
+    lastRecommendedActions = actions.slice(0, 4);
     if (!actions.length) {
       list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:6px 0;line-height:1.6;">No operator actions required in the current window. Monitoring continues.</div>';
       return;
     }
     const colors = ['var(--coral)', 'var(--amber)', 'var(--teal)', 'var(--lime)'];
-    list.innerHTML = actions.slice(0, 4).map((a, i) => {
+    list.innerHTML = lastRecommendedActions.map((a, i) => {
       const color = colors[i % colors.length];
       return '<div style="padding:11px 12px;background:var(--bg-elevated);border-left:2px solid ' + color + ';border-radius:0 2px 2px 0;">'
         + '<div style="font-size:12px;color:var(--text-primary);line-height:1.4;">' + (a.title || 'Action required') + '</div>'
         + (a.reason ? '<div style="font-size:11px;color:var(--text-secondary);margin-top:3px;line-height:1.4;">' + a.reason + '</div>' : '')
         + '<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-tertiary);margin-top:6px;letter-spacing:0.08em;">'
-        + (a.method || 'POST') + ' ' + (a.path || '') + '</div></div>';
+        + (a.method || 'POST') + ' ' + (a.path || '') + '</div>'
+        + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">'
+        + '<button class="att-action subtle" onclick="inspectRecommendedActionByIndex(' + i + ')">Inspect</button>'
+        + '<button class="att-action" onclick="executeRecommendedActionByIndex(' + i + ')">Run</button>'
+        + '</div></div>';
     }).join('');
   } catch (_) { /* leave */ }
 }
@@ -3757,31 +5076,6 @@ function updateRiskTrend(pressure) {
 }
 
 // --- Timeline strip ---
-function refreshTimeline(events) {
-  const strip = document.getElementById('timeline-events');
-  if (!strip) return;
-  if (!events || !events.length) { strip.innerHTML = ''; return; }
-  const now   = Date.now();
-  const start = now - 36 * 3600 * 1000;
-  const total = 72 * 3600 * 1000;
-  const colorMap = { critical: 'var(--coral)', elevated: 'var(--amber)', active: 'var(--teal)', resolved: 'var(--lime)' };
-  strip.innerHTML = events
-    .filter(function(ev) { return ev.last_observed_at_unix_seconds; })
-    .map(function(ev) {
-      const pct   = Math.max(2, Math.min(97, ((ev.last_observed_at_unix_seconds * 1000 - start) / total) * 100));
-      const cls   = sevCls(ev.severity);
-      const color = colorMap[cls] || 'var(--teal)';
-      const label = (ev.site_name || ev.event_type || 'event').replace(/_/g, ' ').toUpperCase();
-      const reason = (ev.summary || '').replace(/'/g, ' ').substring(0, 80);
-      const lat   = ev.coordinates ? ev.coordinates.lat : null;
-      const lng   = ev.coordinates ? ev.coordinates.lon : null;
-      return '<div class="timeline-event" '
-        + 'style="left:' + pct.toFixed(1) + '%;background:' + color + ';cursor:pointer;width:10px;height:10px;border:2px solid rgba(255,255,255,0.25);" '
-        + 'title="' + label + '" '
-        + 'onclick="openFocusPanel({kind:\'canonical_event\',title:\'' + label.replace(/'/g, '') + '\',reason:\'' + reason + '\',lat:' + lat + ',lng:' + lng + '})"></div>';
-    }).join('');
-}
-
 // --- Sys status ---
 function refreshSysStatus() {
   const upd = document.getElementById('sys-updated');
@@ -3818,6 +5112,7 @@ async function refreshAll() {
     refreshRecommendedActions(),
     refreshEventComposition(),
   ]);
+  await refreshFocusedSiteAnalytics();
 }
 
 // Initial load + 30s polling

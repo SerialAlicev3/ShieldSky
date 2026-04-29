@@ -3,10 +3,13 @@ use std::fmt::Write;
 use sss_api::state::{PassiveLiveSourceStatus, PassiveRegionRunResponse};
 use sss_storage::{PassiveRegionRunLog, PassiveRegionRunStatus, PassiveRunOrigin};
 
+use crate::config::WorkerConfig;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WorkerRunReason {
     SourceHealthDegraded,
     AllSourcesFailed,
+    RequiredFeedUnavailable,
     ExecutionFailed,
     ExecutionTimedOut,
     LeaseLost,
@@ -18,6 +21,7 @@ impl WorkerRunReason {
         match self {
             Self::SourceHealthDegraded => "source_health_degraded",
             Self::AllSourcesFailed => "all_sources_failed",
+            Self::RequiredFeedUnavailable => "required_feed_unavailable",
             Self::ExecutionFailed => "execution_failed",
             Self::ExecutionTimedOut => "execution_timed_out",
             Self::LeaseLost => "lease_lost",
@@ -35,6 +39,7 @@ impl WorkerRunReason {
     fn failed_heartbeat_label(self) -> Option<&'static str> {
         match self {
             Self::AllSourcesFailed => Some("all passive live sources failed"),
+            Self::RequiredFeedUnavailable => Some("required passive feed unavailable"),
             Self::ExecutionTimedOut => Some("worker runtime exhausted"),
             Self::LeaseLost => Some("lease continuity lost"),
             Self::SourceHealthDegraded | Self::ExecutionFailed | Self::LeaseReleaseRejected => None,
@@ -46,6 +51,7 @@ impl WorkerRunReason {
             candidate,
             "source_health_degraded"
                 | "all_sources_failed"
+                | "required_feed_unavailable"
                 | "execution_failed"
                 | "execution_timed_out"
                 | "lease_lost"
@@ -106,6 +112,7 @@ impl PassiveWorkerRunLog {
         finished_at_unix_seconds: i64,
         response: &PassiveRegionRunResponse,
         next_run_at: i64,
+        config: &WorkerConfig,
     ) {
         self.finished_at_unix_seconds = Some(finished_at_unix_seconds);
         self.status = WorkerRunStatus::Completed;
@@ -132,7 +139,7 @@ impl PassiveWorkerRunLog {
             })
             .unwrap_or_default();
         self.primary_reason = None;
-        self.ingest_source_health(&source_statuses);
+        self.ingest_source_health(config, &source_statuses);
         self.next_run_at = Some(next_run_at);
     }
 
@@ -270,7 +277,11 @@ impl PassiveWorkerRunLog {
         }
     }
 
-    fn ingest_source_health(&mut self, source_statuses: &[WorkerSourceHealthSnapshot]) {
+    fn ingest_source_health(
+        &mut self,
+        config: &WorkerConfig,
+        source_statuses: &[WorkerSourceHealthSnapshot],
+    ) {
         self.sources_used.clear();
         self.source_errors.clear();
         self.all_live_sources_failed = false;
@@ -288,15 +299,54 @@ impl PassiveWorkerRunLog {
             }
         }
 
-        if self.source_errors.is_empty() {
-            return;
-        }
-
         if self.sources_used.is_empty() {
             self.status = WorkerRunStatus::Failed;
             self.all_live_sources_failed = true;
             self.primary_reason = Some(WorkerRunReason::AllSourcesFailed);
             prefix_first_error(&mut self.source_errors, WorkerRunReason::AllSourcesFailed);
+            return;
+        }
+
+        let missing_required = missing_required_sources(config, source_statuses);
+        if !missing_required.is_empty() {
+            self.status = WorkerRunStatus::Failed;
+            self.primary_reason = Some(WorkerRunReason::RequiredFeedUnavailable);
+            self.source_errors.push(format_reason_error(
+                WorkerRunReason::RequiredFeedUnavailable,
+                &format!(
+                    "required feeds unavailable: {}",
+                    missing_required.join(", ")
+                ),
+            ));
+            return;
+        }
+
+        let unfetched_count = source_statuses
+            .iter()
+            .filter(|status| !status.fetched)
+            .count();
+        if self.source_errors.is_empty() && unfetched_count == 0 {
+            return;
+        }
+
+        if unfetched_count > config.max_unfetched_feeds_per_region {
+            self.status = WorkerRunStatus::Partial;
+            self.primary_reason = Some(WorkerRunReason::SourceHealthDegraded);
+            self.source_errors.push(format_reason_error(
+                WorkerRunReason::SourceHealthDegraded,
+                &format!(
+                    "{unfetched_count} feeds exceeded worker guardrail of {} unfetched feeds",
+                    config.max_unfetched_feeds_per_region
+                ),
+            ));
+            prefix_first_error(
+                &mut self.source_errors,
+                WorkerRunReason::SourceHealthDegraded,
+            );
+            return;
+        }
+
+        if self.source_errors.is_empty() {
             return;
         }
 
@@ -339,6 +389,22 @@ impl From<&PassiveLiveSourceStatus> for WorkerSourceHealthSnapshot {
             detail: value.detail.clone(),
         }
     }
+}
+
+fn missing_required_sources(
+    config: &WorkerConfig,
+    source_statuses: &[WorkerSourceHealthSnapshot],
+) -> Vec<&'static str> {
+    config
+        .required_feed_names()
+        .into_iter()
+        .filter(|required| {
+            source_statuses
+                .iter()
+                .find(|status| status.source_name == *required)
+                .is_some_and(|status| !status.fetched)
+        })
+        .collect()
 }
 
 fn summarize_source_errors(source_errors: &[String]) -> Option<String> {
@@ -388,16 +454,54 @@ fn strip_reason_prefix(entry: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::WorkerFeedConfig;
+
+    fn test_config() -> WorkerConfig {
+        WorkerConfig {
+            storage_path: std::path::PathBuf::from("data/sss-api.sqlite"),
+            worker_id: "worker-test".to_string(),
+            poll_interval_seconds: 30,
+            retry_interval_seconds: 30,
+            max_parallel_regions: 2,
+            max_regions_per_cycle: 4,
+            max_runtime_seconds: 20,
+            lease_ttl_seconds: 60,
+            heartbeat_retention_seconds: 600,
+            window_hours: 24,
+            max_scan_limit_per_region: 100,
+            max_observation_radius_km: 75.0,
+            max_unfetched_feeds_per_region: 1,
+            enable_discovery: true,
+            enable_scan: true,
+            feeds: WorkerFeedConfig {
+                include_adsb: true,
+                include_weather: true,
+                include_fire_smoke: true,
+            },
+            required_feeds: WorkerFeedConfig {
+                include_adsb: false,
+                include_weather: true,
+                include_fire_smoke: false,
+            },
+            dry_run: false,
+        }
+    }
 
     #[test]
     fn mixed_source_health_marks_run_partial_with_source_context() {
         let mut log = PassiveWorkerRunLog::start("run-1".to_string(), "region-a".to_string(), 100);
+        let mut config = test_config();
+        config.required_feeds.include_weather = false;
+        config.max_unfetched_feeds_per_region = 2;
 
-        log.ingest_source_health(&[
-            snapshot("Adsb", true, 12, "ok"),
-            snapshot("Weather", false, 0, "upstream timeout"),
-            snapshot("FireSmoke", false, 3, "partial ingest"),
-        ]);
+        log.ingest_source_health(
+            &config,
+            &[
+                snapshot("Adsb", true, 12, "ok"),
+                snapshot("Weather", false, 0, "upstream timeout"),
+                snapshot("FireSmoke", false, 3, "partial ingest"),
+            ],
+        );
 
         assert_eq!(log.status, WorkerRunStatus::Partial);
         assert_eq!(log.sources_used, vec!["Adsb".to_string()]);
@@ -421,12 +525,17 @@ mod tests {
     #[test]
     fn fully_failed_source_health_marks_run_failed() {
         let mut log = PassiveWorkerRunLog::start("run-2".to_string(), "region-a".to_string(), 100);
+        let mut config = test_config();
+        config.required_feeds.include_weather = false;
 
-        log.ingest_source_health(&[
-            snapshot("Adsb", false, 0, "upstream timeout"),
-            snapshot("Weather", false, 0, "service unavailable"),
-            snapshot("FireSmoke", false, 0, "rate limited"),
-        ]);
+        log.ingest_source_health(
+            &config,
+            &[
+                snapshot("Adsb", false, 0, "upstream timeout"),
+                snapshot("Weather", false, 0, "service unavailable"),
+                snapshot("FireSmoke", false, 0, "rate limited"),
+            ],
+        );
 
         assert_eq!(log.status, WorkerRunStatus::Failed);
         assert!(log.sources_used.is_empty());
@@ -446,6 +555,27 @@ mod tests {
                 "all passive live sources failed: Adsb: upstream timeout; Weather: service unavailable (+1 more)"
             )
         );
+    }
+
+    #[test]
+    fn required_feed_unavailable_marks_run_failed() {
+        let mut log = PassiveWorkerRunLog::start("run-2b".to_string(), "region-a".to_string(), 100);
+        let config = test_config();
+
+        log.ingest_source_health(
+            &config,
+            &[
+                snapshot("Adsb", true, 4, "ok"),
+                snapshot("Weather", false, 0, "service unavailable"),
+            ],
+        );
+
+        assert_eq!(log.status, WorkerRunStatus::Failed);
+        assert_eq!(log.reason_code(), Some("required_feed_unavailable"));
+        assert!(log
+            .source_errors
+            .iter()
+            .any(|error| error.contains("required feeds unavailable: Weather")));
     }
 
     #[test]

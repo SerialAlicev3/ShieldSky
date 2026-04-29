@@ -16,13 +16,16 @@ use crate::handlers::{
     get_passive_region_operational_timeline, get_passive_region_overview,
     get_passive_region_remediation, get_passive_region_run, get_passive_region_runs,
     get_passive_region_semantic_timeline, get_passive_regions, get_passive_seed, get_passive_seeds,
-    get_passive_site_events, get_passive_site_narrative, get_passive_site_overview,
-    get_passive_site_patterns, get_passive_site_risk_history, get_passive_site_semantic_timeline,
-    get_passive_sites, get_passive_source_health_samples, get_passive_worker_diagnostics,
-    get_passive_worker_heartbeats, get_prediction_snapshots, get_replay_manifest,
-    get_replay_manifest_for_bundle, health, ingest_celestrak_active, ingest_tle, landing_page,
-    operator_console, passive_scan, passive_scan_live, predict,
-    prune_passive_source_health_samples, prune_passive_worker_heartbeats, run_passive_regions,
+    get_passive_site_events, get_passive_site_load_forecast, get_passive_site_narrative,
+    get_passive_site_orchestrator_decisions, get_passive_site_overview, get_passive_site_patterns,
+    get_passive_site_recommendation_reviews, get_passive_site_risk_history,
+    get_passive_site_scenario_forecast, get_passive_site_semantic_timeline,
+    get_passive_site_solar_forecast, get_passive_sites, get_passive_source_health_samples,
+    get_passive_worker_diagnostics, get_passive_worker_heartbeats, get_prediction_snapshots,
+    get_replay_manifest, get_replay_manifest_for_bundle, health, ingest_celestrak_active,
+    ingest_tle, landing_page, operator_console, passive_scan, passive_scan_live, predict,
+    prune_passive_source_health_samples, prune_passive_worker_heartbeats,
+    recommend_passive_site_action, review_passive_site_recommendation, run_passive_regions,
     run_passive_scheduler, space_overview, upsert_passive_region, version,
 };
 use crate::state::AppState;
@@ -189,6 +192,30 @@ fn passive_routes() -> Router<AppState> {
         .route(
             "/v1/passive/sites/:site_id/narrative",
             get(get_passive_site_narrative),
+        )
+        .route(
+            "/v1/forecast/sites/:site_id/solar",
+            get(get_passive_site_solar_forecast),
+        )
+        .route(
+            "/v1/forecast/sites/:site_id/load",
+            get(get_passive_site_load_forecast),
+        )
+        .route(
+            "/v1/forecast/sites/:site_id/scenario",
+            get(get_passive_site_scenario_forecast),
+        )
+        .route(
+            "/v1/orchestrator/sites/:site_id/recommend",
+            post(recommend_passive_site_action),
+        )
+        .route(
+            "/v1/orchestrator/sites/:site_id/decisions",
+            get(get_passive_site_orchestrator_decisions),
+        )
+        .route(
+            "/v1/orchestrator/sites/:site_id/reviews",
+            get(get_passive_site_recommendation_reviews).post(review_passive_site_recommendation),
         )
         .route(
             "/v1/passive/sites/:site_id/semantic-timeline",

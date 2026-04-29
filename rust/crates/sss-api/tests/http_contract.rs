@@ -1256,10 +1256,230 @@ async fn passive_site_discovery_fetches_public_infra_seeds() {
         "Discovered"
     );
     assert_eq!(seeds_registry_body["data"][0]["seed_status"], "New");
+    let site_id = seeds_registry_body["data"][0]["site_id"]
+        .as_str()
+        .expect("discovered seed site id");
+    assert!(!site_id.is_empty());
+
+    let overview_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/passive/sites/{site_id}/overview?limit=10"))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(overview_response.status(), StatusCode::OK);
+    let overview_body = body_json(overview_response).await;
+    assert_eq!(overview_body["data"]["site"]["site"]["site_id"], site_id);
+    assert_eq!(
+        overview_body["data"]["seed_lifecycle"]["classification_status"],
+        "Discovered"
+    );
+    assert_eq!(
+        overview_body["data"]["risk_history_narrative"]["event_count"],
+        0
+    );
+    assert!(overview_body["data"]["risk_history_narrative"]["narrative"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("foi descoberto e perfilado"));
 
     let recorded_body = bodies.lock().await[0].clone();
     assert!(recorded_body.contains("power"));
     assert!(recorded_body.contains("telecom"));
+}
+
+#[allow(clippy::too_many_lines)]
+#[tokio::test]
+async fn passive_site_forecast_and_recommendation_are_auditable() {
+    let requests = Arc::new(Mutex::new(Vec::<String>::new()));
+    let bodies = Arc::new(Mutex::new(Vec::<String>::new()));
+    let base_url = spawn_passive_discovery_and_feeds_server(requests.clone(), bodies.clone()).await;
+    let app = build_router(
+        AppState::demo()
+            .expect("state")
+            .with_overpass_api_base_url(format!("{base_url}/api/interpreter"))
+            .with_open_meteo_base_url(base_url.clone())
+            .with_firms_api_base_url(base_url.clone())
+            .with_firms_map_key("test-map-key")
+            .with_opensky_api_base_url(base_url)
+            .with_opensky_bearer_token("test-opensky-token"),
+    );
+
+    let discovery_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/passive/discover-sites")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "south": 37.30,
+                        "west": -6.10,
+                        "north": 37.50,
+                        "east": -5.80,
+                        "timezone": "Europe/Madrid",
+                        "country_code": "ES",
+                        "default_operator_name": "OSM Passive Intel",
+                        "observation_radius_km": 20.0
+                    })
+                    .to_string(),
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(discovery_response.status(), StatusCode::OK);
+
+    let seeds_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/v1/passive/seeds?limit=10")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(seeds_response.status(), StatusCode::OK);
+    let seeds_body = body_json(seeds_response).await;
+    let site_id = seeds_body["data"][0]["site_id"]
+        .as_str()
+        .expect("site id")
+        .to_string();
+
+    let solar_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/v1/forecast/sites/{site_id}/solar?horizon_hours=12"
+                ))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(solar_response.status(), StatusCode::OK);
+    let solar_body = body_json(solar_response).await;
+    assert_eq!(
+        solar_body["data"]["points"].as_array().map_or(0, Vec::len),
+        12
+    );
+    assert!(solar_body["data"]["narrative"]
+        .as_str()
+        .unwrap_or_default()
+        .contains("Modeled solar outlook"));
+
+    let scenario_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/v1/forecast/sites/{site_id}/scenario?horizon_hours=12"
+                ))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(scenario_response.status(), StatusCode::OK);
+    let scenario_body = body_json(scenario_response).await;
+    assert!(scenario_body["data"]["summary"].is_string());
+    assert!(scenario_body["data"]["recommendation_window_start_unix_seconds"].is_number());
+
+    let recommendation_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/v1/orchestrator/sites/{site_id}/recommend"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "horizon_hours": 12,
+                        "battery_state_of_charge": 0.22,
+                        "reserve_margin_ratio": 0.10,
+                        "price_signal_bias": 0.0
+                    })
+                    .to_string(),
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(recommendation_response.status(), StatusCode::OK);
+    let recommendation_body = body_json(recommendation_response).await;
+    assert!(recommendation_body["data"]["action"].is_string());
+    assert!(recommendation_body["data"]["operational_reason"].is_string());
+    assert!(recommendation_body["data"]["scenario"]["points"].is_array());
+
+    let decisions_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/v1/orchestrator/sites/{site_id}/decisions?limit=5"
+                ))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(decisions_response.status(), StatusCode::OK);
+    let decisions_body = body_json(decisions_response).await;
+    assert_eq!(decisions_body["data"].as_array().map_or(0, Vec::len), 1);
+    assert_eq!(
+        decisions_body["data"][0]["endpoint"],
+        "/v1/orchestrator/sites/:site_id/recommend"
+    );
+
+    let review_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/v1/orchestrator/sites/{site_id}/reviews"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "state": "Applied",
+                        "actor": "http_contract",
+                        "rationale": "validated for audit trail"
+                    })
+                    .to_string(),
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(review_response.status(), StatusCode::OK);
+    let review_body = body_json(review_response).await;
+    assert_eq!(review_body["data"]["site_id"], site_id);
+    assert_eq!(review_body["data"]["state"], "Applied");
+    assert_eq!(review_body["data"]["actor"], "http_contract");
+
+    let review_history_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/orchestrator/sites/{site_id}/reviews?limit=5"))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(review_history_response.status(), StatusCode::OK);
+    let review_history_body = body_json(review_history_response).await;
+    assert_eq!(
+        review_history_body["data"].as_array().map_or(0, Vec::len),
+        1
+    );
+    assert_eq!(review_history_body["data"][0]["state"], "Applied");
 }
 
 #[tokio::test]
@@ -2141,6 +2361,13 @@ async fn passive_regions_persist_and_orchestrate_discovery_then_scheduler() {
             );
         }
     }
+    assert!(attention_queue.iter().any(|item| {
+        item["kind"] == "site"
+            && item["action_path"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("/v1/passive/sites/")
+    }));
     assert!(command_center_body["data"]["dashboard"]["top_regions"].is_array());
     assert!(command_center_body["data"]["maintenance"]["suggested_actions"].is_array());
     assert!(

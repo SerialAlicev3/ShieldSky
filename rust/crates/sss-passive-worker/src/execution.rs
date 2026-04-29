@@ -44,7 +44,7 @@ pub async fn run_region(
     match run {
         Ok(Ok(response)) => {
             let next_run_at = compute_next_run(region, finished_at);
-            log.finish_success(finished_at, &response, next_run_at);
+            log.finish_success(finished_at, &response, next_run_at, config);
         }
         Ok(Err(error)) => log.finish_failed(finished_at, error.to_string()),
         Err(_) => log.finish_timed_out(finished_at, config.max_runtime_seconds),
