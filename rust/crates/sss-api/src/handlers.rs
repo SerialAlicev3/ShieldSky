@@ -608,6 +608,23 @@ pub async fn upsert_passive_region(
     Ok(Json(ApiEnvelope::new(request_id, response)))
 }
 
+pub async fn bootstrap_default_passive_regions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<crate::state::PassiveRegionDefaultsBootstrapRequest>,
+) -> Result<Json<ApiEnvelope<crate::state::PassiveRegionDefaultsBootstrapResponse>>, ApiError> {
+    let request_id = request_id(&headers);
+    tracing::info!(
+        %request_id,
+        overwrite_existing = request.overwrite_existing.unwrap_or(false),
+        "bootstrap_default_passive_regions"
+    );
+    let response = state
+        .bootstrap_default_passive_regions(&request)
+        .map_err(|error| app_error_to_api_error(request_id.clone(), error))?;
+    Ok(Json(ApiEnvelope::new(request_id, response)))
+}
+
 pub async fn get_passive_regions(
     State(state): State<AppState>,
     headers: HeaderMap,

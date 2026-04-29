@@ -4,10 +4,10 @@ use axum::{
 };
 
 use crate::handlers::{
-    analyze_object, discover_and_scan_passive_sites, discover_passive_sites,
-    dispatch_event_notifications, dispatch_notifications, execute_replay, get_apod_briefing,
-    get_assessment_history, get_events, get_events_timeline, get_evidence_bundle,
-    get_ingest_batches, get_ingest_status, get_neows_briefing, get_neows_feed,
+    analyze_object, bootstrap_default_passive_regions, discover_and_scan_passive_sites,
+    discover_passive_sites, dispatch_event_notifications, dispatch_notifications, execute_replay,
+    get_apod_briefing, get_assessment_history, get_events, get_events_timeline,
+    get_evidence_bundle, get_ingest_batches, get_ingest_status, get_neows_briefing, get_neows_feed,
     get_notification_deliveries, get_object_close_approaches, get_object_timeline,
     get_passive_canonical_event, get_passive_canonical_events, get_passive_command_center_summary,
     get_passive_dashboard_summary, get_passive_maintenance_summary, get_passive_map_events,
@@ -126,6 +126,10 @@ fn passive_routes() -> Router<AppState> {
         .route(
             "/v1/passive/regions",
             get(get_passive_regions).post(upsert_passive_region),
+        )
+        .route(
+            "/v1/passive/regions/bootstrap-defaults",
+            post(bootstrap_default_passive_regions),
         )
         .route("/v1/passive/regions/run", post(run_passive_regions))
         .route("/v1/passive/regions/runs", get(get_passive_region_runs))

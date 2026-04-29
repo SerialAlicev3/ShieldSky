@@ -2502,6 +2502,90 @@ async fn passive_regions_persist_and_orchestrate_discovery_then_scheduler() {
 }
 
 #[tokio::test]
+async fn passive_region_defaults_bootstrap_backfills_existing_instances() {
+    let app = build_router(AppState::demo().expect("state"));
+
+    let initial_list_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/v1/passive/regions")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(initial_list_response.status(), StatusCode::OK);
+    let initial_list_body = body_json(initial_list_response).await;
+    assert_eq!(initial_list_body["data"].as_array().map_or(0, Vec::len), 0);
+
+    let bootstrap_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/passive/regions/bootstrap-defaults")
+                .header("content-type", "application/json")
+                .body(Body::from(json!({}).to_string()))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(bootstrap_response.status(), StatusCode::OK);
+    let bootstrap_body = body_json(bootstrap_response).await;
+    assert!(
+        bootstrap_body["data"]["inserted_count"]
+            .as_u64()
+            .unwrap_or(0)
+            >= 10
+    );
+    assert_eq!(bootstrap_body["data"]["updated_count"], 0);
+    assert_eq!(bootstrap_body["data"]["skipped_count"], 0);
+
+    let populated_list_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/v1/passive/regions")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(populated_list_response.status(), StatusCode::OK);
+    let populated_list_body = body_json(populated_list_response).await;
+    let regions = populated_list_body["data"].as_array().expect("regions");
+    assert!(regions
+        .iter()
+        .any(|region| region["region_id"] == "alentejo-solar-belt-37.200--8.800"));
+    assert!(regions
+        .iter()
+        .any(|region| region["region_id"] == "iran-plateau-strategic-watch"));
+
+    let second_bootstrap_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/passive/regions/bootstrap-defaults")
+                .header("content-type", "application/json")
+                .body(Body::from(json!({}).to_string()))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(second_bootstrap_response.status(), StatusCode::OK);
+    let second_bootstrap_body = body_json(second_bootstrap_response).await;
+    assert_eq!(second_bootstrap_body["data"]["inserted_count"], 0);
+    assert!(
+        second_bootstrap_body["data"]["skipped_count"]
+            .as_u64()
+            .unwrap_or(0)
+            >= 10
+    );
+}
+
+#[tokio::test]
 #[allow(clippy::too_many_lines)]
 async fn operator_console_is_served() {
     let response = build_router(AppState::demo().expect("state"))
