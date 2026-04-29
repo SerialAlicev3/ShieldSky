@@ -3575,6 +3575,33 @@ function setFocusStateText(text) {
   stateEl.textContent = text || '';
 }
 
+function formatReviewHistoryPayload(payload) {
+  if (!Array.isArray(payload)) return null;
+  if (!payload.length) return 'No review history recorded yet.';
+  return payload.map(function(review, index) {
+    const state = humanReviewState(review.state || '');
+    const actor = review.actor ? 'ACTOR      ' + review.actor : 'ACTOR      operator';
+    const rationale = review.rationale ? 'RATIONALE  ' + review.rationale : 'RATIONALE  none recorded';
+    const snapshot = review.snapshot_id ? 'SNAPSHOT   ' + review.snapshot_id : '';
+    const evidence = review.evidence_bundle_hash ? 'EVIDENCE   ' + review.evidence_bundle_hash : '';
+    return [
+      '#' + String(index + 1).padStart(2, '0') + ' · ' + String(state || 'reviewed').toUpperCase() + ' · ' + tAgo(review.decided_at_unix_seconds),
+      actor,
+      rationale,
+      snapshot,
+      evidence,
+    ].filter(Boolean).join('\n');
+  }).join('\n\n');
+}
+
+function formatDrawerPayload(path, payload) {
+  if (path && path.indexOf('/reviews') >= 0) {
+    const formattedReviews = formatReviewHistoryPayload(payload);
+    if (formattedReviews) return formattedReviews;
+  }
+  return typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
+}
+
 function openDrawer(title, path, payload) {
   const drawer = document.getElementById('data-drawer');
   const titleEl = document.getElementById('drawer-title');
@@ -3586,7 +3613,7 @@ function openDrawer(title, path, payload) {
     : '';
   titleEl.textContent = (title || 'Operational Detail') + focusState;
   pathEl.textContent = path || '';
-  contentEl.textContent = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
+  contentEl.textContent = formatDrawerPayload(path, payload);
   drawer.classList.add('visible');
 }
 
@@ -3878,9 +3905,116 @@ async function refreshGlobalAnalytics() {
 async function refreshFocusedSiteAnalytics() {
   if (FOCUS_STATE.kind !== 'site' || !FOCUS_STATE.siteId) {
     if (FOCUS_STATE.kind === 'region' && FOCUS_STATE.regionId) {
-      await refreshGlobalAnalytics();
+      try {
+        const regionId = FOCUS_STATE.regionId;
+        const [overview, siteData, commandCenter] = await Promise.all([
+          API.get('/v1/passive/regions/' + encodeURIComponent(regionId) + '/overview'),
+          API.get('/v1/passive/map/sites?region_id=' + encodeURIComponent(regionId)),
+          API.get('/v1/passive/command-center/summary'),
+        ]);
+        const sites = (siteData.sites || []).slice();
+        const pendingSites = sites.filter(function(site) {
+          return !site.recommendation_review_state && site.has_recommendation;
+        });
+        const appliedSites = sites.filter(function(site) {
+          return String(site.recommendation_review_state || '').toLowerCase() === 'applied';
+        });
+        const reviewedSites = sites.filter(function(site) {
+          return String(site.recommendation_review_state || '').toLowerCase() === 'reviewed';
+        });
+        const dismissedSites = sites.filter(function(site) {
+          return String(site.recommendation_review_state || '').toLowerCase() === 'dismissed';
+        });
+        const observedSites = sites.filter(function(site) { return !!site.observed; });
+        const elevatedSites = sites.filter(function(site) { return !!site.elevated; });
+        const topRiskSite = sites
+          .slice()
+          .sort(function(left, right) { return Number(right.risk_score || 0) - Number(left.risk_score || 0); })[0];
+        const focusDetail = document.getElementById('focus-detail');
+        if (focusDetail) {
+          focusDetail.textContent =
+            'SITES ' + sites.length
+            + ' · OBSERVED ' + observedSites.length
+            + ' · ELEVATED ' + elevatedSites.length
+            + ' · PENDING REVIEW ' + pendingSites.length;
+        }
+        const focusReason = document.getElementById('focus-reason');
+        if (focusReason) {
+          focusReason.textContent = overview.narrative || ('Regional monitoring active across ' + sites.length + ' site candidates.');
+        }
+        const narEl = document.getElementById('narrative-text');
+        const metaEl = document.getElementById('narrative-meta');
+        if (narEl) {
+          narEl.textContent = overview.narrative || 'Regional monitoring active.';
+          narEl.style.color = '';
+        }
+        if (metaEl) {
+          metaEl.innerHTML =
+            '<span>SITES · ' + sites.length + '</span>' +
+            '<span>PENDING REVIEW · ' + pendingSites.length + '</span>' +
+            '<span>ELEVATED · ' + elevatedSites.length + '</span>';
+        }
+        setFocusQuickLinks([
+          { label: 'Region Overview', path: '/v1/passive/regions/' + encodeURIComponent(regionId) + '/overview' },
+          { label: 'Region Sites', path: '/v1/passive/map/sites?region_id=' + encodeURIComponent(regionId) },
+          { label: 'Command Summary', path: '/v1/passive/command-center/summary' },
+        ]);
+        setFocusPrimaryButton('Open Region →', '/v1/passive/regions/' + encodeURIComponent(regionId) + '/overview');
+        setFocusStateText(pendingSites.length > 0 ? 'REGION NEEDS REVIEW' : 'REGION FORECAST OVERLAY ACTIVE');
+        const focusReview = document.getElementById('focus-review');
+        if (focusReview) {
+          focusReview.textContent =
+            'PENDING · ' + pendingSites.length
+            + '\nREVIEWED · ' + reviewedSites.length
+            + '\nAPPLIED · ' + appliedSites.length
+            + '\nDISMISSED · ' + dismissedSites.length;
+        }
+        setRiskContext(topRiskSite
+          ? ('Top regional site ' + topRiskSite.name + ' is carrying ' + (Number(topRiskSite.risk_score || 0) * 100).toFixed(0) + '% modeled pressure.')
+          : 'Regional risk context will appear as monitored sites accumulate live signals.');
+        renderOperationalReviewStrip({
+          pending: pendingSites.length,
+          reviewed: reviewedSites.length,
+          applied: appliedSites.length,
+          dismissed: dismissedSites.length,
+        });
+        const topEvents = (((commandCenter.dashboard || {}).top_canonical_events) || [])
+          .filter(function(event) { return event.region_id === regionId; })
+          .slice(0, 6);
+        renderTimelineEntries(topEvents);
+        setTimelineSummary(
+          pendingSites.length > 0
+            ? (pendingSites.length + ' site recommendation' + (pendingSites.length === 1 ? '' : 's') + ' waiting on operator review in this region.')
+            : 'Regional timeline showing canonical memory for the selected command surface.'
+        );
+        const recList = document.getElementById('recommended-actions-list');
+        if (recList) {
+          const focusSites = (pendingSites.length ? pendingSites : sites)
+            .slice()
+            .sort(function(left, right) { return Number(right.risk_score || 0) - Number(left.risk_score || 0); })
+            .slice(0, 3);
+          recList.innerHTML = focusSites.length
+            ? focusSites.map(function(site) {
+              const state = site.recommendation_review_state
+                ? humanReviewState(site.recommendation_review_state)
+                : (site.has_recommendation ? 'pending review' : 'monitoring');
+              const path = site.overview_path || ('/v1/passive/sites/' + encodeURIComponent(site.site_id || '') + '/overview');
+              const narrativePath = site.narrative_path || '';
+              return '<div style="padding:11px 12px;background:var(--bg-elevated);border-left:2px solid var(--amber);border-radius:0 2px 2px 0;">'
+                + '<div style="font-size:12px;color:var(--text-primary);line-height:1.4;">' + escapeHtml(site.name || site.seed_key || 'Site') + '</div>'
+                + '<div style="font-size:11px;color:var(--text-secondary);margin-top:3px;line-height:1.4;">' + escapeHtml(site.status_reason || site.priority_reason || 'Site candidate under regional watch.') + '</div>'
+                + '<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-tertiary);margin-top:6px;letter-spacing:0.08em;">STATE ' + escapeHtml(String(state).toUpperCase()) + ' · RISK ' + (Number(site.risk_score || 0) * 100).toFixed(0) + '%</div>'
+                + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">'
+                + '<button class="att-action subtle" onclick="openDrawerFromPath(\'Site Overview\', \'' + path.replace(/'/g, '&#39;') + '\')">Inspect</button>'
+                + (narrativePath ? '<button class="att-action" onclick="openDrawerFromPath(\'Site Narrative\', \'' + narrativePath.replace(/'/g, '&#39;') + '\')">Narrative</button>' : '')
+                + '</div></div>';
+            }).join('')
+            : '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:6px 0;line-height:1.6;">No region-specific actions required in the current window.</div>';
+        }
+      } catch (_) {
+        await refreshGlobalAnalytics();
+      }
       await renderRegionalForecastOverlay(FOCUS_STATE.regionId);
-      setFocusStateText('REGION FORECAST OVERLAY ACTIVE');
       return;
     }
     await refreshGlobalAnalytics();
