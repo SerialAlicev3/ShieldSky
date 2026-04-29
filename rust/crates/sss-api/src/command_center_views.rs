@@ -59,6 +59,8 @@ pub struct PassiveCommandCenterSiteHighlight {
     pub risk_score: f64,
     pub risk_trend: crate::map_views::RiskTrend,
     pub top_canonical_status: Option<crate::canonical_views::CanonicalEventStatus>,
+    pub recommendation_review_state: Option<sss_storage::PassiveRecommendationReviewState>,
+    pub has_recommendation: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -101,6 +103,7 @@ pub struct PassiveCommandCenterAttentionItem {
     pub site_id: Option<String>,
     pub canonical_event_id: Option<String>,
     pub action_path: Option<String>,
+    pub operator_state: Option<String>,
     pub confirmation_read_paths: Vec<String>,
 }
 
@@ -318,6 +321,8 @@ fn build_command_center_highlights(
             risk_score: site.risk_score,
             risk_trend: site.risk_trend,
             top_canonical_status: site.top_canonical_status,
+            recommendation_review_state: site.recommendation_review_state,
+            has_recommendation: site.has_recommendation,
         });
     let top_event =
         dashboard
@@ -361,6 +366,7 @@ fn build_attention_queue(
             site_id: None,
             canonical_event_id: None,
             action_path: Some(action.path.clone()),
+            operator_state: None,
             confirmation_read_paths: action.confirmation_read_paths.clone(),
         });
     }
@@ -383,6 +389,7 @@ fn build_attention_queue(
                 site_id: Some(event.site_id.clone()),
                 canonical_event_id: Some(event.canonical_event_id.clone()),
                 action_path: None,
+                operator_state: None,
                 confirmation_read_paths: event
                     .bundle_hashes
                     .iter()
@@ -488,6 +495,7 @@ fn neows_attention_item(
         site_id: None,
         canonical_event_id: None,
         action_path: Some(feed_path),
+        operator_state: None,
         confirmation_read_paths,
     }
 }
@@ -495,6 +503,7 @@ fn neows_attention_item(
 fn site_attention_item(site: &SiteMapItem) -> PassiveCommandCenterAttentionItem {
     let site_id = site.site_id.clone().unwrap_or_default();
     let priority = std::cmp::max(site.scan_priority, priority_from_risk(site.risk_score));
+    let operator_state = site_operator_state_label(site);
     let reason = format!("{} {}", site.status_reason, site.priority_reason);
     PassiveCommandCenterAttentionItem {
         item_id: format!("site:{site_id}"),
@@ -502,7 +511,16 @@ fn site_attention_item(site: &SiteMapItem) -> PassiveCommandCenterAttentionItem 
         priority,
         title: site.name.clone(),
         reason,
-        primary_action_label: if site.observed {
+        primary_action_label: if site.has_recommendation
+            && site.recommendation_review_state.is_none()
+        {
+            "Review Recommendation".to_string()
+        } else if matches!(
+            site.recommendation_review_state,
+            Some(sss_storage::PassiveRecommendationReviewState::Applied)
+        ) {
+            "Inspect Applied".to_string()
+        } else if site.observed {
             "Open Site".to_string()
         } else {
             "Prime Site".to_string()
@@ -511,11 +529,22 @@ fn site_attention_item(site: &SiteMapItem) -> PassiveCommandCenterAttentionItem 
         site_id: Some(site_id),
         canonical_event_id: None,
         action_path: site.overview_path.clone(),
+        operator_state,
         confirmation_read_paths: site
             .overview_path
             .iter()
             .cloned()
             .chain(site.narrative_path.iter().cloned())
+            .chain(
+                site.site_id
+                    .iter()
+                    .map(|site_id| format!("/v1/orchestrator/sites/{site_id}/decisions?limit=5")),
+            )
+            .chain(
+                site.site_id
+                    .iter()
+                    .map(|site_id| format!("/v1/orchestrator/sites/{site_id}/reviews?limit=5")),
+            )
             .collect(),
     }
 }
@@ -532,6 +561,7 @@ fn region_attention_item(region: &RegionMapItem) -> PassiveCommandCenterAttentio
         site_id: None,
         canonical_event_id: None,
         action_path: Some(format!("/v1/passive/regions/{}/overview", region.region_id)),
+        operator_state: region_operator_state_label(region),
         confirmation_read_paths: vec![
             format!("/v1/passive/map/sites?region_id={}", region.region_id),
             format!(
@@ -539,6 +569,34 @@ fn region_attention_item(region: &RegionMapItem) -> PassiveCommandCenterAttentio
                 region.region_id
             ),
         ],
+    }
+}
+
+fn site_operator_state_label(site: &SiteMapItem) -> Option<String> {
+    match site.recommendation_review_state {
+        Some(sss_storage::PassiveRecommendationReviewState::Reviewed) => {
+            Some("reviewed".to_string())
+        }
+        Some(sss_storage::PassiveRecommendationReviewState::Applied) => Some("applied".to_string()),
+        Some(sss_storage::PassiveRecommendationReviewState::Dismissed) => {
+            Some("dismissed".to_string())
+        }
+        None if site.has_recommendation => Some("pending_review".to_string()),
+        None => None,
+    }
+}
+
+fn region_operator_state_label(region: &RegionMapItem) -> Option<String> {
+    if region.recommendation_pending_review_count > 0 {
+        Some("pending_review".to_string())
+    } else if region.recommendation_applied_count > 0 {
+        Some("applied".to_string())
+    } else if region.recommendation_reviewed_count > 0 {
+        Some("reviewed".to_string())
+    } else if region.recommendation_dismissed_count > 0 {
+        Some("dismissed".to_string())
+    } else {
+        None
     }
 }
 

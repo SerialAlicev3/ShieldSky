@@ -3448,6 +3448,7 @@ clickHandler.setInputAction(function(click) {
     regionId: propValue(props, 'region_id') || '',
     actionPath: propValue(props, 'action_path') || '',
     narrativePath: propValue(props, 'narrative_path') || '',
+    operatorState: propValue(props, 'operator_state') || '',
   });
 }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
 
@@ -3531,7 +3532,10 @@ function openDrawer(title, path, payload) {
   const pathEl = document.getElementById('drawer-path');
   const contentEl = document.getElementById('drawer-content');
   if (!drawer || !titleEl || !pathEl || !contentEl) return;
-  titleEl.textContent = title || 'Operational Detail';
+  const focusState = FOCUS_STATE.siteId && RECOMMENDATION_STATE[FOCUS_STATE.siteId]
+    ? ' · ' + String(RECOMMENDATION_STATE[FOCUS_STATE.siteId]).toUpperCase()
+    : '';
+  titleEl.textContent = (title || 'Operational Detail') + focusState;
   pathEl.textContent = path || '';
   contentEl.textContent = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
   drawer.classList.add('visible');
@@ -3966,7 +3970,7 @@ async function refreshFocusedSiteAnalytics() {
   } catch (_) { /* leave */ }
 }
 
-function openFocusPanel({ kind, title, reason, lat, lng, siteId, regionId, actionPath, narrativePath }) {
+function openFocusPanel({ kind, title, reason, lat, lng, siteId, regionId, actionPath, narrativePath, operatorState }) {
   const panel   = document.getElementById('focus-panel');
   const fKind   = document.getElementById('focus-kind');
   const fTitle  = document.getElementById('focus-title');
@@ -3993,7 +3997,7 @@ function openFocusPanel({ kind, title, reason, lat, lng, siteId, regionId, actio
   if (lat != null) focusOnGlobe(lat, lng);
   setFocusPrimaryButton(actionPath ? 'Open →' : 'Recenter →', actionPath || null);
   setFocusQuickLinks(narrativePath ? [{ label: 'Narrative', path: narrativePath }] : []);
-  setFocusStateText('');
+  setFocusStateText(operatorState ? ('RECOMMENDATION ' + String(operatorState).replace(/_/g, ' ').toUpperCase()) : '');
   refreshFocusedSiteAnalytics().catch(() => {});
 }
 
@@ -4368,7 +4372,7 @@ async function refreshOpPicture() {
           point: { pixelSize: SITE_SIZES[level] || 9, color, outlineColor: Cesium.Color.BLACK.withAlpha(0.7), outlineWidth: 1, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND },
           label: { text: r.name || r.region_id, font: '10px monospace', fillColor: Cesium.Color.WHITE.withAlpha(0.85), outlineColor: Cesium.Color.BLACK, outlineWidth: 2, style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(0, -18), scale: 1.0, showBackground: false, heightReference: Cesium.HeightReference.CLAMP_TO_GROUND },
           show: entityVisibleForFilter('region'),
-          properties: { kind: 'region', layer: level, label: r.name || r.region_id, region_id: r.region_id, action_path: '/v1/passive/regions/' + r.region_id + '/overview', reason: (r.seeds_elevated || 0) + ' seeds elevated · ' + (r.seeds_known || 0) + ' indexed' },
+          properties: { kind: 'region', layer: level, label: r.name || r.region_id, region_id: r.region_id, action_path: '/v1/passive/regions/' + r.region_id + '/overview', reason: (r.seeds_elevated || 0) + ' seeds elevated · ' + (r.seeds_known || 0) + ' indexed', operator_state: r.recommendation_pending_review_count > 0 ? 'pending_review' : (r.recommendation_applied_count > 0 ? 'applied' : (r.recommendation_reviewed_count > 0 ? 'reviewed' : (r.recommendation_dismissed_count > 0 ? 'dismissed' : ''))) },
         });
         // Region outline rectangle
         viewer.entities.add({
@@ -4381,7 +4385,7 @@ async function refreshOpPicture() {
             height: 0,
           },
           show: entityVisibleForFilter('region'),
-          properties: { kind: 'region', layer: level, label: r.name || r.region_id, region_id: r.region_id, action_path: '/v1/passive/regions/' + r.region_id + '/overview', reason: r.narrative_summary || ((r.seeds_elevated || 0) + ' seeds elevated') },
+          properties: { kind: 'region', layer: level, label: r.name || r.region_id, region_id: r.region_id, action_path: '/v1/passive/regions/' + r.region_id + '/overview', reason: r.narrative_summary || ((r.seeds_elevated || 0) + ' seeds elevated'), operator_state: r.recommendation_pending_review_count > 0 ? 'pending_review' : (r.recommendation_applied_count > 0 ? 'applied' : (r.recommendation_reviewed_count > 0 ? 'reviewed' : (r.recommendation_dismissed_count > 0 ? 'dismissed' : ''))) },
         });
       }
     });
@@ -4419,7 +4423,8 @@ async function refreshOpPicture() {
             region_id: site.region_id || '',
             action_path: site.overview_path || '',
             narrative_path: site.narrative_path || '',
-            reason: site.status_reason || site.priority_reason || ''
+            reason: site.status_reason || site.priority_reason || '',
+            operator_state: site.recommendation_review_state ? String(site.recommendation_review_state).toLowerCase() : (site.has_recommendation ? 'pending_review' : '')
           },
         });
       }
@@ -4477,10 +4482,13 @@ async function refreshAttentionQueue() {
       const km  = kindMap[item.kind] || { cls: 'evidence', label: String(item.kind || 'Item') };
       const num = String(idx + 1).padStart(2, '0');
       const lbl = item.primary_action_label || 'Open \u2192';
+      const operatorState = item.operator_state
+        ? '<span class="att-kind evidence" style="margin-left:8px;">' + String(item.operator_state).replace(/_/g, ' ') + '</span>'
+        : '';
       return '<div class="attention-item">'
         + '<div class="priority-number ' + pc + '">' + num + '</div>'
         + '<div class="att-body">'
-        + '<div class="att-head"><span class="att-kind ' + km.cls + '">' + km.label + '</span></div>'
+        + '<div class="att-head"><span class="att-kind ' + km.cls + '">' + km.label + '</span>' + operatorState + '</div>'
         + '<div class="att-title">' + (item.title || 'Unnamed') + '</div>'
         + (item.reason ? '<div class="att-reason">' + item.reason + '</div>' : '')
         + '<button class="att-action" onclick="handleAttentionClick(' + idx + ')">' + lbl + '</button>'
@@ -4527,6 +4535,7 @@ function handleAttentionClick(idx) {
     siteId: item.site_id || '',
     regionId: item.region_id || '',
     actionPath: item.action_path || (item.site_id ? '/v1/passive/sites/' + item.site_id + '/overview' : (item.region_id ? '/v1/passive/regions/' + item.region_id + '/overview' : '')),
+    operatorState: item.operator_state || '',
   });
 }
 

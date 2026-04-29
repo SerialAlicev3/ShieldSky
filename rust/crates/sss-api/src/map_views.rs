@@ -4,8 +4,9 @@ use serde::{Deserialize, Serialize};
 use sss_passive_scanner::{PassiveEvent, PassiveThreatType};
 use sss_site_registry::SiteType;
 use sss_storage::{
-    CanonicalPassiveEvent as StoredCanonicalPassiveEvent, PassiveRegionTarget,
-    PassiveSeedClassificationStatus, PassiveSeedRecord, PassiveSeedStatus,
+    CanonicalPassiveEvent as StoredCanonicalPassiveEvent, PassiveRecommendationReview,
+    PassiveRecommendationReviewState, PassiveRegionTarget, PassiveSeedClassificationStatus,
+    PassiveSeedRecord, PassiveSeedStatus,
 };
 
 use crate::canonical_views::{project_canonical_event, CanonicalEventStatus, RiskDeltaType};
@@ -118,6 +119,10 @@ pub struct RegionMapItem {
     pub recent_failed_run_count: usize,
     pub recent_partial_run_count: usize,
     pub recent_lease_loss_count: usize,
+    pub recommendation_pending_review_count: usize,
+    pub recommendation_reviewed_count: usize,
+    pub recommendation_applied_count: usize,
+    pub recommendation_dismissed_count: usize,
     pub latest_run_status: Option<String>,
     pub latest_run_finished_at_unix_seconds: Option<i64>,
     pub operational_pressure_priority: MapPriority,
@@ -158,6 +163,9 @@ pub struct SiteMapItem {
     pub status_reason: String,
     pub overview_path: Option<String>,
     pub narrative_path: Option<String>,
+    pub has_recommendation: bool,
+    pub recommendation_review_state: Option<PassiveRecommendationReviewState>,
+    pub recommendation_reviewed_at_unix_seconds: Option<i64>,
     pub observed: bool,
     pub elevated: bool,
 }
@@ -253,6 +261,18 @@ pub fn build_site_map_response(
             continue;
         }
         let top_event = top_event_for_record(state, &record)?;
+        let latest_review = record
+            .site_id
+            .as_deref()
+            .map(|site_id| latest_recommendation_review_for_site(state, site_id))
+            .transpose()?
+            .flatten();
+        let has_recommendation = record
+            .site_id
+            .as_deref()
+            .map(|site_id| site_has_recommendation(state, site_id))
+            .transpose()?
+            .unwrap_or(false);
         let canonical_focus = record
             .site_id
             .as_ref()
@@ -263,6 +283,8 @@ pub fn build_site_map_response(
             query.region_id.clone(),
             top_event.as_ref(),
             canonical_focus.as_ref(),
+            latest_review.as_ref(),
+            has_recommendation,
         ));
     }
     sites.sort_by(|left, right| {
@@ -345,6 +367,7 @@ fn seed_in_region(record: &PassiveSeedRecord, region: &PassiveRegionTarget) -> b
     within_bbox && matches_type
 }
 
+#[allow(clippy::too_many_lines)]
 fn region_map_item(
     state: &AppState,
     region: PassiveRegionTarget,
@@ -377,14 +400,17 @@ fn region_map_item(
         ),
     };
     let operational_summary = format!(
-        "{} active leases, {} stale leases, {} active workers, {} stale workers, {} failed runs, {} partial runs, {} lease-loss signals.",
+        "{} active leases, {} stale leases, {} active workers, {} stale workers, {} failed runs, {} partial runs, {} lease-loss signals, {} pending recommendation reviews, {} applied, {} dismissed.",
         operational.active_lease_count,
         operational.stale_lease_count,
         operational.active_worker_count,
         operational.stale_worker_count,
         operational.recent_failed_run_count,
         operational.recent_partial_run_count,
-        operational.recent_lease_loss_count
+        operational.recent_lease_loss_count,
+        operational.recommendation_pending_review_count,
+        operational.recommendation_applied_count,
+        operational.recommendation_dismissed_count
     );
     RegionMapItem {
         region_id: region.region_id,
@@ -441,6 +467,10 @@ fn region_map_item(
         recent_failed_run_count: operational.recent_failed_run_count,
         recent_partial_run_count: operational.recent_partial_run_count,
         recent_lease_loss_count: operational.recent_lease_loss_count,
+        recommendation_pending_review_count: operational.recommendation_pending_review_count,
+        recommendation_reviewed_count: operational.recommendation_reviewed_count,
+        recommendation_applied_count: operational.recommendation_applied_count,
+        recommendation_dismissed_count: operational.recommendation_dismissed_count,
         latest_run_status: operational.latest_run_status,
         latest_run_finished_at_unix_seconds: operational.latest_run_finished_at_unix_seconds,
         operational_pressure_priority: priority_from_score(operational.operational_pressure_score),
@@ -484,15 +514,41 @@ fn top_event_for_record(
         }))
 }
 
+fn latest_recommendation_review_for_site(
+    state: &AppState,
+    site_id: &str,
+) -> Result<Option<PassiveRecommendationReview>, AppError> {
+    Ok(state
+        .passive_site_recommendation_reviews(site_id, 1)
+        .map_err(AppError::Storage)?
+        .into_iter()
+        .next())
+}
+
+fn site_has_recommendation(state: &AppState, site_id: &str) -> Result<bool, AppError> {
+    Ok(!state
+        .passive_site_orchestrator_decisions(site_id, 1)
+        .map_err(AppError::Storage)?
+        .is_empty())
+}
+
 fn site_map_item(
     record: PassiveSeedRecord,
     region_id: String,
     top_event: Option<&PassiveEvent>,
     canonical_focus: Option<&SiteCanonicalFocus>,
+    latest_review: Option<&PassiveRecommendationReview>,
+    has_recommendation: bool,
 ) -> SiteMapItem {
     let elevated = seed_is_elevated(&record);
     let priority_reason = seed_priority_reason(&record, top_event);
-    let status_reason = seed_status_reason(&record, top_event, canonical_focus);
+    let status_reason = seed_status_reason(
+        &record,
+        top_event,
+        canonical_focus,
+        latest_review,
+        has_recommendation,
+    );
     let overview_path = record
         .site_id
         .as_ref()
@@ -530,6 +586,10 @@ fn site_map_item(
         status_reason,
         overview_path,
         narrative_path,
+        has_recommendation,
+        recommendation_review_state: latest_review.map(|review| review.state),
+        recommendation_reviewed_at_unix_seconds: latest_review
+            .map(|review| review.decided_at_unix_seconds),
         observed: record.last_scanned_at_unix_seconds.is_some(),
         elevated,
     }
@@ -676,6 +736,10 @@ struct RegionOperationalSummary {
     recent_failed_run_count: usize,
     recent_partial_run_count: usize,
     recent_lease_loss_count: usize,
+    recommendation_pending_review_count: usize,
+    recommendation_reviewed_count: usize,
+    recommendation_applied_count: usize,
+    recommendation_dismissed_count: usize,
     latest_run_status: Option<String>,
     latest_run_finished_at_unix_seconds: Option<i64>,
     operational_pressure_score: f64,
@@ -753,6 +817,7 @@ fn region_canonical_summary(
     summary
 }
 
+#[allow(clippy::too_many_lines)]
 fn region_operational_summary(
     state: &AppState,
     region_id: &str,
@@ -760,9 +825,15 @@ fn region_operational_summary(
 ) -> Result<RegionOperationalSummary, AppError> {
     let stale_cutoff = now_unix_seconds.saturating_sub(180);
     let run_window_start = now_unix_seconds.saturating_sub(24 * 3_600);
+    let region = required_region(state, region_id)?;
     let leases = state.passive_region_leases(500)?;
     let heartbeats = state.passive_worker_heartbeats(500)?;
     let run_logs = state.passive_region_run_logs(50, Some(region_id))?;
+    let region_records = state
+        .passive_seed_records(10_000)?
+        .into_iter()
+        .filter(|record| record.site_id.is_some() && seed_in_region(record, &region))
+        .collect::<Vec<_>>();
 
     let active_lease_count = leases
         .iter()
@@ -833,6 +904,30 @@ fn region_operational_summary(
         pressure += 0.15;
     }
 
+    let mut recommendation_pending_review_count = 0;
+    let mut recommendation_reviewed_count = 0;
+    let mut recommendation_applied_count = 0;
+    let mut recommendation_dismissed_count = 0;
+    for record in &region_records {
+        let Some(site_id) = record.site_id.as_deref() else {
+            continue;
+        };
+        let has_recommendation = site_has_recommendation(state, site_id)?;
+        let latest_review = latest_recommendation_review_for_site(state, site_id)?;
+        match latest_review.map(|review| review.state) {
+            Some(PassiveRecommendationReviewState::Reviewed) => recommendation_reviewed_count += 1,
+            Some(PassiveRecommendationReviewState::Applied) => recommendation_applied_count += 1,
+            Some(PassiveRecommendationReviewState::Dismissed) => {
+                recommendation_dismissed_count += 1;
+            }
+            None if has_recommendation => recommendation_pending_review_count += 1,
+            None => {}
+        }
+    }
+    if recommendation_pending_review_count > 0 {
+        pressure += 0.15;
+    }
+
     Ok(RegionOperationalSummary {
         active_lease_count,
         stale_lease_count,
@@ -841,6 +936,10 @@ fn region_operational_summary(
         recent_failed_run_count,
         recent_partial_run_count,
         recent_lease_loss_count,
+        recommendation_pending_review_count,
+        recommendation_reviewed_count,
+        recommendation_applied_count,
+        recommendation_dismissed_count,
         latest_run_status: latest_run.map(|run| format!("{:?}", run.status)),
         latest_run_finished_at_unix_seconds: latest_run.map(|run| run.finished_at_unix_seconds),
         operational_pressure_score: pressure.clamp(0.0, 1.0),
@@ -856,6 +955,10 @@ fn empty_region_operational_summary() -> RegionOperationalSummary {
         recent_failed_run_count: 0,
         recent_partial_run_count: 0,
         recent_lease_loss_count: 0,
+        recommendation_pending_review_count: 0,
+        recommendation_reviewed_count: 0,
+        recommendation_applied_count: 0,
+        recommendation_dismissed_count: 0,
         latest_run_status: None,
         latest_run_finished_at_unix_seconds: None,
         operational_pressure_score: 0.0,
@@ -930,28 +1033,54 @@ fn seed_status_reason(
     record: &PassiveSeedRecord,
     top_event: Option<&PassiveEvent>,
     canonical_focus: Option<&SiteCanonicalFocus>,
+    latest_review: Option<&PassiveRecommendationReview>,
+    has_recommendation: bool,
 ) -> String {
+    let recommendation_state = recommendation_status_reason(latest_review, has_recommendation);
     if let Some(event) = top_event {
         return format!(
-            "Latest event: {} with {:?} severity and observational confidence {:.0}%.",
+            "Latest event: {} with {:?} severity and observational confidence {:.0}%. {}",
             threat_type_name(event.threat_type),
             severity_from_risk(event.risk_score),
-            record.confidence * 100.0
+            record.confidence * 100.0,
+            recommendation_state
         );
     }
     if let Some(focus) = canonical_focus {
         return format!(
-            "Canonical state {:?} with {:?} risk trend.",
-            focus.status, focus.risk_trend
+            "Canonical state {:?} with {:?} risk trend. {}",
+            focus.status, focus.risk_trend, recommendation_state
         );
     }
     if record.last_scanned_at_unix_seconds.is_some() {
         format!(
-            "Observed site under continuous monitoring; no active canonical pressure yet. Sources fused: {}.",
-            record.source_count
+            "Observed site under continuous monitoring; no active canonical pressure yet. Sources fused: {}. {}",
+            record.source_count,
+            recommendation_state
         )
     } else {
-        "Discovered site candidate awaiting first live scan and narrative enrichment.".to_string()
+        format!(
+            "Discovered site candidate awaiting first live scan and narrative enrichment. {recommendation_state}"
+        )
+    }
+}
+
+fn recommendation_status_reason(
+    latest_review: Option<&PassiveRecommendationReview>,
+    has_recommendation: bool,
+) -> String {
+    match latest_review.map(|review| review.state) {
+        Some(PassiveRecommendationReviewState::Reviewed) => {
+            "Recommendation reviewed by operator.".to_string()
+        }
+        Some(PassiveRecommendationReviewState::Applied) => {
+            "Recommendation applied by operator.".to_string()
+        }
+        Some(PassiveRecommendationReviewState::Dismissed) => {
+            "Recommendation dismissed by operator.".to_string()
+        }
+        None if has_recommendation => "Recommendation pending operator review.".to_string(),
+        None => "No operator recommendation recorded yet.".to_string(),
     }
 }
 
