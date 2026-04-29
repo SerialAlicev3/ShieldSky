@@ -234,6 +234,27 @@ pub struct PassiveSourceHealthPruneResponse {
     pub pruned_count: usize,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[allow(clippy::struct_excessive_bools)]
+pub struct PassiveSchedulerRuntimeReadiness {
+    pub enabled: bool,
+    pub poll_seconds: Option<u64>,
+    pub retry_seconds: Option<u64>,
+    pub window_hours: Option<u64>,
+    pub include_weather: bool,
+    pub include_fire_smoke: bool,
+    pub include_adsb: bool,
+    pub force_discovery: bool,
+    pub startup_discovery_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PassiveSourceReadinessResponse {
+    pub generated_at_unix_seconds: i64,
+    pub scheduler: PassiveSchedulerRuntimeReadiness,
+    pub sources: Vec<crate::state::PassiveSourceReadiness>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct PassiveRegionOverviewQuery {
     pub site_limit: Option<usize>,
@@ -830,6 +851,33 @@ pub async fn get_passive_source_health_samples(
     let response = state
         .passive_source_health_samples(limit, query.source_kind, query.region_id.as_deref())
         .map_err(|error| ApiError::storage(request_id.clone(), error.to_string()))?;
+    Ok(Json(ApiEnvelope::new(request_id, response)))
+}
+
+pub async fn get_passive_source_readiness(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<PassiveSourceHealthSamplesQuery>,
+) -> Result<Json<ApiEnvelope<PassiveSourceReadinessResponse>>, ApiError> {
+    let request_id = request_id(&headers);
+    let scheduler = PassiveSchedulerRuntimeReadiness {
+        enabled: env_u64("SSS_PASSIVE_REGION_POLL_SECONDS").unwrap_or(0) > 0,
+        poll_seconds: env_u64("SSS_PASSIVE_REGION_POLL_SECONDS"),
+        retry_seconds: env_u64("SSS_PASSIVE_REGION_RETRY_SECONDS"),
+        window_hours: env_u64("SSS_PASSIVE_REGION_WINDOW_HOURS"),
+        include_weather: env_bool("SSS_PASSIVE_REGION_INCLUDE_WEATHER", true),
+        include_fire_smoke: env_bool("SSS_PASSIVE_REGION_INCLUDE_FIRE_SMOKE", true),
+        include_adsb: env_bool("SSS_PASSIVE_REGION_INCLUDE_ADSB", true),
+        force_discovery: env_bool("SSS_PASSIVE_REGION_FORCE_DISCOVERY", false),
+        startup_discovery_enabled: env_bool("SSS_API_ENABLE_STARTUP_DISCOVERY", false),
+    };
+    let response = PassiveSourceReadinessResponse {
+        generated_at_unix_seconds: crate::state::now_unix_seconds(),
+        scheduler,
+        sources: state
+            .passive_source_readiness(query.region_id.as_deref())
+            .map_err(|error| app_error_to_api_error(request_id.clone(), error))?,
+    };
     Ok(Json(ApiEnvelope::new(request_id, response)))
 }
 
@@ -1644,6 +1692,19 @@ fn app_error_to_api_error(request_id: String, error: AppError) -> ApiError {
             ApiError::not_found(request_id, "site_not_found", message)
         }
     }
+}
+
+fn env_bool(key: &str, default: bool) -> bool {
+    std::env::var(key).ok().map_or(default, |value| {
+        matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
+}
+
+fn env_u64(key: &str) -> Option<u64> {
+    std::env::var(key).ok()?.trim().parse::<u64>().ok()
 }
 
 fn request_id(headers: &HeaderMap) -> String {
@@ -3361,7 +3422,7 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
        ============================================================ -->
   <footer class="bottom-bar">
     <div class="time-label">
-      <span class="time-label-kicker">T &minus; 36h</span>
+      <span class="time-label-kicker" id="timeline-start-kicker">WINDOW START</span>
       <span class="time-label-time" id="timeline-start-time">&#8212;</span>
       <span class="time-label-date" id="timeline-start-date">&#8212;</span>
     </div>
@@ -3369,24 +3430,18 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
     <div class="timeline-container" id="timeline">
       <div class="timeline-summary" id="timeline-summary">Event memory and forecast windows will appear here.</div>
       <div class="timeline-track"></div>
-      <div class="future-window" style="left: 60%; right: 0;"></div>
+      <div class="future-window" id="timeline-future-window"></div>
 
-      <!-- Static ticks -->
-      <div class="timeline-tick" style="left: 16.6%"><div class="timeline-tick-label">-30H</div></div>
-      <div class="timeline-tick" style="left: 33.3%"><div class="timeline-tick-label">-24H</div></div>
-      <div class="timeline-tick" style="left: 50%"><div class="timeline-tick-label">-12H</div></div>
-      <div class="timeline-tick" style="left: 75%"><div class="timeline-tick-label">+12H</div></div>
-      <div class="timeline-tick" style="left: 91.6%"><div class="timeline-tick-label">+24H</div></div>
+      <div id="timeline-ticks"></div>
 
       <!-- Events populated by JS -->
       <div id="timeline-events"></div>
 
-      <!-- Now marker at 60% -->
-      <div class="now-marker" style="left: 60%"></div>
+      <div class="now-marker" id="timeline-now-marker"></div>
     </div>
 
     <div class="time-label right">
-      <span class="time-label-kicker">T + 36h</span>
+      <span class="time-label-kicker" id="timeline-end-kicker">WINDOW END</span>
       <span class="time-label-time" id="timeline-end-time">&#8212;</span>
       <span class="time-label-date" id="timeline-end-date">&#8212;</span>
     </div>
@@ -3620,6 +3675,51 @@ function setFocusStateText(text) {
   stateEl.textContent = text || '';
 }
 
+function currentTimelineWindowHours() {
+  const mapping = { '24h': 24, '72h': 72, '7d': 24 * 7, '30d': 24 * 30 };
+  return mapping[CONSOLE_STATE.window] || 72;
+}
+
+function currentTimelineRangeMs() {
+  const totalHours = currentTimelineWindowHours();
+  const halfWindowMs = (totalHours * 3600 * 1000) / 2;
+  const nowMs = Date.now();
+  return {
+    nowMs: nowMs,
+    startMs: nowMs - halfWindowMs,
+    endMs: nowMs + halfWindowMs,
+    totalMs: totalHours * 3600 * 1000,
+    halfHours: totalHours / 2,
+  };
+}
+
+function renderTimelineScale() {
+  const ticksEl = document.getElementById('timeline-ticks');
+  const futureWindowEl = document.getElementById('timeline-future-window');
+  const nowMarkerEl = document.getElementById('timeline-now-marker');
+  const startKickerEl = document.getElementById('timeline-start-kicker');
+  const endKickerEl = document.getElementById('timeline-end-kicker');
+  if (!ticksEl || !futureWindowEl || !nowMarkerEl) return;
+
+  const range = currentTimelineRangeMs();
+  const half = range.halfHours;
+  const tickOffsets = [-0.66, -0.33, 0.33, 0.66];
+
+  ticksEl.innerHTML = tickOffsets.map(function(multiplier) {
+    const offsetHours = Math.round(half * multiplier);
+    const pct = 50 + (multiplier * 50);
+    const label = (offsetHours > 0 ? '+' : '') + offsetHours + 'H';
+    return '<div class="timeline-tick" style="left:' + pct.toFixed(1) + '%"><div class="timeline-tick-label">' + label + '</div></div>';
+  }).join('');
+
+  futureWindowEl.style.left = '50%';
+  futureWindowEl.style.right = '0';
+  nowMarkerEl.style.left = '50%';
+
+  if (startKickerEl) startKickerEl.textContent = 'WINDOW START · T-' + half + 'h';
+  if (endKickerEl) endKickerEl.textContent = 'WINDOW END · T+' + half + 'h';
+}
+
 function formatReviewHistoryPayload(payload) {
   if (!Array.isArray(payload)) return null;
   if (!payload.length) return 'No review history recorded yet.';
@@ -3641,43 +3741,102 @@ function formatReviewHistoryPayload(payload) {
   }).join('\n\n');
 }
 
+function formatReadinessPayload(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const scheduler = payload.scheduler || {};
+  const sources = Array.isArray(payload.sources) ? payload.sources : [];
+  const ready = sources.filter(function(source) {
+    return String(source.readiness || '').toLowerCase() === 'ready';
+  }).length;
+  const lines = [
+    'SCHEDULER   ' + (scheduler.enabled ? 'ENABLED' : 'DISABLED'),
+    scheduler.poll_seconds ? 'POLL        ' + scheduler.poll_seconds + 's' : '',
+    scheduler.retry_seconds ? 'RETRY       ' + scheduler.retry_seconds + 's' : '',
+    scheduler.window_hours ? 'WINDOW      ' + scheduler.window_hours + 'h' : '',
+    'READY       ' + ready + ' / ' + sources.length,
+    scheduler.force_discovery ? 'DISCOVERY   forced' : 'DISCOVERY   scheduled',
+    scheduler.startup_discovery_enabled ? 'BOOT        startup discovery on' : 'BOOT        startup discovery off',
+  ].filter(Boolean);
+  if (!sources.length) return lines.join('\n');
+  const sourceLines = sources.map(function(source) {
+    const name = String(source.label || source.source_id || 'source').toUpperCase();
+    const state = String(source.readiness || 'awaiting_data').replace(/_/g, ' ').toUpperCase();
+    const reason = source.reason ? ' · ' + source.reason : '';
+    const sampleText = source.sample_count ? ' · ' + source.sample_count + ' samples' : '';
+    return name + ' · ' + state + sampleText + reason;
+  });
+  return lines.join('\n') + '\n\n' + sourceLines.join('\n');
+}
+
 function formatEvidencePayload(payload) {
   if (!payload || typeof payload !== 'object') return null;
-  const finding = payload.finding || payload.summary || payload.description || 'Evidence bundle loaded.';
-  const assessment = payload.assessment || payload.risk_summary || '';
+  const finding = payload.finding || payload.summary || payload.description || ('Evidence bundle for ' + (payload.object_id || 'object') + '.');
   const confidence = payload.confidence != null ? ('CONFIDENCE  ' + Math.round(Number(payload.confidence) * 100) + '%') : '';
   const bundleHash = payload.bundle_hash ? ('BUNDLE      ' + payload.bundle_hash) : '';
-  const sources = Array.isArray(payload.evidence)
-    ? ('EVIDENCE    ' + payload.evidence.length + ' captured item' + (payload.evidence.length === 1 ? '' : 's'))
+  const objectId = payload.object_id ? ('OBJECT      ' + payload.object_id) : '';
+  const events = Array.isArray(payload.events) ? ('EVENTS      ' + payload.events.length) : '';
+  const observations = Array.isArray(payload.observations) ? ('OBSERVED    ' + payload.observations.length) : '';
+  const sources = Array.isArray(payload.sources) ? ('SOURCES     ' + payload.sources.length) : '';
+  const signals = Array.isArray(payload.signals) && payload.signals.length
+    ? ('SIGNALS     ' + payload.signals.slice(0, 3).map(function(signal) {
+        return signal.name || signal.signal_type || signal.reason || 'signal';
+      }).join(' · '))
+    : '';
+  const contributors = Array.isArray(payload.confidence_contributors) && payload.confidence_contributors.length
+    ? ('DRIVERS     ' + payload.confidence_contributors.slice(0, 2).map(function(entry) {
+        return (entry.name || 'factor') + ' ' + Math.round(Number(entry.weight || 0) * 100) + '%';
+      }).join(' · '))
     : '';
   return [
     'FINDING     ' + finding,
-    assessment ? 'ASSESSMENT  ' + assessment : '',
     confidence,
+    objectId,
     bundleHash,
+    events,
+    observations,
     sources,
+    signals,
+    contributors,
   ].filter(Boolean).join('\n');
 }
 
 function formatReplayPayload(payload) {
   if (!payload || typeof payload !== 'object') return null;
-  const executionId = payload.execution_id || payload.manifest_hash || payload.replay_manifest_hash || '';
-  const status = payload.status || payload.result || 'ready';
+  const manifest = payload.manifest || payload;
+  const executionId = payload.execution_id || manifest.manifest_hash || payload.replay_manifest_hash || '';
+  const status = payload.status || payload.result || (payload.drift_detected != null ? 'executed' : 'ready');
   const requestId = payload.request_id || '';
-  const steps = Array.isArray(payload.steps)
-    ? ('STEPS       ' + payload.steps.length)
-    : (Array.isArray(payload.inputs) ? 'INPUTS      ' + payload.inputs.length : '');
-  const summary = payload.summary || payload.description || payload.outcome || 'Replay artifact loaded.';
+  const summary = payload.summary || payload.description || payload.outcome || (payload.drift_detected != null ? 'Replay execution loaded.' : 'Replay artifact loaded.');
+  const drift = payload.drift_detected == null ? '' : ('DRIFT       ' + (payload.drift_detected ? 'detected' : 'no drift'));
+  const assessmentDelta = payload.diff && payload.diff.assessment
+    ? ('ASSESSMENT  Δconf ' + Number(payload.diff.assessment.confidence_delta || 0).toFixed(2)
+      + ' · Δpred ' + Number(payload.diff.assessment.prediction_probability_delta || 0).toFixed(2))
+    : '';
+  const decisionDelta = payload.diff && payload.diff.decision
+    ? ('DECISION    Δrisk ' + Number(payload.diff.decision.risk_score_delta || 0).toFixed(2))
+    : '';
+  const changedFields = payload.diff && payload.diff.assessment && Array.isArray(payload.diff.assessment.changed_fields) && payload.diff.assessment.changed_fields.length
+    ? ('FIELDS      ' + payload.diff.assessment.changed_fields.join(', '))
+    : '';
   return [
     executionId ? 'REPLAY      ' + executionId : 'REPLAY      ready',
     'STATUS      ' + status,
     requestId ? 'REQUEST     ' + requestId : '',
-    steps,
+    manifest.object_id ? 'OBJECT      ' + manifest.object_id : '',
+    Array.isArray(manifest.event_ids) ? 'EVENTS      ' + manifest.event_ids.length : '',
+    drift,
+    assessmentDelta,
+    decisionDelta,
+    changedFields,
     'SUMMARY     ' + summary,
   ].filter(Boolean).join('\n');
 }
 
 function formatDrawerPayload(path, payload) {
+  if (path && path.indexOf('/source-health/readiness') >= 0) {
+    const formattedReadiness = formatReadinessPayload(payload);
+    if (formattedReadiness) return formattedReadiness;
+  }
   if (path && path.indexOf('/reviews') >= 0) {
     const formattedReviews = formatReviewHistoryPayload(payload);
     if (formattedReviews) return formattedReviews;
@@ -3898,14 +4057,17 @@ async function executeRecommendedAction(action) {
   if (!action || !action.path) return;
   const list = document.getElementById('recommended-actions-list');
   if (list) list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:6px 0;line-height:1.6;">Executing action…</div>';
-  let payload = {};
-  if (action.path.indexOf('/worker/heartbeats/prune') >= 0) {
+  const method = String(action.method || 'POST').toUpperCase();
+  let payload = action.payload || {};
+  if (!action.payload && action.path.indexOf('/worker/heartbeats/prune') >= 0) {
     payload = { older_than_seconds: 86400 };
-  } else if (action.path.indexOf('/source-health/samples/prune') >= 0) {
+  } else if (!action.payload && action.path.indexOf('/source-health/samples/prune') >= 0) {
     payload = { older_than_seconds: 2592000, dry_run: false };
   }
   try {
-    const result = await API.post(action.path, payload);
+    const result = method === 'GET'
+      ? await API.get(action.path)
+      : await API.post(action.path, payload);
     openDrawer(action.title || 'Action result', action.path, result);
   } catch (error) {
     openDrawer(action.title || 'Action failed', action.path, 'Failed to execute: ' + String(error.message || error));
@@ -3939,9 +4101,9 @@ function renderTimelineEntries(entries) {
     strip.innerHTML = '';
     return;
   }
-  const now = Date.now();
-  const start = now - 36 * 3600 * 1000;
-  const total = 72 * 3600 * 1000;
+  const range = currentTimelineRangeMs();
+  const start = range.startMs;
+  const total = range.totalMs;
   strip.innerHTML = entries
     .map(function(entry) {
       const ts = (entry.target_epoch_unix_seconds || entry.last_observed_at_unix_seconds || 0) * 1000;
@@ -4355,6 +4517,9 @@ function openFocusPanel({ kind, title, reason, lat, lng, siteId, regionId, actio
     narrativePath ? { label: 'Narrative', path: narrativePath } : null,
     evidencePath ? { label: 'Evidence', path: evidencePath, warn: true } : null,
     replayPath ? { label: 'Replay', path: replayPath, warn: true } : null,
+    replayPath && replayPath.indexOf('/replay/') >= 0 && replayPath.indexOf('/execute') < 0
+      ? { label: 'Run Replay', path: replayPath + '/execute', warn: true }
+      : null,
   ].filter(Boolean));
   setFocusStateText(operatorState ? ('RECOMMENDATION ' + String(operatorState).replace(/_/g, ' ').toUpperCase()) : '');
   refreshFocusedSiteAnalytics().catch(() => {});
@@ -4639,9 +4804,34 @@ async function refreshSourceHealth() {
     if (!grid) return;
     const sources = (data.dashboard && data.dashboard.source_health) || [];
     if (!sources.length) {
-      grid.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">No source health samples available yet.</div>';
-      if (cnt) cnt.textContent = '\u2014';
-      if (sysEl) sysEl.textContent = 'no feeds';
+      const readiness = await API.get('/v1/passive/source-health/readiness');
+      const readySources = (readiness.sources || []).filter(function(source) {
+        return String(source.readiness || '').toLowerCase() === 'ready';
+      });
+      const scheduler = readiness.scheduler || {};
+      if (cnt) cnt.textContent = readySources.length + ' / ' + (readiness.sources || []).length;
+      if (sysEl) {
+        sysEl.textContent = scheduler.enabled
+          ? readySources.length + ' / ' + (readiness.sources || []).length + ' ready'
+          : 'scheduler off';
+      }
+      grid.innerHTML = (readiness.sources || []).slice(0, 6).map(function(source) {
+        const readinessState = String(source.readiness || 'awaiting_data').toLowerCase();
+        const scoreByReadiness = { ready: 94, awaiting_data: 56, needs_config: 18, degraded: 28 };
+        const classByReadiness = { ready: 'healthy', awaiting_data: 'degraded', needs_config: 'failing', degraded: 'failing' };
+        const hint = source.reason || 'No readiness detail yet.';
+        const nm = String(source.label || source.source_id || 'SOURCE').toUpperCase().substring(0, 14);
+        return '<div class="source-row">'
+          + '<div class="source-name">' + nm + '</div>'
+          + '<div class="source-bar"><div class="source-bar-fill ' + (classByReadiness[readinessState] || 'degraded') + '" style="width:' + (scoreByReadiness[readinessState] || 40) + '%"></div></div>'
+          + '<div class="source-value">' + (scoreByReadiness[readinessState] || 40) + '</div>'
+          + '<div style="grid-column: 1 / span 3; font-family:var(--font-mono);font-size:9px;color:var(--text-tertiary);letter-spacing:0.08em;margin-top:4px;">'
+          + escapeHtml(readinessState.replace(/_/g, ' '))
+          + (source.sample_count ? ' · ' + source.sample_count + ' samples' : '')
+          + '</div>'
+          + '<div style="grid-column: 1 / span 3; font-size:10px;color:var(--text-secondary);margin-top:4px;line-height:1.5;">' + escapeHtml(hint) + '</div>'
+          + '</div>';
+      }).join('');
       return;
     }
     const scoreByStatus = { healthy: 97, watch: 72, degraded: 38, stale: 16 };
@@ -5084,14 +5274,15 @@ function refreshSysStatus() {
 
 // --- Timeline labels ---
 function updateTimelineLabels() {
-  const now   = new Date();
-  const start = new Date(now.getTime() - 36 * 3600 * 1000);
-  const end   = new Date(now.getTime() + 36 * 3600 * 1000);
+  const range = currentTimelineRangeMs();
+  const start = new Date(range.startMs);
+  const end   = new Date(range.endMs);
   const pad   = n => String(n).padStart(2, '0');
   const fmtTime = d => pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + ' UTC';
   const months  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const fmtDate = d => months[d.getUTCMonth()] + ' ' + d.getUTCDate() + ', ' + d.getUTCFullYear();
   const el = id => document.getElementById(id);
+  renderTimelineScale();
   if (el('timeline-start-time')) el('timeline-start-time').textContent = fmtTime(start);
   if (el('timeline-start-date')) el('timeline-start-date').textContent = fmtDate(start);
   if (el('timeline-end-time'))   el('timeline-end-time').textContent   = fmtTime(end);

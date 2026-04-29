@@ -1036,6 +1036,35 @@ async fn passive_live_scan_fetches_real_feed_shapes_and_builds_narrative() {
         .expect("weather samples")
         .iter()
         .all(|sample| sample["source_kind"] == "Weather"));
+
+    let readiness_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/v1/passive/source-health/readiness")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(readiness_response.status(), StatusCode::OK);
+    let readiness_body = body_json(readiness_response).await;
+    let readiness_sources = readiness_body["data"]["sources"]
+        .as_array()
+        .expect("readiness sources");
+    assert!(readiness_sources
+        .iter()
+        .any(|source| source["source_id"] == "open_meteo"));
+    assert!(readiness_sources
+        .iter()
+        .any(|source| source["source_id"] == "firms"));
+    assert!(readiness_sources
+        .iter()
+        .any(|source| source["source_id"] == "opensky"));
+    assert!(readiness_sources
+        .iter()
+        .any(|source| source["source_id"] == "overpass"));
+    assert!(readiness_body["data"]["scheduler"]["enabled"].is_boolean());
     assert_eq!(
         live_body["data"]["scan"]["sites"][0]["site"]["name"],
         "Seville Solar South"
@@ -2370,6 +2399,24 @@ async fn passive_regions_persist_and_orchestrate_discovery_then_scheduler() {
     }));
     assert!(command_center_body["data"]["dashboard"]["top_regions"].is_array());
     assert!(command_center_body["data"]["maintenance"]["suggested_actions"].is_array());
+    let suggested_actions = command_center_body["data"]["maintenance"]["suggested_actions"]
+        .as_array()
+        .expect("suggested actions");
+    assert!(suggested_actions.iter().any(|action| {
+        action["path"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("/v1/passive/regions/run")
+    }));
+    assert!(suggested_actions.iter().any(|action| {
+        action["path"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("/v1/passive/source-health/readiness")
+    }));
+    assert!(suggested_actions
+        .iter()
+        .any(|action| { action["method"] == "POST" && action["payload"].is_object() }));
     assert!(
         command_center_body["data"]["maintenance"]["source_health_prune_candidate_count"]
             .is_number()
@@ -2482,6 +2529,7 @@ async fn operator_console_is_served() {
     assert!(html.contains("/v1/passive/operational-visibility"));
     assert!(html.contains("/v1/passive/map/regions"));
     assert!(html.contains("/v1/ingest/batches"));
+    assert!(html.contains("/v1/passive/source-health/readiness"));
     // Key data fields consumed from API responses
     assert!(html.contains("attention_queue"));
     assert!(html.contains("suggested_actions"));
@@ -2498,6 +2546,8 @@ async fn operator_console_is_served() {
     // Polling infrastructure
     assert!(html.contains("refreshAll"));
     assert!(html.contains("setInterval(refreshAll, 30000)"));
+    assert!(html.contains("formatReadinessPayload"));
+    assert!(html.contains("Run Replay"));
 }
 
 #[tokio::test]

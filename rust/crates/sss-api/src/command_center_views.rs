@@ -5,7 +5,10 @@ use crate::dashboard_views::{
     build_passive_dashboard_summary, PassiveDashboardSummary, PassiveDashboardSummaryQuery,
 };
 use crate::map_views::{MapPriority, RegionMapItem, SiteMapItem};
-use crate::state::{now_unix_seconds, AppError, AppState, NeoRiskFeed, NeoRiskObject};
+use crate::state::{
+    now_unix_seconds, AppError, AppState, NeoRiskFeed, NeoRiskObject, PassiveSourceReadinessLevel,
+};
+use serde_json::json;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct PassiveCommandCenterSummaryQuery {
@@ -28,6 +31,7 @@ pub struct PassiveCommandCenterAction {
     pub reason: String,
     pub method: &'static str,
     pub path: String,
+    pub payload: Option<serde_json::Value>,
     pub confirmation_read_paths: Vec<String>,
 }
 
@@ -141,10 +145,7 @@ pub fn build_passive_command_center_summary(
     )?;
     let generated_at_unix_seconds = now_unix_seconds();
     let focus_region_id = query.region_id.clone().or_else(|| {
-        dashboard
-            .top_regions
-            .first()
-            .map(|region| region.region_id.clone())
+        preferred_focus_region(&dashboard.top_regions).map(|region| region.region_id.clone())
     });
     let maintenance = build_maintenance_projection(
         state,
@@ -181,6 +182,17 @@ pub fn build_passive_command_center_summary(
     })
 }
 
+fn preferred_focus_region(regions: &[RegionMapItem]) -> Option<&RegionMapItem> {
+    regions
+        .iter()
+        .find(|region| {
+            region.country_code.as_deref() == Some("PT")
+                || region.region_id.contains("portugal")
+                || region.region_id.contains("alentejo")
+        })
+        .or_else(|| regions.first())
+}
+
 fn build_maintenance_projection(
     state: &AppState,
     generated_at_unix_seconds: i64,
@@ -203,6 +215,7 @@ fn build_maintenance_projection(
             reason: format!("{stale_heartbeat_count} heartbeats are older than retention."),
             method: "POST",
             path: "/v1/passive/worker/heartbeats/prune".to_string(),
+            payload: None,
             confirmation_read_paths: vec![
                 "/v1/passive/worker/diagnostics?stale_after_seconds=86400".to_string(),
                 "/v1/passive/worker/heartbeats?stale_only=true".to_string(),
@@ -218,6 +231,7 @@ fn build_maintenance_projection(
             ),
             method: "POST",
             path: "/v1/passive/source-health/samples/prune".to_string(),
+            payload: None,
             confirmation_read_paths: vec![
                 format!(
                     "/v1/passive/source-health/samples?limit=20{}{}",
@@ -233,6 +247,8 @@ fn build_maintenance_projection(
         });
     }
 
+    suggested_actions.extend(build_source_readiness_actions(state, region_id)?);
+
     Ok(PassiveCommandCenterMaintenance {
         heartbeat_retention_seconds,
         source_retention_seconds,
@@ -242,6 +258,130 @@ fn build_maintenance_projection(
         region_id: region_id.map(ToOwned::to_owned),
         suggested_actions,
     })
+}
+
+fn build_source_readiness_actions(
+    state: &AppState,
+    region_id: Option<&str>,
+) -> Result<Vec<PassiveCommandCenterAction>, AppError> {
+    let readiness = state.passive_source_readiness(region_id)?;
+    let ready_count = readiness
+        .iter()
+        .filter(|source| source.readiness == PassiveSourceReadinessLevel::Ready)
+        .count();
+    let total_samples = readiness
+        .iter()
+        .map(|source| source.sample_count)
+        .sum::<usize>();
+    let blocking_sources = readiness
+        .iter()
+        .filter(|source| source.readiness == PassiveSourceReadinessLevel::NeedsConfig)
+        .map(|source| source.label.clone())
+        .collect::<Vec<_>>();
+    let lagging_sources = readiness
+        .iter()
+        .filter(|source| {
+            matches!(
+                source.readiness,
+                PassiveSourceReadinessLevel::AwaitingData | PassiveSourceReadinessLevel::Degraded
+            )
+        })
+        .map(|source| source.label.clone())
+        .collect::<Vec<_>>();
+    let mut actions = Vec::new();
+
+    if !blocking_sources.is_empty() {
+        actions.push(PassiveCommandCenterAction {
+            action_id: "inspect-source-readiness".to_string(),
+            title: "Inspect source readiness".to_string(),
+            reason: format!(
+                "{} still need configuration before the passive surface can wake up.",
+                blocking_sources.join(", ")
+            ),
+            method: "GET",
+            path: format!(
+                "/v1/passive/source-health/readiness{}",
+                region_id
+                    .map(|current| format!("?region_id={current}"))
+                    .unwrap_or_default()
+            ),
+            payload: None,
+            confirmation_read_paths: vec![
+                "/v1/passive/source-health/readiness".to_string(),
+                "/v1/passive/worker/diagnostics".to_string(),
+            ],
+        });
+    }
+
+    if total_samples == 0 {
+        actions.push(PassiveCommandCenterAction {
+            action_id: "prime-passive-region-cycle".to_string(),
+            title: "Prime passive region cycle".to_string(),
+            reason: if ready_count == 0 {
+                "No source samples have landed yet. Force a discovery and scan cycle to seed the console.".to_string()
+            } else {
+                "Ready feeds exist but the console has not received source samples yet. Force a discovery and scan cycle now.".to_string()
+            },
+            method: "POST",
+            path: "/v1/passive/regions/run".to_string(),
+            payload: Some(passive_regions_run_payload(region_id)),
+            confirmation_read_paths: vec![
+                "/v1/passive/dashboard/summary".to_string(),
+                "/v1/passive/source-health/readiness".to_string(),
+                "/v1/passive/map/regions".to_string(),
+            ],
+        });
+    } else if !lagging_sources.is_empty() {
+        actions.push(PassiveCommandCenterAction {
+            action_id: "run-passive-scheduler-now".to_string(),
+            title: "Run passive scheduler now".to_string(),
+            reason: format!(
+                "{} are configured but still waiting for fresh samples. Trigger the scheduler for a fresh pass.",
+                lagging_sources.join(", ")
+            ),
+            method: "POST",
+            path: "/v1/passive/scheduler/run".to_string(),
+            payload: Some(json!({
+                "limit": 25,
+                "window_hours": 24,
+                "include_adsb": true,
+                "include_weather": true,
+                "include_fire_smoke": true,
+                "force": true,
+                "dry_run": false
+            })),
+            confirmation_read_paths: vec![
+                "/v1/passive/dashboard/summary".to_string(),
+                "/v1/passive/source-health/samples?limit=20".to_string(),
+                "/v1/passive/worker/diagnostics".to_string(),
+            ],
+        });
+    }
+
+    Ok(actions)
+}
+
+fn passive_regions_run_payload(region_id: Option<&str>) -> serde_json::Value {
+    if let Some(current_region_id) = region_id {
+        json!({
+            "region_ids": [current_region_id],
+            "force_discovery": true,
+            "dry_run": false,
+            "window_hours": 24,
+            "include_adsb": true,
+            "include_weather": true,
+            "include_fire_smoke": true
+        })
+    } else {
+        json!({
+            "force_discovery": true,
+            "dry_run": false,
+            "window_hours": 24,
+            "include_adsb": true,
+            "include_weather": true,
+            "include_fire_smoke": true
+        })
+    }
 }
 
 fn command_center_operator_paths() -> Vec<String> {
@@ -276,7 +416,7 @@ fn build_command_center_summary(
     maintenance: &PassiveCommandCenterMaintenance,
     focus_region_id: Option<&str>,
 ) -> String {
-    let top_region = dashboard.top_regions.first().map_or_else(
+    let top_region = preferred_focus_region(&dashboard.top_regions).map_or_else(
         || "no priority region".to_string(),
         |region| region.name.clone(),
     );
@@ -304,19 +444,17 @@ fn build_command_center_summary(
 fn build_command_center_highlights(
     dashboard: &PassiveDashboardSummary,
 ) -> PassiveCommandCenterHighlights {
-    let top_region =
-        dashboard
-            .top_regions
-            .first()
-            .map(|region| PassiveCommandCenterRegionHighlight {
-                region_id: region.region_id.clone(),
-                name: region.name.clone(),
-                operational_pressure_priority: region.operational_pressure_priority,
-                dominant_status: region.dominant_status,
-                risk_delta_classification: region.risk_delta_classification,
-                risk_delta_explanation: region.risk_delta_explanation.clone(),
-                narrative_summary: region.narrative_summary.clone(),
-            });
+    let top_region = preferred_focus_region(&dashboard.top_regions).map(|region| {
+        PassiveCommandCenterRegionHighlight {
+            region_id: region.region_id.clone(),
+            name: region.name.clone(),
+            operational_pressure_priority: region.operational_pressure_priority,
+            dominant_status: region.dominant_status,
+            risk_delta_classification: region.risk_delta_classification,
+            risk_delta_explanation: region.risk_delta_explanation.clone(),
+            narrative_summary: region.narrative_summary.clone(),
+        }
+    });
     let top_site = dashboard
         .top_sites
         .iter()
