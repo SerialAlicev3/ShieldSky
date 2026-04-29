@@ -334,8 +334,26 @@ async fn run_passive_region_scheduler(state: AppState, config: PassiveRegionSche
     }
 }
 
-/// Seed the two default Portugal monitoring regions on startup if none exist.
-/// Returns true if regions were created (i.e. DB was fresh / wiped).
+/// Seeds the repository with the default passive region requests when no passive regions exist.
+///
+/// The function checks for any existing passive region targets; if none are found, it inserts the
+/// default passive region requests produced by `default_passive_region_requests()` and returns
+/// `true`. If passive regions already exist or the initial existence check fails, nothing is
+/// inserted and the function returns `false`.
+///
+/// # Examples
+///
+/// ```
+/// # use sss_api::AppState;
+/// # fn example(state: &AppState) {
+/// let created = seed_default_regions(state);
+/// // `created` is true when defaults were inserted; false otherwise.
+/// # }
+/// ```
+///
+/// # Returns
+///
+/// `true` if default passive regions were inserted, `false` otherwise.
 fn seed_default_regions(state: &AppState) -> bool {
     let existing = match state.passive_region_targets(1, false) {
         Ok(targets) => targets,
@@ -363,8 +381,19 @@ fn seed_default_regions(state: &AppState) -> bool {
     true
 }
 
-/// After a fresh DB seed, run discovery in the background so the console
-/// has real site data within ~60 seconds of startup.
+/// Performs a startup passive-region discovery run after a short delay so freshly-seeded regions are discovered.
+///
+/// This async task waits briefly, then triggers a passive-region discovery using the provided application state and logs the outcome. It is intended to be spawned in the background after seeding default regions.
+///
+/// # Examples
+///
+/// ```no_run
+/// # use tokio::runtime::Runtime;
+/// # use sss_api::state::AppState;
+/// # async fn example(state: AppState) {
+/// tokio::spawn(run_startup_discovery(state));
+/// # }
+/// ```
 async fn run_startup_discovery(state: AppState) {
     // Small delay so the HTTP server is fully up before we start hitting
     // external APIs (Overpass, Open-Meteo, etc.).

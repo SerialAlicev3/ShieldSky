@@ -1,4 +1,4 @@
-﻿use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
@@ -587,6 +587,30 @@ pub async fn run_passive_scheduler(
     Ok(Json(ApiEnvelope::new(request_id, response)))
 }
 
+/// Upserts a passive region target from the provided request payload.
+///
+/// # Examples
+///
+/// ```
+/// // Example (illustrative): construct a request and call the handler in an async test.
+/// // let req = crate::state::PassiveRegionTargetRequest {
+/// //     name: "region-1".into(),
+/// //     south: -10.0,
+/// //     west: -20.0,
+/// //     north: 10.0,
+/// //     east: 20.0,
+/// // };
+/// // let state = /* obtain AppState for tests */;
+/// // let headers = axum::http::HeaderMap::new();
+/// // let resp = tokio_test::block_on(async {
+/// //     upsert_passive_region(axum::extract::State(state), headers, axum::Json(req)).await
+/// // }).unwrap();
+/// // assert_eq!(resp.0.payload.name, "region-1");
+/// ```
+///
+/// # Returns
+///
+/// An `ApiEnvelope` containing the persisted `sss_storage::PassiveRegionTarget`.
 pub async fn upsert_passive_region(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -608,6 +632,26 @@ pub async fn upsert_passive_region(
     Ok(Json(ApiEnvelope::new(request_id, response)))
 }
 
+/// Bootstraps default passive region targets into persistent storage.
+///
+/// Applies the provided default region configuration and returns details about which targets were created or updated. If the request's `overwrite_existing` flag is true, existing targets will be replaced according to the request.
+///
+/// # Returns
+///
+/// `ApiEnvelope<crate::state::PassiveRegionDefaultsBootstrapResponse>` containing metadata about the bootstrapped regions.
+///
+/// # Examples
+///
+/// ```
+/// // Example usage in an async test (types and setup omitted for brevity).
+/// # tokio::runtime::Runtime::new().unwrap().block_on(async {
+/// // let state = /* AppState */ ;
+/// // let headers = HeaderMap::new();
+/// // let req = crate::state::PassiveRegionDefaultsBootstrapRequest { overwrite_existing: Some(true), ..Default::default() };
+/// // let result = bootstrap_default_passive_regions(State(state), headers, Json(req)).await;
+/// // assert!(result.is_ok());
+/// # });
+/// ```
 pub async fn bootstrap_default_passive_regions(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -625,6 +669,21 @@ pub async fn bootstrap_default_passive_regions(
     Ok(Json(ApiEnvelope::new(request_id, response)))
 }
 
+/// Return a list of passive region targets, optionally limited and filtered to enabled-only entries.
+///
+/// The `limit` and `enabled_only` query parameters are taken from `PassiveRegionsQuery`:
+/// - `limit` defaults to 50 and is clamped to the range 1..=500.
+/// - `enabled_only` defaults to `false`.
+///
+/// On storage-layer failures the handler converts the error into `ApiError::storage` tagged with the request id.
+///
+/// # Examples
+///
+/// ```no_run
+/// use axum::{routing::get, Router};
+///
+/// let app = Router::new().route("/v1/passive/regions", get(crate::handlers::get_passive_regions));
+/// ```
 pub async fn get_passive_regions(
     State(state): State<AppState>,
     headers: HeaderMap,
