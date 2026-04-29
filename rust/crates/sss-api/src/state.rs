@@ -2935,6 +2935,7 @@ impl AppState {
         Ok(passive_region_site_summary(record, overview.as_ref()))
     }
 
+    #[allow(clippy::too_many_lines)]
     pub async fn run_passive_regions(
         &self,
         request_id: &str,
@@ -2958,7 +2959,9 @@ impl AppState {
         for mut region in regions {
             let overdue_seconds =
                 passive_region_overdue_seconds(&region, now, region.discovery_cadence_seconds);
-            let due = force_discovery || overdue_seconds >= 0;
+            let force_bootstrap_discovery =
+                force_discovery && region.last_discovered_at_unix_seconds.is_none();
+            let due = force_bootstrap_discovery || overdue_seconds >= 0;
             if !due {
                 run_records.push(PassiveRegionRunRecord {
                     region,
@@ -2981,29 +2984,52 @@ impl AppState {
                 run_records.push(PassiveRegionRunRecord {
                     region,
                     due: true,
-                    skipped_reason: Some("dry run requested; discovery not executed".to_string()),
+                    skipped_reason: Some(if force_bootstrap_discovery {
+                        "dry run requested during bootstrap discovery window".to_string()
+                    } else {
+                        "dry run requested; discovery not executed".to_string()
+                    }),
                     discovery: None,
                 });
                 continue;
             }
 
-            let discovery = self
+            match self
                 .discover_passive_infra_sites(
                     &format!("{request_id}:discover:{}", region.region_id),
                     &passive_region_discovery_request(&region),
                 )
-                .await?;
-            discovered_seed_count = discovered_seed_count.saturating_add(discovery.seeds.len());
-            discovered_region_count = discovered_region_count.saturating_add(1);
-            region.last_discovered_at_unix_seconds = Some(now);
-            region.updated_at_unix_seconds = now;
-            self.storage.store_passive_region_target(&region)?;
-            run_records.push(PassiveRegionRunRecord {
-                region,
-                due: true,
-                skipped_reason: None,
-                discovery: Some(discovery),
-            });
+                .await
+            {
+                Ok(discovery) => {
+                    discovered_seed_count =
+                        discovered_seed_count.saturating_add(discovery.seeds.len());
+                    discovered_region_count = discovered_region_count.saturating_add(1);
+                    region.last_discovered_at_unix_seconds = Some(now);
+                    region.updated_at_unix_seconds = now;
+                    self.storage.store_passive_region_target(&region)?;
+                    run_records.push(PassiveRegionRunRecord {
+                        region,
+                        due: true,
+                        skipped_reason: None,
+                        discovery: Some(discovery),
+                    });
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        %request_id,
+                        region_id = %region.region_id,
+                        error = %error,
+                        "passive region discovery failed; continuing with remaining regions"
+                    );
+                    run_records.push(PassiveRegionRunRecord {
+                        region,
+                        due: true,
+                        skipped_reason: Some(format!("discovery failed: {error}")),
+                        discovery: None,
+                    });
+                }
+            }
         }
 
         let scheduler = if scan_limit > 0 {
