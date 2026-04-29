@@ -3594,10 +3594,54 @@ function formatReviewHistoryPayload(payload) {
   }).join('\n\n');
 }
 
+function formatEvidencePayload(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const finding = payload.finding || payload.summary || payload.description || 'Evidence bundle loaded.';
+  const assessment = payload.assessment || payload.risk_summary || '';
+  const confidence = payload.confidence != null ? ('CONFIDENCE  ' + Math.round(Number(payload.confidence) * 100) + '%') : '';
+  const bundleHash = payload.bundle_hash ? ('BUNDLE      ' + payload.bundle_hash) : '';
+  const sources = Array.isArray(payload.evidence)
+    ? ('EVIDENCE    ' + payload.evidence.length + ' captured item' + (payload.evidence.length === 1 ? '' : 's'))
+    : '';
+  return [
+    'FINDING     ' + finding,
+    assessment ? 'ASSESSMENT  ' + assessment : '',
+    confidence,
+    bundleHash,
+    sources,
+  ].filter(Boolean).join('\n');
+}
+
+function formatReplayPayload(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const executionId = payload.execution_id || payload.manifest_hash || payload.replay_manifest_hash || '';
+  const status = payload.status || payload.result || 'ready';
+  const requestId = payload.request_id || '';
+  const steps = Array.isArray(payload.steps)
+    ? ('STEPS       ' + payload.steps.length)
+    : (Array.isArray(payload.inputs) ? 'INPUTS      ' + payload.inputs.length : '');
+  const summary = payload.summary || payload.description || payload.outcome || 'Replay artifact loaded.';
+  return [
+    executionId ? 'REPLAY      ' + executionId : 'REPLAY      ready',
+    'STATUS      ' + status,
+    requestId ? 'REQUEST     ' + requestId : '',
+    steps,
+    'SUMMARY     ' + summary,
+  ].filter(Boolean).join('\n');
+}
+
 function formatDrawerPayload(path, payload) {
   if (path && path.indexOf('/reviews') >= 0) {
     const formattedReviews = formatReviewHistoryPayload(payload);
     if (formattedReviews) return formattedReviews;
+  }
+  if (path && path.indexOf('/evidence/') >= 0) {
+    const formattedEvidence = formatEvidencePayload(payload);
+    if (formattedEvidence) return formattedEvidence;
+  }
+  if (path && path.indexOf('/replay/') >= 0) {
+    const formattedReplay = formatReplayPayload(payload);
+    if (formattedReplay) return formattedReplay;
   }
   return typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
 }
@@ -3891,7 +3935,10 @@ async function refreshGlobalAnalytics() {
     if (windowEl) windowEl.textContent = CONSOLE_STATE.window.toUpperCase();
     updateRiskTrend(pressure);
     setRiskContext(topSite
-      ? ('Top site ' + topSite.name + ' is carrying ' + (pressure * 100).toFixed(0) + '% modeled pressure in the current ' + CONSOLE_STATE.window.toUpperCase() + ' window.')
+      ? semanticRiskDeltaSentence(
+          topSite.risk_delta_classification,
+          topSite.risk_delta_explanation || ('Top site ' + topSite.name + ' is carrying ' + (pressure * 100).toFixed(0) + '% modeled pressure in the current ' + CONSOLE_STATE.window.toUpperCase() + ' window.')
+        )
       : 'No focused site selected. Global pressure reflects the most elevated monitored surface.');
     renderTimelineEntries((data.dashboard && data.dashboard.top_canonical_events) || []);
     setTimelineSummary('Global timeline showing canonical event memory across the current command window.');
@@ -3970,7 +4017,10 @@ async function refreshFocusedSiteAnalytics() {
             + '\nDISMISSED · ' + dismissedSites.length;
         }
         setRiskContext(topRiskSite
-          ? ('Top regional site ' + topRiskSite.name + ' is carrying ' + (Number(topRiskSite.risk_score || 0) * 100).toFixed(0) + '% modeled pressure.')
+          ? semanticRiskDeltaSentence(
+              topRiskSite.risk_delta_classification,
+              topRiskSite.risk_delta_explanation || ('Top regional site ' + topRiskSite.name + ' is carrying ' + (Number(topRiskSite.risk_score || 0) * 100).toFixed(0) + '% modeled pressure.')
+            )
           : 'Regional risk context will appear as monitored sites accumulate live signals.');
         renderOperationalReviewStrip({
           pending: pendingSites.length,
@@ -4111,9 +4161,12 @@ async function refreshFocusedSiteAnalytics() {
     const riskWindowEl = document.getElementById('risk-trend-window');
     if (riskTitleEl) riskTitleEl.textContent = (overview.site && overview.site.site && overview.site.site.name ? overview.site.site.name : FOCUS_STATE.title || 'Site') + ' Risk';
     if (riskWindowEl) riskWindowEl.textContent = (scenario.horizon_hours || 24) + 'H';
-    setRiskContext((overview.risk_history_narrative && overview.risk_history_narrative.risk_direction
-      ? ('Risk direction: ' + overview.risk_history_narrative.risk_direction + '. ')
-      : '') + recommendation.expected_benefit);
+    setRiskContext(semanticRiskDeltaSentence(
+      overview.risk_history_narrative && overview.risk_history_narrative.risk_direction,
+      (overview.site && overview.site.risk_delta_explanation)
+        || (overview.risk_history_narrative && overview.risk_history_narrative.narrative)
+        || recommendation.expected_benefit
+    ));
 
     const historyPoints = ((overview.temporal_evolution || []).slice(-12)).map(function(point) {
       return {
@@ -4402,6 +4455,22 @@ function humanReviewState(stateValue) {
   const value = String(stateValue || '').toLowerCase();
   if (!value) return '';
   return value.replace(/_/g, ' ');
+}
+
+function semanticRiskDeltaLabel(deltaValue) {
+  const value = String(deltaValue || '').toLowerCase();
+  if (!value) return '';
+  if (value === 'spike') return 'spiking';
+  if (value === 'increase') return 'rising';
+  if (value === 'decrease') return 'cooling';
+  return 'stable';
+}
+
+function semanticRiskDeltaSentence(label, explanation) {
+  const cleanLabel = semanticRiskDeltaLabel(label);
+  if (!cleanLabel && !explanation) return 'Pressure is steady in the current window.';
+  if (!cleanLabel) return explanation;
+  return 'Risk is ' + cleanLabel + (explanation ? '. ' + explanation : '.');
 }
 
 function reviewStateMatches(stateValue) {
@@ -4757,10 +4826,16 @@ async function refreshAttentionQueue() {
       const operatorState = item.operator_state
         ? '<span class="att-kind evidence" style="margin-left:8px;">' + String(item.operator_state).replace(/_/g, ' ') + '</span>'
         : '';
+      const urgency = item.urgency_label
+        ? '<span class="att-kind replay" style="margin-left:8px;">' + escapeHtml(item.urgency_label) + '</span>'
+        : '';
+      const age = item.age_seconds != null
+        ? '<span class="change-time">' + tAgo(Math.floor(Date.now() / 1000) - Number(item.age_seconds || 0)) + '</span>'
+        : '';
       return '<div class="attention-item">'
         + '<div class="priority-number ' + pc + '">' + num + '</div>'
         + '<div class="att-body">'
-        + '<div class="att-head"><span class="att-kind ' + km.cls + '">' + km.label + '</span>' + operatorState + '</div>'
+        + '<div class="att-head"><span class="att-kind ' + km.cls + '">' + km.label + '</span>' + operatorState + urgency + age + '</div>'
         + '<div class="att-title">' + (item.title || 'Unnamed') + '</div>'
         + (item.reason ? '<div class="att-reason">' + item.reason + '</div>' : '')
         + '<button class="att-action" onclick="handleAttentionClick(' + idx + ')">' + lbl + '</button>'
