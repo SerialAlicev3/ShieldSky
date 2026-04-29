@@ -2399,6 +2399,24 @@ async fn passive_regions_persist_and_orchestrate_discovery_then_scheduler() {
     }));
     assert!(command_center_body["data"]["dashboard"]["top_regions"].is_array());
     assert!(command_center_body["data"]["maintenance"]["suggested_actions"].is_array());
+    let suggested_actions = command_center_body["data"]["maintenance"]["suggested_actions"]
+        .as_array()
+        .expect("suggested actions");
+    assert!(suggested_actions.iter().any(|action| {
+        action["path"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("/v1/passive/regions/run")
+    }));
+    assert!(suggested_actions.iter().any(|action| {
+        action["path"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("/v1/passive/source-health/readiness")
+    }));
+    assert!(suggested_actions
+        .iter()
+        .any(|action| { action["method"] == "POST" && action["payload"].is_object() }));
     assert!(
         command_center_body["data"]["maintenance"]["source_health_prune_candidate_count"]
             .is_number()

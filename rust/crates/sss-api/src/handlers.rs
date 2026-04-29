@@ -3998,14 +3998,17 @@ async function executeRecommendedAction(action) {
   if (!action || !action.path) return;
   const list = document.getElementById('recommended-actions-list');
   if (list) list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:6px 0;line-height:1.6;">Executing action…</div>';
-  let payload = {};
-  if (action.path.indexOf('/worker/heartbeats/prune') >= 0) {
+  const method = String(action.method || 'POST').toUpperCase();
+  let payload = action.payload || {};
+  if (!action.payload && action.path.indexOf('/worker/heartbeats/prune') >= 0) {
     payload = { older_than_seconds: 86400 };
-  } else if (action.path.indexOf('/source-health/samples/prune') >= 0) {
+  } else if (!action.payload && action.path.indexOf('/source-health/samples/prune') >= 0) {
     payload = { older_than_seconds: 2592000, dry_run: false };
   }
   try {
-    const result = await API.post(action.path, payload);
+    const result = method === 'GET'
+      ? await API.get(action.path)
+      : await API.post(action.path, payload);
     openDrawer(action.title || 'Action result', action.path, result);
   } catch (error) {
     openDrawer(action.title || 'Action failed', action.path, 'Failed to execute: ' + String(error.message || error));
