@@ -1036,6 +1036,35 @@ async fn passive_live_scan_fetches_real_feed_shapes_and_builds_narrative() {
         .expect("weather samples")
         .iter()
         .all(|sample| sample["source_kind"] == "Weather"));
+
+    let readiness_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/v1/passive/source-health/readiness")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(readiness_response.status(), StatusCode::OK);
+    let readiness_body = body_json(readiness_response).await;
+    let readiness_sources = readiness_body["data"]["sources"]
+        .as_array()
+        .expect("readiness sources");
+    assert!(readiness_sources
+        .iter()
+        .any(|source| source["source_id"] == "open_meteo"));
+    assert!(readiness_sources
+        .iter()
+        .any(|source| source["source_id"] == "firms"));
+    assert!(readiness_sources
+        .iter()
+        .any(|source| source["source_id"] == "opensky"));
+    assert!(readiness_sources
+        .iter()
+        .any(|source| source["source_id"] == "overpass"));
+    assert!(readiness_body["data"]["scheduler"]["enabled"].is_boolean());
     assert_eq!(
         live_body["data"]["scan"]["sites"][0]["site"]["name"],
         "Seville Solar South"

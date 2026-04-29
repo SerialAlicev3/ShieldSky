@@ -21,12 +21,13 @@ use crate::handlers::{
     get_passive_site_recommendation_reviews, get_passive_site_risk_history,
     get_passive_site_scenario_forecast, get_passive_site_semantic_timeline,
     get_passive_site_solar_forecast, get_passive_sites, get_passive_source_health_samples,
-    get_passive_worker_diagnostics, get_passive_worker_heartbeats, get_prediction_snapshots,
-    get_replay_manifest, get_replay_manifest_for_bundle, health, ingest_celestrak_active,
-    ingest_tle, landing_page, operator_console, passive_scan, passive_scan_live, predict,
-    prune_passive_source_health_samples, prune_passive_worker_heartbeats,
-    recommend_passive_site_action, review_passive_site_recommendation, run_passive_regions,
-    run_passive_scheduler, space_overview, upsert_passive_region, version,
+    get_passive_source_readiness, get_passive_worker_diagnostics, get_passive_worker_heartbeats,
+    get_prediction_snapshots, get_replay_manifest, get_replay_manifest_for_bundle, health,
+    ingest_celestrak_active, ingest_tle, landing_page, operator_console, passive_scan,
+    passive_scan_live, predict, prune_passive_source_health_samples,
+    prune_passive_worker_heartbeats, recommend_passive_site_action,
+    review_passive_site_recommendation, run_passive_regions, run_passive_scheduler, space_overview,
+    upsert_passive_region, version,
 };
 use crate::state::AppState;
 
@@ -144,6 +145,10 @@ fn passive_routes() -> Router<AppState> {
         .route(
             "/v1/passive/source-health/samples",
             get(get_passive_source_health_samples),
+        )
+        .route(
+            "/v1/passive/source-health/readiness",
+            get(get_passive_source_readiness),
         )
         .route(
             "/v1/passive/source-health/samples/prune",

@@ -605,6 +605,28 @@ pub enum PassiveSourceHealthStatus {
     Stale,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PassiveSourceReadinessLevel {
+    Ready,
+    AwaitingData,
+    NeedsConfig,
+    Degraded,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PassiveSourceReadiness {
+    pub source_id: String,
+    pub label: String,
+    pub configured: bool,
+    pub enabled: bool,
+    pub readiness: PassiveSourceReadinessLevel,
+    pub reason: String,
+    pub latest_sample_at_unix_seconds: Option<i64>,
+    pub sample_count: usize,
+    pub last_error: Option<String>,
+}
+
 #[derive(Debug, Default)]
 struct PassiveWorkerRegionMetricsAccumulator {
     run_count: usize,
@@ -2162,6 +2184,103 @@ impl AppState {
         samples: &[PassiveSourceHealthSample],
     ) -> Result<(), StorageError> {
         self.storage.store_passive_source_health_samples(samples)
+    }
+
+    pub fn passive_source_readiness(
+        &self,
+        region_id: Option<&str>,
+    ) -> Result<Vec<PassiveSourceReadiness>, AppError> {
+        let samples = self.passive_source_health_samples(500, None, region_id)?;
+        let runs = self.passive_region_run_logs(25, region_id)?;
+
+        let weather = readiness_from_samples(
+            "open_meteo",
+            "Open-Meteo",
+            true,
+            true,
+            samples
+                .iter()
+                .filter(|sample| sample.source_kind == PassiveSourceKind::Weather),
+            "Weather forecasting is enabled by default and will begin reporting once passive scans run.",
+        );
+        let firms = readiness_from_samples(
+            "firms",
+            "NASA FIRMS",
+            self.firms_map_key.is_some(),
+            self.firms_map_key.is_some(),
+            samples
+                .iter()
+                .filter(|sample| sample.source_kind == PassiveSourceKind::FireSmoke),
+            "Set SSS_FIRMS_MAP_KEY to enable fire and smoke anomaly scans.",
+        );
+        let opensky = readiness_from_samples(
+            "opensky",
+            "OpenSky ADS-B",
+            self.opensky_bearer_token.is_some(),
+            self.opensky_bearer_token.is_some(),
+            samples
+                .iter()
+                .filter(|sample| sample.source_kind == PassiveSourceKind::Adsb),
+            "Set SSS_OPENSKY_BEARER_TOKEN to enable correlated air-traffic scans.",
+        );
+
+        let overpass_error = runs
+            .iter()
+            .flat_map(|run| run.source_errors.iter())
+            .find(|error| error.to_ascii_lowercase().contains("overpass"))
+            .cloned();
+        let overpass_used = runs.iter().any(|run| {
+            run.sources_used
+                .iter()
+                .any(|source| source.to_ascii_lowercase().contains("overpass"))
+        });
+        let overpass = PassiveSourceReadiness {
+            source_id: "overpass".to_string(),
+            label: "Overpass Discovery".to_string(),
+            configured: true,
+            enabled: true,
+            readiness: if overpass_error.is_some() {
+                PassiveSourceReadinessLevel::Degraded
+            } else if overpass_used {
+                PassiveSourceReadinessLevel::Ready
+            } else {
+                PassiveSourceReadinessLevel::AwaitingData
+            },
+            reason: if let Some(error) = overpass_error.clone() {
+                format!("Discovery endpoint failed recently: {error}")
+            } else if overpass_used {
+                "Discovery endpoint has already contributed seeds to passive regions.".to_string()
+            } else {
+                "Discovery endpoint configured; next region discovery run will populate site candidates.".to_string()
+            },
+            latest_sample_at_unix_seconds: None,
+            sample_count: usize::from(overpass_used),
+            last_error: overpass_error,
+        };
+
+        let nasa_configured = !self.nasa_api_key.trim().is_empty();
+        let nasa_mode_reason = if self.nasa_api_key.trim() == "DEMO_KEY" {
+            "NASA briefings are using DEMO_KEY; expect lower limits until a private API key is configured."
+        } else {
+            "NASA briefing endpoints are configured for APOD and NeoWS context."
+        };
+        let nasa = PassiveSourceReadiness {
+            source_id: "nasa_briefings".to_string(),
+            label: "NASA Briefings".to_string(),
+            configured: nasa_configured,
+            enabled: true,
+            readiness: if nasa_configured {
+                PassiveSourceReadinessLevel::Ready
+            } else {
+                PassiveSourceReadinessLevel::NeedsConfig
+            },
+            reason: nasa_mode_reason.to_string(),
+            latest_sample_at_unix_seconds: None,
+            sample_count: 0,
+            last_error: None,
+        };
+
+        Ok(vec![weather, firms, opensky, overpass, nasa])
     }
 
     pub fn canonical_passive_events(
@@ -4728,6 +4847,63 @@ fn source_health_status(
         PassiveSourceHealthStatus::Watch
     } else {
         PassiveSourceHealthStatus::Healthy
+    }
+}
+
+fn readiness_from_samples<'a>(
+    source_id: &str,
+    label: &str,
+    configured: bool,
+    enabled: bool,
+    samples: impl Iterator<Item = &'a PassiveSourceHealthSample>,
+    missing_config_reason: &str,
+) -> PassiveSourceReadiness {
+    let collected = samples.collect::<Vec<_>>();
+    let latest_sample = collected
+        .iter()
+        .max_by_key(|sample| sample.generated_at_unix_seconds)
+        .copied();
+    let latest_error = collected
+        .iter()
+        .map(|sample| sample.detail.clone())
+        .find(|detail| !detail.trim().is_empty());
+    let latest_staleness_seconds = latest_sample
+        .map(|sample| now_unix_seconds().saturating_sub(sample.generated_at_unix_seconds));
+
+    let readiness = if !enabled || !configured {
+        PassiveSourceReadinessLevel::NeedsConfig
+    } else if let Some(sample) = latest_sample {
+        if !sample.fetched || latest_staleness_seconds.is_none_or(|seconds| seconds > 21_600) {
+            PassiveSourceReadinessLevel::Degraded
+        } else {
+            PassiveSourceReadinessLevel::Ready
+        }
+    } else {
+        PassiveSourceReadinessLevel::AwaitingData
+    };
+
+    let reason = if !enabled || !configured {
+        missing_config_reason.to_string()
+    } else if let Some(sample) = latest_sample {
+        if sample.detail.trim().is_empty() {
+            "Source is configured and has recent passive samples.".to_string()
+        } else {
+            sample.detail.clone()
+        }
+    } else {
+        "Source is configured but no passive samples have been recorded yet.".to_string()
+    };
+
+    PassiveSourceReadiness {
+        source_id: source_id.to_string(),
+        label: label.to_string(),
+        configured,
+        enabled,
+        readiness,
+        reason,
+        latest_sample_at_unix_seconds: latest_sample.map(|sample| sample.generated_at_unix_seconds),
+        sample_count: collected.len(),
+        last_error: latest_error,
     }
 }
 

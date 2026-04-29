@@ -234,6 +234,27 @@ pub struct PassiveSourceHealthPruneResponse {
     pub pruned_count: usize,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[allow(clippy::struct_excessive_bools)]
+pub struct PassiveSchedulerRuntimeReadiness {
+    pub enabled: bool,
+    pub poll_seconds: Option<u64>,
+    pub retry_seconds: Option<u64>,
+    pub window_hours: Option<u64>,
+    pub include_weather: bool,
+    pub include_fire_smoke: bool,
+    pub include_adsb: bool,
+    pub force_discovery: bool,
+    pub startup_discovery_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PassiveSourceReadinessResponse {
+    pub generated_at_unix_seconds: i64,
+    pub scheduler: PassiveSchedulerRuntimeReadiness,
+    pub sources: Vec<crate::state::PassiveSourceReadiness>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct PassiveRegionOverviewQuery {
     pub site_limit: Option<usize>,
@@ -830,6 +851,33 @@ pub async fn get_passive_source_health_samples(
     let response = state
         .passive_source_health_samples(limit, query.source_kind, query.region_id.as_deref())
         .map_err(|error| ApiError::storage(request_id.clone(), error.to_string()))?;
+    Ok(Json(ApiEnvelope::new(request_id, response)))
+}
+
+pub async fn get_passive_source_readiness(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<PassiveSourceHealthSamplesQuery>,
+) -> Result<Json<ApiEnvelope<PassiveSourceReadinessResponse>>, ApiError> {
+    let request_id = request_id(&headers);
+    let scheduler = PassiveSchedulerRuntimeReadiness {
+        enabled: env_u64("SSS_PASSIVE_REGION_POLL_SECONDS").unwrap_or(0) > 0,
+        poll_seconds: env_u64("SSS_PASSIVE_REGION_POLL_SECONDS"),
+        retry_seconds: env_u64("SSS_PASSIVE_REGION_RETRY_SECONDS"),
+        window_hours: env_u64("SSS_PASSIVE_REGION_WINDOW_HOURS"),
+        include_weather: env_bool("SSS_PASSIVE_REGION_INCLUDE_WEATHER", true),
+        include_fire_smoke: env_bool("SSS_PASSIVE_REGION_INCLUDE_FIRE_SMOKE", true),
+        include_adsb: env_bool("SSS_PASSIVE_REGION_INCLUDE_ADSB", true),
+        force_discovery: env_bool("SSS_PASSIVE_REGION_FORCE_DISCOVERY", false),
+        startup_discovery_enabled: env_bool("SSS_API_ENABLE_STARTUP_DISCOVERY", false),
+    };
+    let response = PassiveSourceReadinessResponse {
+        generated_at_unix_seconds: crate::state::now_unix_seconds(),
+        scheduler,
+        sources: state
+            .passive_source_readiness(query.region_id.as_deref())
+            .map_err(|error| app_error_to_api_error(request_id.clone(), error))?,
+    };
     Ok(Json(ApiEnvelope::new(request_id, response)))
 }
 
@@ -1644,6 +1692,19 @@ fn app_error_to_api_error(request_id: String, error: AppError) -> ApiError {
             ApiError::not_found(request_id, "site_not_found", message)
         }
     }
+}
+
+fn env_bool(key: &str, default: bool) -> bool {
+    std::env::var(key).ok().map_or(default, |value| {
+        matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
+}
+
+fn env_u64(key: &str) -> Option<u64> {
+    std::env::var(key).ok()?.trim().parse::<u64>().ok()
 }
 
 fn request_id(headers: &HeaderMap) -> String {
@@ -4678,9 +4739,34 @@ async function refreshSourceHealth() {
     if (!grid) return;
     const sources = (data.dashboard && data.dashboard.source_health) || [];
     if (!sources.length) {
-      grid.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">No source health samples available yet.</div>';
-      if (cnt) cnt.textContent = '\u2014';
-      if (sysEl) sysEl.textContent = 'no feeds';
+      const readiness = await API.get('/v1/passive/source-health/readiness');
+      const readySources = (readiness.sources || []).filter(function(source) {
+        return String(source.readiness || '').toLowerCase() === 'ready';
+      });
+      const scheduler = readiness.scheduler || {};
+      if (cnt) cnt.textContent = readySources.length + ' / ' + (readiness.sources || []).length;
+      if (sysEl) {
+        sysEl.textContent = scheduler.enabled
+          ? readySources.length + ' / ' + (readiness.sources || []).length + ' ready'
+          : 'scheduler off';
+      }
+      grid.innerHTML = (readiness.sources || []).slice(0, 6).map(function(source) {
+        const readinessState = String(source.readiness || 'awaiting_data').toLowerCase();
+        const scoreByReadiness = { ready: 94, awaiting_data: 56, needs_config: 18, degraded: 28 };
+        const classByReadiness = { ready: 'healthy', awaiting_data: 'degraded', needs_config: 'failing', degraded: 'failing' };
+        const hint = source.reason || 'No readiness detail yet.';
+        const nm = String(source.label || source.source_id || 'SOURCE').toUpperCase().substring(0, 14);
+        return '<div class="source-row">'
+          + '<div class="source-name">' + nm + '</div>'
+          + '<div class="source-bar"><div class="source-bar-fill ' + (classByReadiness[readinessState] || 'degraded') + '" style="width:' + (scoreByReadiness[readinessState] || 40) + '%"></div></div>'
+          + '<div class="source-value">' + (scoreByReadiness[readinessState] || 40) + '</div>'
+          + '<div style="grid-column: 1 / span 3; font-family:var(--font-mono);font-size:9px;color:var(--text-tertiary);letter-spacing:0.08em;margin-top:4px;">'
+          + escapeHtml(readinessState.replace(/_/g, ' '))
+          + (source.sample_count ? ' · ' + source.sample_count + ' samples' : '')
+          + '</div>'
+          + '<div style="grid-column: 1 / span 3; font-size:10px;color:var(--text-secondary);margin-top:4px;line-height:1.5;">' + escapeHtml(hint) + '</div>'
+          + '</div>';
+      }).join('');
       return;
     }
     const scoreByStatus = { healthy: 97, watch: 72, degraded: 38, stale: 16 };
