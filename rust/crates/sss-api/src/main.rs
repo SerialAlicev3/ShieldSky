@@ -35,10 +35,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("sss-api storage at {}", storage_path.display());
     let state = configure_state_from_env(AppState::from_storage(storage)?);
     let seeded = seed_default_regions(&state);
-    if seeded {
+    if seeded && startup_discovery_enabled() {
         // Regions were just created from scratch (fresh deploy / wiped DB).
         // Spawn a background discovery run so the console has data within ~60s.
         tokio::spawn(run_startup_discovery(state.clone()));
+    } else if seeded {
+        tracing::info!(
+            "startup discovery skipped because SSS_API_ENABLE_STARTUP_DISCOVERY is disabled"
+        );
     }
     if let Some(config) = scheduler_config() {
         tracing::info!(
@@ -220,6 +224,10 @@ fn bool_env(key: &str, default: bool) -> bool {
             "1" | "true" | "yes" | "on"
         )
     })
+}
+
+fn startup_discovery_enabled() -> bool {
+    bool_env("SSS_API_ENABLE_STARTUP_DISCOVERY", false)
 }
 
 fn webhook_delivery_policy() -> WebhookDeliveryPolicy {
