@@ -6,7 +6,8 @@ use crate::dashboard_views::{
 };
 use crate::map_views::{MapPriority, RegionMapItem, SiteMapItem};
 use crate::state::{
-    now_unix_seconds, AppError, AppState, NeoRiskFeed, NeoRiskObject, PassiveSourceReadinessLevel,
+    default_passive_region_requests, now_unix_seconds, AppError, AppState, NeoRiskFeed,
+    NeoRiskObject, PassiveSourceReadinessLevel,
 };
 use serde_json::json;
 
@@ -260,10 +261,14 @@ fn build_maintenance_projection(
     })
 }
 
+#[allow(clippy::too_many_lines)]
 fn build_source_readiness_actions(
     state: &AppState,
     region_id: Option<&str>,
 ) -> Result<Vec<PassiveCommandCenterAction>, AppError> {
+    let total_default_regions = default_passive_region_requests().len();
+    let configured_region_count = state.passive_region_targets(1_000, false)?.len();
+    let missing_region_count = total_default_regions.saturating_sub(configured_region_count);
     let readiness = state.passive_source_readiness(region_id)?;
     let ready_count = readiness
         .iter()
@@ -289,6 +294,26 @@ fn build_source_readiness_actions(
         .map(|source| source.label.clone())
         .collect::<Vec<_>>();
     let mut actions = Vec::new();
+
+    if missing_region_count > 0 {
+        actions.push(PassiveCommandCenterAction {
+            action_id: "bootstrap-default-passive-regions".to_string(),
+            title: "Bootstrap strategic regional coverage".to_string(),
+            reason: format!(
+                "This instance only has {configured_region_count} of {total_default_regions} default watch regions. Backfill the missing {missing_region_count} regions to expand Europe, MENA, Russia, and Iran coverage while keeping Portugal as the primary focus."
+            ),
+            method: "POST",
+            path: "/v1/passive/regions/bootstrap-defaults".to_string(),
+            payload: Some(json!({
+                "overwrite_existing": false
+            })),
+            confirmation_read_paths: vec![
+                "/v1/passive/regions?limit=1000".to_string(),
+                "/v1/passive/dashboard/summary".to_string(),
+                "/v1/passive/command-center/summary".to_string(),
+            ],
+        });
+    }
 
     if !blocking_sources.is_empty() {
         actions.push(PassiveCommandCenterAction {

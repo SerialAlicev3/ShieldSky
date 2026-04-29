@@ -434,6 +434,23 @@ pub struct PassiveRegionTargetRequest {
     pub enabled: Option<bool>,
 }
 
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]
+pub struct PassiveRegionDefaultsBootstrapRequest {
+    pub overwrite_existing: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PassiveRegionDefaultsBootstrapResponse {
+    pub generated_at_unix_seconds: i64,
+    pub total_defaults: usize,
+    pub inserted_count: usize,
+    pub updated_count: usize,
+    pub skipped_count: usize,
+    pub inserted_region_ids: Vec<String>,
+    pub updated_region_ids: Vec<String>,
+    pub skipped_region_ids: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PassiveRegionRunRequest {
     pub region_ids: Option<Vec<String>>,
@@ -443,6 +460,294 @@ pub struct PassiveRegionRunRequest {
     pub include_adsb: Option<bool>,
     pub include_weather: Option<bool>,
     pub include_fire_smoke: Option<bool>,
+}
+
+#[must_use]
+#[allow(clippy::too_many_lines)]
+pub fn default_passive_region_requests() -> Vec<PassiveRegionTargetRequest> {
+    let broad_site_types = Some(vec![
+        SiteType::Substation,
+        SiteType::SolarPlant,
+        SiteType::DataCenter,
+    ]);
+    vec![
+        default_region(
+            "portugal-iberian-watch-36.900--9.500",
+            "Portugal Iberian Watch",
+            36.9,
+            -9.5,
+            42.1,
+            -6.2,
+            Some("PT"),
+            broad_site_types.clone(),
+            Some(Criticality::Critical),
+            86_400,
+            220,
+            0.0,
+            Some(42.0),
+        ),
+        default_region(
+            "alentejo-solar-belt-37.200--8.800",
+            "Alentejo Solar Belt",
+            37.2,
+            -8.8,
+            38.8,
+            -7.0,
+            Some("PT"),
+            Some(vec![SiteType::SolarPlant, SiteType::Substation]),
+            Some(Criticality::Critical),
+            86_400,
+            220,
+            0.0,
+            Some(36.0),
+        ),
+        default_region(
+            "iberia-strategic-corridor",
+            "Iberia Strategic Corridor",
+            35.7,
+            -10.2,
+            43.9,
+            3.5,
+            None,
+            broad_site_types.clone(),
+            Some(Criticality::High),
+            129_600,
+            140,
+            0.08,
+            Some(45.0),
+        ),
+        default_region(
+            "western-europe-grid-arc",
+            "Western Europe Grid Arc",
+            43.0,
+            -5.5,
+            56.2,
+            12.8,
+            None,
+            broad_site_types.clone(),
+            Some(Criticality::High),
+            172_800,
+            120,
+            0.16,
+            Some(50.0),
+        ),
+        default_region(
+            "central-europe-industrial-belt",
+            "Central Europe Industrial Belt",
+            46.2,
+            8.0,
+            55.4,
+            24.5,
+            None,
+            broad_site_types.clone(),
+            Some(Criticality::High),
+            172_800,
+            120,
+            0.18,
+            Some(48.0),
+        ),
+        default_region(
+            "balkans-eastern-med-gateway",
+            "Balkans Eastern Med Gateway",
+            36.0,
+            13.5,
+            47.8,
+            30.5,
+            None,
+            broad_site_types.clone(),
+            Some(Criticality::High),
+            172_800,
+            110,
+            0.18,
+            Some(48.0),
+        ),
+        default_region(
+            "ukraine-black-sea-corridor",
+            "Ukraine Black Sea Corridor",
+            43.0,
+            22.0,
+            52.5,
+            40.0,
+            Some("UA"),
+            broad_site_types.clone(),
+            Some(Criticality::Critical),
+            172_800,
+            110,
+            0.22,
+            Some(50.0),
+        ),
+        default_region(
+            "russia-west-strategic-watch",
+            "Russia West Strategic Watch",
+            54.0,
+            25.0,
+            61.5,
+            40.5,
+            Some("RU"),
+            broad_site_types.clone(),
+            Some(Criticality::High),
+            259_200,
+            90,
+            0.24,
+            Some(55.0),
+        ),
+        default_region(
+            "caucasus-caspian-arc",
+            "Caucasus Caspian Arc",
+            36.2,
+            41.0,
+            47.5,
+            55.8,
+            None,
+            broad_site_types.clone(),
+            Some(Criticality::High),
+            259_200,
+            90,
+            0.22,
+            Some(48.0),
+        ),
+        default_region(
+            "turkey-anatolian-grid",
+            "Turkey Anatolian Grid",
+            35.6,
+            25.5,
+            42.7,
+            45.5,
+            Some("TR"),
+            broad_site_types.clone(),
+            Some(Criticality::High),
+            172_800,
+            100,
+            0.18,
+            Some(46.0),
+        ),
+        default_region(
+            "levant-eastern-med-watch",
+            "Levant Eastern Med Watch",
+            29.2,
+            31.0,
+            37.5,
+            39.8,
+            None,
+            broad_site_types.clone(),
+            Some(Criticality::High),
+            172_800,
+            100,
+            0.18,
+            Some(44.0),
+        ),
+        default_region(
+            "arabian-peninsula-critical-corridor",
+            "Arabian Peninsula Critical Corridor",
+            15.0,
+            34.0,
+            32.8,
+            56.8,
+            None,
+            broad_site_types.clone(),
+            Some(Criticality::High),
+            259_200,
+            100,
+            0.24,
+            Some(52.0),
+        ),
+        default_region(
+            "gulf-infrastructure-belt",
+            "Gulf Infrastructure Belt",
+            22.0,
+            47.0,
+            31.8,
+            58.5,
+            None,
+            broad_site_types.clone(),
+            Some(Criticality::Critical),
+            172_800,
+            110,
+            0.22,
+            Some(46.0),
+        ),
+        default_region(
+            "egypt-red-sea-gate",
+            "Egypt Red Sea Gate",
+            21.2,
+            24.0,
+            32.5,
+            37.5,
+            Some("EG"),
+            broad_site_types.clone(),
+            Some(Criticality::High),
+            172_800,
+            90,
+            0.2,
+            Some(44.0),
+        ),
+        default_region(
+            "maghreb-atlantic-solar-arc",
+            "Maghreb Atlantic Solar Arc",
+            27.0,
+            -12.5,
+            37.0,
+            11.8,
+            None,
+            broad_site_types.clone(),
+            Some(Criticality::High),
+            259_200,
+            100,
+            0.22,
+            Some(52.0),
+        ),
+        default_region(
+            "iran-plateau-strategic-watch",
+            "Iran Plateau Strategic Watch",
+            24.0,
+            43.0,
+            40.0,
+            64.5,
+            Some("IR"),
+            broad_site_types,
+            Some(Criticality::Critical),
+            259_200,
+            100,
+            0.24,
+            Some(55.0),
+        ),
+    ]
+}
+
+#[allow(clippy::too_many_arguments)]
+fn default_region(
+    region_id: &str,
+    name: &str,
+    south: f64,
+    west: f64,
+    north: f64,
+    east: f64,
+    country_code: Option<&str>,
+    site_types: Option<Vec<SiteType>>,
+    default_criticality: Option<Criticality>,
+    discovery_cadence_seconds: i64,
+    scan_limit: usize,
+    minimum_priority: f64,
+    observation_radius_km: Option<f64>,
+) -> PassiveRegionTargetRequest {
+    PassiveRegionTargetRequest {
+        region_id: Some(region_id.to_string()),
+        name: name.to_string(),
+        south,
+        west,
+        north,
+        east,
+        site_types,
+        timezone: None,
+        country_code: country_code.map(std::string::ToString::to_string),
+        default_operator_name: None,
+        default_criticality,
+        observation_radius_km,
+        discovery_cadence_seconds: Some(discovery_cadence_seconds),
+        scan_limit: Some(scan_limit),
+        minimum_priority: Some(minimum_priority),
+        enabled: Some(true),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -2006,6 +2311,51 @@ impl AppState {
         };
         self.storage.store_passive_region_target(&target)?;
         Ok(target)
+    }
+
+    pub fn bootstrap_default_passive_regions(
+        &self,
+        request: &PassiveRegionDefaultsBootstrapRequest,
+    ) -> Result<PassiveRegionDefaultsBootstrapResponse, AppError> {
+        let overwrite_existing = request.overwrite_existing.unwrap_or(false);
+        let existing = self
+            .storage
+            .passive_region_targets(1_000, false)?
+            .into_iter()
+            .map(|region| region.region_id)
+            .collect::<BTreeSet<_>>();
+        let defaults = default_passive_region_requests();
+
+        let mut inserted_region_ids = Vec::new();
+        let mut updated_region_ids = Vec::new();
+        let mut skipped_region_ids = Vec::new();
+
+        for region in defaults {
+            let region_id = region.region_id.clone().unwrap_or_default();
+            if existing.contains(&region_id) && !overwrite_existing {
+                skipped_region_ids.push(region_id);
+                continue;
+            }
+            let stored = self.upsert_passive_region_target(&region)?;
+            if existing.contains(&stored.region_id) {
+                updated_region_ids.push(stored.region_id);
+            } else {
+                inserted_region_ids.push(stored.region_id);
+            }
+        }
+
+        Ok(PassiveRegionDefaultsBootstrapResponse {
+            generated_at_unix_seconds: now_unix_seconds(),
+            total_defaults: inserted_region_ids.len()
+                + updated_region_ids.len()
+                + skipped_region_ids.len(),
+            inserted_count: inserted_region_ids.len(),
+            updated_count: updated_region_ids.len(),
+            skipped_count: skipped_region_ids.len(),
+            inserted_region_ids,
+            updated_region_ids,
+            skipped_region_ids,
+        })
     }
 
     pub fn passive_region_targets(

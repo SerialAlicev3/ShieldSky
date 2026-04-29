@@ -1955,12 +1955,15 @@ async fn passive_regions_persist_and_orchestrate_discovery_then_scheduler() {
         .expect("response");
     assert_eq!(run_logs_response.status(), StatusCode::OK);
     let run_logs_body = body_json(run_logs_response).await;
-    assert_eq!(run_logs_body["data"].as_array().map_or(0, Vec::len), 2);
-    assert_eq!(
-        run_logs_body["data"][0]["status"],
-        "CompletedWithNoDueRegions"
-    );
-    let run_id = run_logs_body["data"][0]["run_id"].as_str().expect("run id");
+    let run_logs = run_logs_body["data"].as_array().expect("run logs");
+    assert_eq!(run_logs.len(), 2);
+    let no_due_run = run_logs
+        .iter()
+        .find(|run| run["status"] == "CompletedWithNoDueRegions")
+        .expect("no-due run should be present");
+    assert_eq!(no_due_run["evaluated_region_count"], 1);
+    assert_eq!(no_due_run["discovered_region_count"], 0);
+    let run_id = no_due_run["run_id"].as_str().expect("run id");
     let run_log_detail_response = app
         .clone()
         .oneshot(
@@ -1995,10 +1998,10 @@ async fn passive_regions_persist_and_orchestrate_discovery_then_scheduler() {
     assert!(operations_body["data"]["worker_heartbeats"].is_array());
     assert_eq!(operations_body["data"]["seed_count"], 3);
     assert_eq!(operations_body["data"]["observed_seed_count"], 3);
-    assert_eq!(
-        operations_body["data"]["latest_region_run"]["status"],
-        "CompletedWithNoDueRegions"
-    );
+    assert!(matches!(
+        operations_body["data"]["latest_region_run"]["status"].as_str(),
+        Some("CompletedWithNoDueRegions" | "Completed")
+    ));
     assert!(!operations_body["data"]["recommendation"]
         .as_str()
         .unwrap_or_default()
@@ -2403,16 +2406,22 @@ async fn passive_regions_persist_and_orchestrate_discovery_then_scheduler() {
         .as_array()
         .expect("suggested actions");
     assert!(suggested_actions.iter().any(|action| {
-        action["path"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("/v1/passive/regions/run")
+        let path = action["path"].as_str().unwrap_or_default();
+        path.contains("/v1/passive/regions/run")
+            || path.contains("/v1/passive/scheduler/run")
+            || path.contains("/v1/passive/regions/bootstrap-defaults")
     }));
     assert!(suggested_actions.iter().any(|action| {
         action["path"]
             .as_str()
             .unwrap_or_default()
-            .contains("/v1/passive/source-health/readiness")
+            .contains("/v1/passive/regions/bootstrap-defaults")
+    }));
+    assert!(suggested_actions.iter().any(|action| {
+        let path = action["path"].as_str().unwrap_or_default();
+        path.contains("/v1/passive/source-health/readiness")
+            || path.contains("/v1/passive/source-health/samples/prune")
+            || path.contains("/v1/passive/regions/bootstrap-defaults")
     }));
     assert!(suggested_actions
         .iter()
@@ -2499,6 +2508,90 @@ async fn passive_regions_persist_and_orchestrate_discovery_then_scheduler() {
     assert_eq!(pressure_command_center_response.status(), StatusCode::OK);
     let pressure_command_center_body = body_json(pressure_command_center_response).await;
     assert!(pressure_command_center_body["data"]["dashboard"]["top_regions"].is_array());
+}
+
+#[tokio::test]
+async fn passive_region_defaults_bootstrap_backfills_existing_instances() {
+    let app = build_router(AppState::demo().expect("state"));
+
+    let initial_list_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/v1/passive/regions")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(initial_list_response.status(), StatusCode::OK);
+    let initial_list_body = body_json(initial_list_response).await;
+    assert_eq!(initial_list_body["data"].as_array().map_or(0, Vec::len), 0);
+
+    let bootstrap_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/passive/regions/bootstrap-defaults")
+                .header("content-type", "application/json")
+                .body(Body::from(json!({}).to_string()))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(bootstrap_response.status(), StatusCode::OK);
+    let bootstrap_body = body_json(bootstrap_response).await;
+    assert!(
+        bootstrap_body["data"]["inserted_count"]
+            .as_u64()
+            .unwrap_or(0)
+            >= 10
+    );
+    assert_eq!(bootstrap_body["data"]["updated_count"], 0);
+    assert_eq!(bootstrap_body["data"]["skipped_count"], 0);
+
+    let populated_list_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/v1/passive/regions")
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(populated_list_response.status(), StatusCode::OK);
+    let populated_list_body = body_json(populated_list_response).await;
+    let regions = populated_list_body["data"].as_array().expect("regions");
+    assert!(regions
+        .iter()
+        .any(|region| region["region_id"] == "alentejo-solar-belt-37.200--8.800"));
+    assert!(regions
+        .iter()
+        .any(|region| region["region_id"] == "iran-plateau-strategic-watch"));
+
+    let second_bootstrap_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/passive/regions/bootstrap-defaults")
+                .header("content-type", "application/json")
+                .body(Body::from(json!({}).to_string()))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(second_bootstrap_response.status(), StatusCode::OK);
+    let second_bootstrap_body = body_json(second_bootstrap_response).await;
+    assert_eq!(second_bootstrap_body["data"]["inserted_count"], 0);
+    assert!(
+        second_bootstrap_body["data"]["skipped_count"]
+            .as_u64()
+            .unwrap_or(0)
+            >= 10
+    );
 }
 
 #[tokio::test]

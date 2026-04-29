@@ -608,6 +608,23 @@ pub async fn upsert_passive_region(
     Ok(Json(ApiEnvelope::new(request_id, response)))
 }
 
+pub async fn bootstrap_default_passive_regions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<crate::state::PassiveRegionDefaultsBootstrapRequest>,
+) -> Result<Json<ApiEnvelope<crate::state::PassiveRegionDefaultsBootstrapResponse>>, ApiError> {
+    let request_id = request_id(&headers);
+    tracing::info!(
+        %request_id,
+        overwrite_existing = request.overwrite_existing.unwrap_or(false),
+        "bootstrap_default_passive_regions"
+    );
+    let response = state
+        .bootstrap_default_passive_regions(&request)
+        .map_err(|error| app_error_to_api_error(request_id.clone(), error))?;
+    Ok(Json(ApiEnvelope::new(request_id, response)))
+}
+
 pub async fn get_passive_regions(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -3768,6 +3785,103 @@ function formatReadinessPayload(payload) {
   return lines.join('\n') + '\n\n' + sourceLines.join('\n');
 }
 
+function formatRegionOverviewPayload(payload) {
+  if (!payload || typeof payload !== 'object' || !payload.region) return null;
+  const region = payload.region || {};
+  const topSites = Array.isArray(payload.top_sites) ? payload.top_sites : [];
+  const siteTypes = Array.isArray(region.site_types) ? region.site_types.join(', ') : '';
+  const lastDiscovery = region.last_discovered_at_unix_seconds
+    ? ('LAST DISCOVERY   ' + tAgo(region.last_discovered_at_unix_seconds))
+    : 'LAST DISCOVERY   none yet';
+  const lastRun = region.last_scheduler_run_at_unix_seconds
+    ? ('LAST RUN         ' + tAgo(region.last_scheduler_run_at_unix_seconds))
+    : 'LAST RUN         scheduler has not run yet';
+  const discovery = payload.discovery_due
+    ? ('DISCOVERY        due · overdue by ' + formatDurationSeconds(payload.discovery_overdue_seconds || 0))
+    : 'DISCOVERY        within cadence';
+  const coords = [
+    region.south != null ? 'S ' + Number(region.south).toFixed(2) : '',
+    region.west != null ? 'W ' + Number(region.west).toFixed(2) : '',
+    region.north != null ? 'N ' + Number(region.north).toFixed(2) : '',
+    region.east != null ? 'E ' + Number(region.east).toFixed(2) : '',
+  ].filter(Boolean).join(' · ');
+  const topSiteLine = topSites.length
+    ? 'TOP SITES        ' + topSites.slice(0, 3).map(function(site) {
+        const name = site.site_name || site.name || site.seed_key || 'site';
+        const status = site.recent_event_count > 0
+          ? (site.recent_event_count + ' recent event' + (site.recent_event_count === 1 ? '' : 's'))
+          : String(site.seed_status || 'candidate');
+        return name + ' (' + status + ')';
+      }).join(' · ')
+    : 'TOP SITES        none ranked yet';
+  return [
+    'REGION           ' + (region.name || payload.region_id || 'Region'),
+    coords ? 'BOUNDARY         ' + coords : '',
+    siteTypes ? 'SITE TYPES       ' + siteTypes : '',
+    'SEEDS            ' + Number(payload.seed_count || 0),
+    'OBSERVED         ' + Number(payload.observed_seed_count || 0),
+    'ELEVATED         ' + Number(payload.elevated_seed_count || 0),
+    'RECENT EVENTS    ' + Number(payload.recent_event_count || 0),
+    'CRITICAL EVENTS  ' + Number(payload.critical_event_count || 0),
+    'MAX PRIORITY     ' + Number(payload.highest_scan_priority || 0).toFixed(2),
+    'AVG CONFIDENCE   ' + Math.round(Number(payload.average_observation_confidence || 0) * 100) + '%',
+    discovery,
+    lastDiscovery,
+    lastRun,
+    topSiteLine,
+    'SUMMARY          ' + (payload.narrative || 'Regional monitoring overview ready.'),
+  ].filter(Boolean).join('\n');
+}
+
+function formatRegionSitesPayload(payload) {
+  if (!payload || typeof payload !== 'object' || !Array.isArray(payload.sites)) return null;
+  const sites = payload.sites || [];
+  if (!sites.length) return 'No site candidates have been mapped for this region yet.';
+  return [
+    'SITE CANDIDATES  ' + sites.length,
+    '',
+    sites.slice(0, 8).map(function(site, index) {
+      const state = site.recommendation_review_state
+        ? humanReviewState(site.recommendation_review_state)
+        : (site.has_recommendation ? 'pending review' : String(site.seed_status || 'candidate'));
+      return [
+        '#' + String(index + 1).padStart(2, '0') + ' · ' + (site.name || site.seed_key || 'Site'),
+        'TYPE            ' + String(site.site_type || 'candidate'),
+        'RISK            ' + Math.round(Number(site.risk_score || 0) * 100) + '% · ' + state,
+        'STATUS          ' + (site.status_reason || site.priority_reason || 'Monitoring'),
+      ].join('\n');
+    }).join('\n\n'),
+  ].join('\n');
+}
+
+function formatCommandSummaryPayload(payload) {
+  if (!payload || typeof payload !== 'object' || !Array.isArray(payload.attention_queue)) return null;
+  const queue = payload.attention_queue || [];
+  const actions = payload.maintenance && Array.isArray(payload.maintenance.suggested_actions)
+    ? payload.maintenance.suggested_actions
+    : [];
+  const dashboard = payload.dashboard || {};
+  const highlightRegion = payload.highlights && payload.highlights.top_region ? payload.highlights.top_region.name : '';
+  const summary = payload.summary || dashboard.summary || 'Command center summary ready.';
+  const queueLine = queue.length
+    ? 'QUEUE            ' + queue.slice(0, 3).map(function(item) {
+        return (item.title || item.kind || 'item') + ' [' + String(item.urgency_label || 'watch').toUpperCase() + ']';
+      }).join(' · ')
+    : 'QUEUE            clear';
+  const actionLine = actions.length
+    ? 'ACTIONS          ' + actions.slice(0, 3).map(function(item) { return item.title || 'action'; }).join(' · ')
+    : 'ACTIONS          none suggested';
+  return [
+    'FOCUS REGION      ' + (payload.focus_region_id || highlightRegion || 'global'),
+    'REGIONS ACTIVE    ' + Number(dashboard.region_count || 0),
+    'SITES ELEVATED    ' + Number(dashboard.elevated_site_count || 0),
+    'EVENTS LIVE       ' + Number(dashboard.live_event_count || 0),
+    queueLine,
+    actionLine,
+    'SUMMARY          ' + summary,
+  ].join('\n');
+}
+
 function formatEvidencePayload(payload) {
   if (!payload || typeof payload !== 'object') return null;
   const finding = payload.finding || payload.summary || payload.description || ('Evidence bundle for ' + (payload.object_id || 'object') + '.');
@@ -3837,6 +3951,18 @@ function formatDrawerPayload(path, payload) {
     const formattedReadiness = formatReadinessPayload(payload);
     if (formattedReadiness) return formattedReadiness;
   }
+  if (path && path.indexOf('/v1/passive/regions/') >= 0 && path.indexOf('/overview') >= 0) {
+    const formattedRegionOverview = formatRegionOverviewPayload(payload);
+    if (formattedRegionOverview) return formattedRegionOverview;
+  }
+  if (path && path.indexOf('/v1/passive/map/sites') >= 0) {
+    const formattedRegionSites = formatRegionSitesPayload(payload);
+    if (formattedRegionSites) return formattedRegionSites;
+  }
+  if (path && path.indexOf('/v1/passive/command-center/summary') >= 0) {
+    const formattedCommandSummary = formatCommandSummaryPayload(payload);
+    if (formattedCommandSummary) return formattedCommandSummary;
+  }
   if (path && path.indexOf('/reviews') >= 0) {
     const formattedReviews = formatReviewHistoryPayload(payload);
     if (formattedReviews) return formattedReviews;
@@ -3905,6 +4031,14 @@ function ageBucketLabel(bucket) {
   if (!value) return '';
   if (value === 'new') return 'fresh';
   return value.replace(/_/g, ' ');
+}
+
+function formatDurationSeconds(totalSeconds) {
+  const value = Math.max(0, Number(totalSeconds || 0));
+  if (value < 60) return Math.round(value) + 's';
+  if (value < 3600) return Math.round(value / 60) + 'm';
+  if (value < 86400) return Math.round(value / 3600) + 'h';
+  return Math.round(value / 86400) + 'd';
 }
 
 function setRiskContext(text) {
@@ -4797,63 +4931,109 @@ async function refreshNarrative() {
 // regions: [{ name, state: 'healthy'|'pressured'|'degraded'|'failing' }]
 async function refreshSourceHealth() {
   try {
-    const data    = await API.get('/v1/passive/command-center/summary');
     const grid    = document.getElementById('source-health-list');
     const cnt     = document.getElementById('source-count');
     const sysEl   = document.getElementById('sys-sources');
     if (!grid) return;
-    const sources = (data.dashboard && data.dashboard.source_health) || [];
-    if (!sources.length) {
-      const readiness = await API.get('/v1/passive/source-health/readiness');
-      const readySources = (readiness.sources || []).filter(function(source) {
-        return String(source.readiness || '').toLowerCase() === 'ready';
-      });
-      const scheduler = readiness.scheduler || {};
-      if (cnt) cnt.textContent = readySources.length + ' / ' + (readiness.sources || []).length;
-      if (sysEl) {
-        sysEl.textContent = scheduler.enabled
-          ? readySources.length + ' / ' + (readiness.sources || []).length + ' ready'
-          : 'scheduler off';
+    const [readiness, samplePayload] = await Promise.all([
+      API.get('/v1/passive/source-health/readiness'),
+      API.get('/v1/passive/source-health/samples?limit=250').catch(function() { return []; }),
+    ]);
+    const readinessSources = Array.isArray(readiness.sources) ? readiness.sources : [];
+    const samples = Array.isArray(samplePayload) ? samplePayload : [];
+    const scheduler = readiness.scheduler || {};
+    const readinessById = {};
+    readinessSources.forEach(function(source) {
+      readinessById[String(source.source_id || '').toLowerCase()] = source;
+    });
+    const sourceIdForKind = {
+      weather: 'open_meteo',
+      firesmoke: 'firms',
+      adsb: 'opensky',
+    };
+    const groupedSamples = {};
+    samples.forEach(function(sample) {
+      const rawKind = String(sample.source_kind || '').toLowerCase();
+      const sourceId = sourceIdForKind[rawKind];
+      if (!sourceId) return;
+      if (!groupedSamples[sourceId]) {
+        groupedSamples[sourceId] = {
+          sampleCount: 0,
+          successCount: 0,
+          failureCount: 0,
+          latestGeneratedAt: null,
+          lastDetail: '',
+        };
       }
-      grid.innerHTML = (readiness.sources || []).slice(0, 6).map(function(source) {
-        const readinessState = String(source.readiness || 'awaiting_data').toLowerCase();
-        const scoreByReadiness = { ready: 94, awaiting_data: 56, needs_config: 18, degraded: 28 };
-        const classByReadiness = { ready: 'healthy', awaiting_data: 'degraded', needs_config: 'failing', degraded: 'failing' };
-        const hint = source.reason || 'No readiness detail yet.';
-        const nm = String(source.label || source.source_id || 'SOURCE').toUpperCase().substring(0, 14);
-        return '<div class="source-row">'
-          + '<div class="source-name">' + nm + '</div>'
-          + '<div class="source-bar"><div class="source-bar-fill ' + (classByReadiness[readinessState] || 'degraded') + '" style="width:' + (scoreByReadiness[readinessState] || 40) + '%"></div></div>'
-          + '<div class="source-value">' + (scoreByReadiness[readinessState] || 40) + '</div>'
-          + '<div style="grid-column: 1 / span 3; font-family:var(--font-mono);font-size:9px;color:var(--text-tertiary);letter-spacing:0.08em;margin-top:4px;">'
-          + escapeHtml(readinessState.replace(/_/g, ' '))
-          + (source.sample_count ? ' · ' + source.sample_count + ' samples' : '')
-          + '</div>'
-          + '<div style="grid-column: 1 / span 3; font-size:10px;color:var(--text-secondary);margin-top:4px;line-height:1.5;">' + escapeHtml(hint) + '</div>'
-          + '</div>';
-      }).join('');
-      return;
-    }
-    const scoreByStatus = { healthy: 97, watch: 72, degraded: 38, stale: 16 };
+      const bucket = groupedSamples[sourceId];
+      bucket.sampleCount += 1;
+      if (sample.fetched) bucket.successCount += 1;
+      else bucket.failureCount += 1;
+      if (!bucket.latestGeneratedAt || Number(sample.generated_at_unix_seconds || 0) > bucket.latestGeneratedAt) {
+        bucket.latestGeneratedAt = Number(sample.generated_at_unix_seconds || 0);
+        bucket.lastDetail = String(sample.detail || '');
+      }
+    });
+
+    const scoreByReadiness = { ready: 94, awaiting_data: 46, needs_config: 12, degraded: 24 };
+    const classByReadiness = { ready: 'healthy', awaiting_data: 'degraded', needs_config: 'failing', degraded: 'failing' };
+    const scoreByStatus = { healthy: 97, watch: 74, degraded: 38, stale: 16 };
     const classByStatus = { healthy: 'healthy', watch: 'degraded', degraded: 'degraded', stale: 'failing' };
-    const healthyCount = sources.filter(function(source) { return String(source.health_status || '').toLowerCase() === 'healthy'; }).length;
-    if (cnt) cnt.textContent = healthyCount + ' / ' + sources.length;
-    if (sysEl) sysEl.textContent = healthyCount + ' / ' + sources.length + ' feeds';
-    grid.innerHTML = sources.slice(0, 6).map(function(source) {
-      const status = String(source.health_status || 'degraded').toLowerCase();
-      const sc = scoreByStatus[status] || Math.round(Number(source.reliability_score || 0.5) * 100);
-      const cl = classByStatus[status] || 'degraded';
-      const nm = String(source.source || 'SOURCE').toUpperCase().substring(0, 14);
-      const hint = source.staleness_seconds
-        ? Math.floor(Number(source.staleness_seconds || 0) / 60) + 'm stale'
-        : (Number(source.consecutive_failure_count || 0) > 0
-          ? Number(source.consecutive_failure_count || 0) + ' failures'
-          : 'live');
+    const nowUnix = Math.floor(Date.now() / 1000);
+
+    const rows = readinessSources.map(function(source) {
+      const sourceId = String(source.source_id || '').toLowerCase();
+      const sampleStats = groupedSamples[sourceId];
+      const readinessState = String(source.readiness || 'awaiting_data').toLowerCase();
+      let sc = scoreByReadiness[readinessState] || 40;
+      let cl = classByReadiness[readinessState] || 'degraded';
+      let meta = readinessState.replace(/_/g, ' ');
+      let hint = source.reason || 'No readiness detail yet.';
+
+      if (sampleStats && sampleStats.sampleCount > 0) {
+        const successRate = sampleStats.successCount / Math.max(sampleStats.sampleCount, 1);
+        const latestAgeSeconds = sampleStats.latestGeneratedAt ? nowUnix - sampleStats.latestGeneratedAt : null;
+        let status = 'healthy';
+        if (latestAgeSeconds != null && latestAgeSeconds > 21600) status = 'stale';
+        else if (sampleStats.failureCount > 0 || successRate < 0.8) status = 'degraded';
+        else if (successRate < 0.95) status = 'watch';
+        sc = scoreByStatus[status] || Math.round(successRate * 100);
+        cl = classByStatus[status] || 'degraded';
+        meta = status + ' · ' + sampleStats.sampleCount + ' samples';
+        hint = latestAgeSeconds != null
+          ? Math.floor(latestAgeSeconds / 60) + 'm since latest sample'
+          : (sampleStats.lastDetail || hint);
+        if (sampleStats.failureCount > 0 && sampleStats.lastDetail) {
+          hint += ' · ' + sampleStats.failureCount + ' failures';
+        }
+      } else if (String(source.source_id || '') === 'nasa_briefings') {
+        meta = 'briefings only';
+      }
+
+      return {
+        name: String(source.label || source.source_id || 'SOURCE').toUpperCase().substring(0, 16),
+        score: sc,
+        klass: cl,
+        meta: meta,
+        hint: hint,
+        ready: readinessState === 'ready'
+      };
+    });
+
+    const readyCount = rows.filter(function(row) { return row.ready; }).length;
+    if (cnt) cnt.textContent = readyCount + ' / ' + rows.length;
+    if (sysEl) {
+      sysEl.textContent = scheduler.enabled
+        ? readyCount + ' / ' + rows.length + ' feeds'
+        : 'scheduler off';
+    }
+    grid.innerHTML = rows.slice(0, 6).map(function(row) {
       return '<div class="source-row">'
-        + '<div class="source-name">' + nm + '</div>'
-        + '<div class="source-bar"><div class="source-bar-fill ' + cl + '" style="width:' + sc + '%"></div></div>'
-        + '<div class="source-value">' + sc + '</div>'
-        + '<div style="grid-column: 1 / span 3; font-family:var(--font-mono);font-size:9px;color:var(--text-tertiary);letter-spacing:0.08em;margin-top:4px;">' + hint + '</div>'
+        + '<div class="source-name">' + escapeHtml(row.name) + '</div>'
+        + '<div class="source-bar"><div class="source-bar-fill ' + row.klass + '" style="width:' + row.score + '%"></div></div>'
+        + '<div class="source-value">' + row.score + '</div>'
+        + '<div style="grid-column: 1 / span 3; font-family:var(--font-mono);font-size:9px;color:var(--text-tertiary);letter-spacing:0.08em;margin-top:4px;">' + escapeHtml(row.meta.toUpperCase()) + '</div>'
+        + '<div style="grid-column: 1 / span 3; font-size:10px;color:var(--text-secondary);margin-top:4px;line-height:1.5;">' + escapeHtml(row.hint) + '</div>'
         + '</div>';
     }).join('');
   } catch (_) {
