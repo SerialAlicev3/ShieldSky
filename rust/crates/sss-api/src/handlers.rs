@@ -3785,6 +3785,103 @@ function formatReadinessPayload(payload) {
   return lines.join('\n') + '\n\n' + sourceLines.join('\n');
 }
 
+function formatRegionOverviewPayload(payload) {
+  if (!payload || typeof payload !== 'object' || !payload.region) return null;
+  const region = payload.region || {};
+  const topSites = Array.isArray(payload.top_sites) ? payload.top_sites : [];
+  const siteTypes = Array.isArray(region.site_types) ? region.site_types.join(', ') : '';
+  const lastDiscovery = region.last_discovered_at_unix_seconds
+    ? ('LAST DISCOVERY   ' + tAgo(region.last_discovered_at_unix_seconds))
+    : 'LAST DISCOVERY   none yet';
+  const lastRun = region.last_scheduler_run_at_unix_seconds
+    ? ('LAST RUN         ' + tAgo(region.last_scheduler_run_at_unix_seconds))
+    : 'LAST RUN         scheduler has not run yet';
+  const discovery = payload.discovery_due
+    ? ('DISCOVERY        due · overdue by ' + formatDurationSeconds(payload.discovery_overdue_seconds || 0))
+    : 'DISCOVERY        within cadence';
+  const coords = [
+    region.south != null ? 'S ' + Number(region.south).toFixed(2) : '',
+    region.west != null ? 'W ' + Number(region.west).toFixed(2) : '',
+    region.north != null ? 'N ' + Number(region.north).toFixed(2) : '',
+    region.east != null ? 'E ' + Number(region.east).toFixed(2) : '',
+  ].filter(Boolean).join(' · ');
+  const topSiteLine = topSites.length
+    ? 'TOP SITES        ' + topSites.slice(0, 3).map(function(site) {
+        const name = site.site_name || site.name || site.seed_key || 'site';
+        const status = site.recent_event_count > 0
+          ? (site.recent_event_count + ' recent event' + (site.recent_event_count === 1 ? '' : 's'))
+          : String(site.seed_status || 'candidate');
+        return name + ' (' + status + ')';
+      }).join(' · ')
+    : 'TOP SITES        none ranked yet';
+  return [
+    'REGION           ' + (region.name || payload.region_id || 'Region'),
+    coords ? 'BOUNDARY         ' + coords : '',
+    siteTypes ? 'SITE TYPES       ' + siteTypes : '',
+    'SEEDS            ' + Number(payload.seed_count || 0),
+    'OBSERVED         ' + Number(payload.observed_seed_count || 0),
+    'ELEVATED         ' + Number(payload.elevated_seed_count || 0),
+    'RECENT EVENTS    ' + Number(payload.recent_event_count || 0),
+    'CRITICAL EVENTS  ' + Number(payload.critical_event_count || 0),
+    'MAX PRIORITY     ' + Number(payload.highest_scan_priority || 0).toFixed(2),
+    'AVG CONFIDENCE   ' + Math.round(Number(payload.average_observation_confidence || 0) * 100) + '%',
+    discovery,
+    lastDiscovery,
+    lastRun,
+    topSiteLine,
+    'SUMMARY          ' + (payload.narrative || 'Regional monitoring overview ready.'),
+  ].filter(Boolean).join('\n');
+}
+
+function formatRegionSitesPayload(payload) {
+  if (!payload || typeof payload !== 'object' || !Array.isArray(payload.sites)) return null;
+  const sites = payload.sites || [];
+  if (!sites.length) return 'No site candidates have been mapped for this region yet.';
+  return [
+    'SITE CANDIDATES  ' + sites.length,
+    '',
+    sites.slice(0, 8).map(function(site, index) {
+      const state = site.recommendation_review_state
+        ? humanReviewState(site.recommendation_review_state)
+        : (site.has_recommendation ? 'pending review' : String(site.seed_status || 'candidate'));
+      return [
+        '#' + String(index + 1).padStart(2, '0') + ' · ' + (site.name || site.seed_key || 'Site'),
+        'TYPE            ' + String(site.site_type || 'candidate'),
+        'RISK            ' + Math.round(Number(site.risk_score || 0) * 100) + '% · ' + state,
+        'STATUS          ' + (site.status_reason || site.priority_reason || 'Monitoring'),
+      ].join('\n');
+    }).join('\n\n'),
+  ].join('\n');
+}
+
+function formatCommandSummaryPayload(payload) {
+  if (!payload || typeof payload !== 'object' || !Array.isArray(payload.attention_queue)) return null;
+  const queue = payload.attention_queue || [];
+  const actions = payload.maintenance && Array.isArray(payload.maintenance.suggested_actions)
+    ? payload.maintenance.suggested_actions
+    : [];
+  const dashboard = payload.dashboard || {};
+  const highlightRegion = payload.highlights && payload.highlights.top_region ? payload.highlights.top_region.name : '';
+  const summary = payload.summary || dashboard.summary || 'Command center summary ready.';
+  const queueLine = queue.length
+    ? 'QUEUE            ' + queue.slice(0, 3).map(function(item) {
+        return (item.title || item.kind || 'item') + ' [' + String(item.urgency_label || 'watch').toUpperCase() + ']';
+      }).join(' · ')
+    : 'QUEUE            clear';
+  const actionLine = actions.length
+    ? 'ACTIONS          ' + actions.slice(0, 3).map(function(item) { return item.title || 'action'; }).join(' · ')
+    : 'ACTIONS          none suggested';
+  return [
+    'FOCUS REGION      ' + (payload.focus_region_id || highlightRegion || 'global'),
+    'REGIONS ACTIVE    ' + Number(dashboard.region_count || 0),
+    'SITES ELEVATED    ' + Number(dashboard.elevated_site_count || 0),
+    'EVENTS LIVE       ' + Number(dashboard.live_event_count || 0),
+    queueLine,
+    actionLine,
+    'SUMMARY          ' + summary,
+  ].join('\n');
+}
+
 function formatEvidencePayload(payload) {
   if (!payload || typeof payload !== 'object') return null;
   const finding = payload.finding || payload.summary || payload.description || ('Evidence bundle for ' + (payload.object_id || 'object') + '.');
@@ -3854,6 +3951,18 @@ function formatDrawerPayload(path, payload) {
     const formattedReadiness = formatReadinessPayload(payload);
     if (formattedReadiness) return formattedReadiness;
   }
+  if (path && path.indexOf('/v1/passive/regions/') >= 0 && path.indexOf('/overview') >= 0) {
+    const formattedRegionOverview = formatRegionOverviewPayload(payload);
+    if (formattedRegionOverview) return formattedRegionOverview;
+  }
+  if (path && path.indexOf('/v1/passive/map/sites') >= 0) {
+    const formattedRegionSites = formatRegionSitesPayload(payload);
+    if (formattedRegionSites) return formattedRegionSites;
+  }
+  if (path && path.indexOf('/v1/passive/command-center/summary') >= 0) {
+    const formattedCommandSummary = formatCommandSummaryPayload(payload);
+    if (formattedCommandSummary) return formattedCommandSummary;
+  }
   if (path && path.indexOf('/reviews') >= 0) {
     const formattedReviews = formatReviewHistoryPayload(payload);
     if (formattedReviews) return formattedReviews;
@@ -3922,6 +4031,14 @@ function ageBucketLabel(bucket) {
   if (!value) return '';
   if (value === 'new') return 'fresh';
   return value.replace(/_/g, ' ');
+}
+
+function formatDurationSeconds(totalSeconds) {
+  const value = Math.max(0, Number(totalSeconds || 0));
+  if (value < 60) return Math.round(value) + 's';
+  if (value < 3600) return Math.round(value / 60) + 'm';
+  if (value < 86400) return Math.round(value / 3600) + 'h';
+  return Math.round(value / 86400) + 'd';
 }
 
 function setRiskContext(text) {
