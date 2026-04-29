@@ -4166,7 +4166,12 @@ async function renderRegionalForecastOverlay(regionId) {
         entry.site.name || entry.site.seed_key || 'Site'
       );
     });
-  } catch (_) { /* leave */ }
+  } catch (_) {
+    const list = document.getElementById('what-changed-list');
+    const count = document.getElementById('changes-count');
+    if (list) list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;line-height:1.6;">Operational event feed unavailable. Retrying automatically.</div>';
+    if (count) count.textContent = '!';
+  }
 }
 
 async function setRecommendationState(siteId, stateLabel) {
@@ -4303,7 +4308,17 @@ async function refreshGlobalAnalytics() {
     setFocusQuickLinks([]);
     setFocusStateText('');
     renderOperationalReviewStrip(reviewCounts);
-  } catch (_) { /* leave */ }
+  } catch (_) {
+    const narEl = document.getElementById('narrative-text');
+    const metaEl = document.getElementById('narrative-meta');
+    if (narEl) {
+      narEl.textContent = 'Operational narrative unavailable. Waiting for command-center summary to recover.';
+      narEl.style.color = 'var(--text-tertiary)';
+    }
+    if (metaEl) {
+      metaEl.innerHTML = '<span>QUEUE · —</span><span>STALE · —</span><span>ACTIONS · —</span>';
+    }
+  }
 }
 
 async function refreshFocusedSiteAnalytics() {
@@ -4627,7 +4642,10 @@ async function refreshFocusedSiteAnalytics() {
         + '<button class="att-action subtle" onclick="openDrawerFromPath(\'Recommendation Reviews\', \'/v1/orchestrator/sites/' + encodeURIComponent(siteId) + '/reviews?limit=10\')">History</button>'
         + '</div></div>';
     }
-  } catch (_) { /* leave */ }
+  } catch (_) {
+    const list = document.getElementById('recommended-actions-list');
+    if (list) list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:6px 0;line-height:1.6;">Recommended actions unavailable while the command surface reconnects.</div>';
+  }
 }
 
 function openFocusPanel({ kind, title, reason, lat, lng, siteId, regionId, actionPath, narrativePath, evidencePath, replayPath, operatorState }) {
@@ -4796,10 +4814,23 @@ document.querySelectorAll('.legend-toggle').forEach(t => {
 
 const API = {
   async get(path) {
-    const res  = await fetch(path);
-    const json = await res.json();
-    if (!res.ok) throw new Error((json.error && json.error.message) || 'HTTP ' + res.status);
-    return json.data !== undefined ? json.data : json;
+    const res = await fetch(path);
+    const text = await res.text();
+    let json = null;
+    if (text) {
+      try {
+        json = JSON.parse(text);
+      } catch (_) {
+        json = null;
+      }
+    }
+    if (!res.ok) {
+      const message = (json && json.error && json.error.message)
+        || (text && text.trim() ? text.trim().slice(0, 160) : '')
+        || ('HTTP ' + res.status);
+      throw new Error(message);
+    }
+    return json && json.data !== undefined ? json.data : (json !== null ? json : text);
   },
   async post(path, payload) {
     const res = await fetch(path, {
@@ -4807,9 +4838,22 @@ const API = {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload || {}),
     });
-    const json = await res.json();
-    if (!res.ok) throw new Error((json.error && json.error.message) || 'HTTP ' + res.status);
-    return json.data !== undefined ? json.data : json;
+    const text = await res.text();
+    let json = null;
+    if (text) {
+      try {
+        json = JSON.parse(text);
+      } catch (_) {
+        json = null;
+      }
+    }
+    if (!res.ok) {
+      const message = (json && json.error && json.error.message)
+        || (text && text.trim() ? text.trim().slice(0, 160) : '')
+        || ('HTTP ' + res.status);
+      throw new Error(message);
+    }
+    return json && json.data !== undefined ? json.data : (json !== null ? json : text);
   }
 };
 
@@ -4936,7 +4980,12 @@ async function refreshNarrative() {
         '<span>STALE \u00b7 ' + stale + '</span>' +
         '<span>ACTIONS \u00b7 ' + acts + '</span>';
     }
-  } catch (_) { /* leave */ }
+  } catch (_) {
+    const list = document.getElementById('event-composition-list');
+    const total = document.getElementById('event-total');
+    if (list) list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:4px 0;">Event composition unavailable.</div>';
+    if (total) total.textContent = '—';
+  }
 }
 
 function renderMaintenanceActionCard(action, color, inspectHandler, runHandler) {
@@ -5072,7 +5121,11 @@ async function refreshSourceHealth() {
     }).join('');
   } catch (_) {
     const grid = document.getElementById('source-health-list');
+    const cnt = document.getElementById('source-count');
+    const sysEl = document.getElementById('sys-sources');
     if (grid) grid.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">Source health unavailable.</div>';
+    if (cnt) cnt.textContent = '—';
+    if (sysEl) sysEl.textContent = 'degraded';
   }
 }
 
@@ -5267,7 +5320,13 @@ async function refreshOpPicture() {
     });
   } catch (e) {
     const opMsg = document.getElementById('op-message');
+    const opR = document.getElementById('op-regions');
+    const opS = document.getElementById('op-sites');
+    const opE = document.getElementById('op-events');
     if (opMsg) opMsg.innerHTML = 'Operational feed error — retrying…';
+    if (opR) opR.textContent = '—';
+    if (opS) opS.textContent = '—';
+    if (opE) opE.textContent = '—';
   }
 }
 
@@ -5328,7 +5387,12 @@ async function refreshAttentionQueue() {
         + '<button class="att-action" onclick="handleAttentionClick(' + idx + ')">' + lbl + '</button>'
         + '</div></div>';
     }).join('');
-  } catch (_) { /* leave */ }
+  } catch (_) {
+    const list = document.getElementById('attention-queue-list');
+    const cnt = document.getElementById('attention-count');
+    if (list) list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">Attention queue unavailable. Retrying automatically.</div>';
+    if (cnt) cnt.textContent = '!';
+  }
 }
 
 function handleAttentionClick(idx) {
@@ -5404,7 +5468,10 @@ async function refreshRecommendedActions() {
         'executeRecommendedActionByIndex(' + i + ')'
       );
     }).join('');
-  } catch (_) { /* leave */ }
+  } catch (_) {
+    const list = document.getElementById('provenance-list');
+    if (list) list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">Provenance feed unavailable.</div>';
+  }
 }
 
 // --- Event Composition ---
