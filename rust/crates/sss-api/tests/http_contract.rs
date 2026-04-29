@@ -1419,6 +1419,7 @@ async fn passive_site_forecast_and_recommendation_are_auditable() {
     assert!(recommendation_body["data"]["scenario"]["points"].is_array());
 
     let decisions_response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .uri(format!(
@@ -1436,6 +1437,49 @@ async fn passive_site_forecast_and_recommendation_are_auditable() {
         decisions_body["data"][0]["endpoint"],
         "/v1/orchestrator/sites/:site_id/recommend"
     );
+
+    let review_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/v1/orchestrator/sites/{site_id}/reviews"))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    json!({
+                        "state": "Applied",
+                        "actor": "http_contract",
+                        "rationale": "validated for audit trail"
+                    })
+                    .to_string(),
+                ))
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(review_response.status(), StatusCode::OK);
+    let review_body = body_json(review_response).await;
+    assert_eq!(review_body["data"]["site_id"], site_id);
+    assert_eq!(review_body["data"]["state"], "Applied");
+    assert_eq!(review_body["data"]["actor"], "http_contract");
+
+    let review_history_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/orchestrator/sites/{site_id}/reviews?limit=5"))
+                .body(Body::empty())
+                .expect("request"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(review_history_response.status(), StatusCode::OK);
+    let review_history_body = body_json(review_history_response).await;
+    assert_eq!(
+        review_history_body["data"].as_array().map_or(0, Vec::len),
+        1
+    );
+    assert_eq!(review_history_body["data"][0]["state"], "Applied");
 }
 
 #[tokio::test]

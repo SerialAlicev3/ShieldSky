@@ -24,11 +24,11 @@ use sss_passive_scanner::{
 };
 use sss_site_registry::{Criticality, Site, SiteType};
 use sss_storage::{
-    CanonicalPassiveEvent, IngestBatchLog, NotificationDeliveryLog, PassiveRegionLease,
-    PassiveRegionRunLog, PassiveRegionRunStatus, PassiveRegionTarget, PassiveRunOrigin,
-    PassiveSeedClassificationStatus, PassiveSeedRecord, PassiveSeedStatus,
-    PassiveSourceHealthSample, PassiveWorkerHeartbeat, PredictionSnapshot, RequestResponseLog,
-    SqliteStore, StorageError,
+    CanonicalPassiveEvent, IngestBatchLog, NotificationDeliveryLog, PassiveRecommendationReview,
+    PassiveRecommendationReviewState, PassiveRegionLease, PassiveRegionRunLog,
+    PassiveRegionRunStatus, PassiveRegionTarget, PassiveRunOrigin, PassiveSeedClassificationStatus,
+    PassiveSeedRecord, PassiveSeedStatus, PassiveSourceHealthSample, PassiveWorkerHeartbeat,
+    PredictionSnapshot, RequestResponseLog, SqliteStore, StorageError,
 };
 
 #[derive(Debug, Clone)]
@@ -1278,6 +1278,63 @@ impl AppState {
             .into_iter()
             .filter(|snapshot| snapshot.endpoint == "/v1/orchestrator/sites/:site_id/recommend")
             .collect())
+    }
+
+    pub fn passive_site_recommendation_reviews(
+        &self,
+        site_id: &str,
+        limit: usize,
+    ) -> Result<Vec<PassiveRecommendationReview>, StorageError> {
+        self.storage.passive_recommendation_reviews(site_id, limit)
+    }
+
+    pub fn set_passive_site_recommendation_review(
+        &self,
+        site_id: &str,
+        state: PassiveRecommendationReviewState,
+        actor: Option<String>,
+        rationale: Option<String>,
+        snapshot_id: Option<&String>,
+    ) -> Result<PassiveRecommendationReview, AppError> {
+        self.storage
+            .passive_site_profiles()?
+            .into_iter()
+            .find(|site| site.site.site_id.to_string() == site_id)
+            .ok_or_else(|| AppError::SiteNotFound(format!("passive site not found: {site_id}")))?;
+        let decisions = self.passive_site_orchestrator_decisions(site_id, 50)?;
+        let snapshot = if let Some(snapshot_id) = snapshot_id {
+            decisions
+                .into_iter()
+                .find(|candidate| candidate.snapshot_id == *snapshot_id)
+        } else {
+            decisions.into_iter().next()
+        }
+        .ok_or_else(|| {
+            AppError::InvalidRequest(format!(
+                "no orchestrator recommendation snapshot found for site: {site_id}"
+            ))
+        })?;
+        let review = PassiveRecommendationReview {
+            review_id: format!(
+                "{}:review:{}:{}",
+                snapshot.snapshot_id,
+                format!("{state:?}").to_lowercase(),
+                now_unix_seconds()
+            ),
+            site_id: site_id.to_string(),
+            snapshot_id: snapshot.snapshot_id.clone(),
+            request_id: snapshot.request_id.clone(),
+            endpoint: snapshot.endpoint.clone(),
+            state,
+            actor,
+            rationale,
+            evidence_bundle_hash: snapshot.evidence_bundle_hash.clone(),
+            decided_at_unix_seconds: now_unix_seconds(),
+        };
+        self.storage
+            .store_passive_recommendation_review(&review)
+            .map_err(AppError::Storage)?;
+        Ok(review)
     }
 
     fn store_forecast_snapshot(

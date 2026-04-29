@@ -81,6 +81,11 @@ pub struct PredictionSnapshotsQuery {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct PassiveRecommendationReviewsQuery {
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct PassiveObservationsQuery {
     pub limit: Option<usize>,
     pub source_kind: Option<sss_passive_scanner::PassiveSourceKind>,
@@ -94,6 +99,14 @@ pub struct PassiveSiteCorpusQuery {
 #[derive(Debug, Clone, Deserialize)]
 pub struct PassiveSiteForecastQuery {
     pub horizon_hours: Option<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PassiveSiteRecommendationReviewRequest {
+    pub state: sss_storage::PassiveRecommendationReviewState,
+    pub actor: Option<String>,
+    pub rationale: Option<String>,
+    pub snapshot_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1191,6 +1204,39 @@ pub async fn get_passive_site_orchestrator_decisions(
     let response = state
         .passive_site_orchestrator_decisions(&site_id, limit)
         .map_err(|error| ApiError::storage(request_id.clone(), error.to_string()))?;
+    Ok(Json(ApiEnvelope::new(request_id, response)))
+}
+
+pub async fn get_passive_site_recommendation_reviews(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(site_id): Path<String>,
+    Query(query): Query<PassiveRecommendationReviewsQuery>,
+) -> Result<Json<ApiEnvelope<Vec<sss_storage::PassiveRecommendationReview>>>, ApiError> {
+    let request_id = request_id(&headers);
+    let limit = query.limit.unwrap_or(10).clamp(1, 100);
+    let response = state
+        .passive_site_recommendation_reviews(&site_id, limit)
+        .map_err(|error| ApiError::storage(request_id.clone(), error.to_string()))?;
+    Ok(Json(ApiEnvelope::new(request_id, response)))
+}
+
+pub async fn review_passive_site_recommendation(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(site_id): Path<String>,
+    Json(request): Json<PassiveSiteRecommendationReviewRequest>,
+) -> Result<Json<ApiEnvelope<sss_storage::PassiveRecommendationReview>>, ApiError> {
+    let request_id = request_id(&headers);
+    let response = state
+        .set_passive_site_recommendation_review(
+            &site_id,
+            request.state,
+            request.actor,
+            request.rationale,
+            request.snapshot_id.as_ref(),
+        )
+        .map_err(|error| app_error_to_api_error(request_id.clone(), error))?;
     Ok(Json(ApiEnvelope::new(request_id, response)))
 }
 
@@ -3443,20 +3489,7 @@ const FOCUS_STATE = {
 };
 const PRESSURE_HISTORY = []; // circular buffer { t, score }
 const FORECAST_ENTITIES = [];
-const RECOMMENDATION_STATE_KEY = 'shieldsky:recommendation-state';
-const RECOMMENDATION_STATE = (() => {
-  try {
-    return JSON.parse(localStorage.getItem(RECOMMENDATION_STATE_KEY) || '{}');
-  } catch (_) {
-    return {};
-  }
-})();
-
-function persistRecommendationState() {
-  try {
-    localStorage.setItem(RECOMMENDATION_STATE_KEY, JSON.stringify(RECOMMENDATION_STATE));
-  } catch (_) { /* ignore */ }
-}
+const RECOMMENDATION_STATE = {};
 
 function focusOnGlobe(lat, lng, altM) {
   viewer.camera.flyTo({
@@ -3647,10 +3680,18 @@ async function renderRegionalForecastOverlay(regionId) {
   } catch (_) { /* leave */ }
 }
 
-function setRecommendationState(siteId, stateLabel) {
+async function setRecommendationState(siteId, stateLabel) {
   if (!siteId || !stateLabel) return;
+  const snapshotId = FOCUS_STATE.lastRecommendation && FOCUS_STATE.lastRecommendation.snapshot_id
+    ? FOCUS_STATE.lastRecommendation.snapshot_id
+    : null;
+  await API.post('/v1/orchestrator/sites/' + encodeURIComponent(siteId) + '/reviews', {
+    state: String(stateLabel).charAt(0).toUpperCase() + String(stateLabel).slice(1),
+    actor: 'operator_console',
+    rationale: 'Recorded from command center focus panel',
+    snapshot_id: snapshotId,
+  });
   RECOMMENDATION_STATE[siteId] = stateLabel;
-  persistRecommendationState();
   setFocusStateText('RECOMMENDATION ' + String(stateLabel).toUpperCase());
   if (FOCUS_STATE.siteId === siteId) {
     refreshFocusedSiteAnalytics().catch(() => {});
@@ -3768,7 +3809,7 @@ async function refreshFocusedSiteAnalytics() {
   }
   try {
     const siteId = FOCUS_STATE.siteId;
-    const [overview, scenario, recommendation, decisions] = await Promise.all([
+    const [overview, scenario, recommendation, decisions, reviews] = await Promise.all([
       API.get('/v1/passive/sites/' + encodeURIComponent(siteId) + '/overview?limit=12'),
       API.get('/v1/forecast/sites/' + encodeURIComponent(siteId) + '/scenario?horizon_hours=24'),
       API.post('/v1/orchestrator/sites/' + encodeURIComponent(siteId) + '/recommend', {
@@ -3778,6 +3819,7 @@ async function refreshFocusedSiteAnalytics() {
         price_signal_bias: 0.0,
       }),
       API.get('/v1/orchestrator/sites/' + encodeURIComponent(siteId) + '/decisions?limit=5').catch(function() { return []; }),
+      API.get('/v1/orchestrator/sites/' + encodeURIComponent(siteId) + '/reviews?limit=5').catch(function() { return []; }),
     ]);
 
     FOCUS_STATE.lastRecommendation = recommendation;
@@ -3822,7 +3864,13 @@ async function refreshFocusedSiteAnalytics() {
         ? { label: 'Replay', path: '/v1/replay/' + provenance.manifest_hashes[0], warn: true }
         : null,
     ]);
-    const recommendationState = RECOMMENDATION_STATE[siteId];
+    const latestReview = Array.isArray(reviews) && reviews.length ? reviews[0] : null;
+    const recommendationState = latestReview && latestReview.state
+      ? String(latestReview.state).toLowerCase()
+      : RECOMMENDATION_STATE[siteId];
+    if (recommendationState) {
+      RECOMMENDATION_STATE[siteId] = recommendationState;
+    }
     setFocusStateText(recommendationState ? ('RECOMMENDATION ' + String(recommendationState).toUpperCase()) : 'RECOMMENDATION PENDING REVIEW');
 
     const riskTitleEl = document.getElementById('risk-trend-title');
@@ -3910,9 +3958,9 @@ async function refreshFocusedSiteAnalytics() {
         + (reviewed ? ' · STATE ' + String(reviewed).toUpperCase() : '')
         + '</div>'
         + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">'
-        + '<button class="att-action subtle" onclick="setRecommendationState(\'' + siteId + '\', \'reviewed\')">Review</button>'
-        + '<button class="att-action" onclick="setRecommendationState(\'' + siteId + '\', \'applied\')">Apply</button>'
-        + '<button class="att-action warn" onclick="setRecommendationState(\'' + siteId + '\', \'dismissed\')">Dismiss</button>'
+        + '<button class="att-action subtle" onclick="setRecommendationState(\'' + siteId + '\', \'reviewed\').catch(() => {})">Review</button>'
+        + '<button class="att-action" onclick="setRecommendationState(\'' + siteId + '\', \'applied\').catch(() => {})">Apply</button>'
+        + '<button class="att-action warn" onclick="setRecommendationState(\'' + siteId + '\', \'dismissed\').catch(() => {})">Dismiss</button>'
         + '</div></div>';
     }
   } catch (_) { /* leave */ }
