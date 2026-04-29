@@ -51,23 +51,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         tokio::spawn(run_celestrak_scheduler(state.clone(), config));
     }
-    if let Some(config) = passive_region_scheduler_config() {
+    if passive_region_scheduler_requested() {
         tracing::info!(
-            poll_seconds = config.poll_interval.as_secs(),
-            retry_seconds = config.retry_interval.as_secs(),
-            window_hours = config.window_hours,
-            max_regions_per_cycle = config.max_regions_per_cycle,
-            include_adsb = config.feeds.include_adsb,
-            include_weather = config.feeds.include_weather,
-            include_fire_smoke = config.feeds.include_fire_smoke,
-            force_discovery = config.force_discovery,
-            dry_run = config.dry_run,
-            "starting passive region scheduler"
-        );
-        tokio::spawn(run_passive_region_scheduler(state.clone(), config));
-    } else if passive_region_scheduler_requested() {
-        tracing::info!(
-            "passive region scheduler requested for sss-api, but disabled in web service; run sss-passive-worker for background passive execution"
+            "passive region scheduler settings detected, but sss-api never runs the passive scheduler; deploy sss-passive-worker for background passive execution"
         );
     }
 
@@ -151,24 +137,6 @@ struct SchedulerConfig {
     retry_interval: Duration,
 }
 
-#[derive(Debug, Clone, Copy)]
-struct PassiveRegionSchedulerConfig {
-    poll_interval: Duration,
-    retry_interval: Duration,
-    window_hours: u64,
-    max_regions_per_cycle: usize,
-    feeds: PassiveRegionFeedConfig,
-    force_discovery: bool,
-    dry_run: bool,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct PassiveRegionFeedConfig {
-    include_adsb: bool,
-    include_weather: bool,
-    include_fire_smoke: bool,
-}
-
 fn scheduler_config() -> Option<SchedulerConfig> {
     let poll_seconds = env::var("SSS_CELESTRAK_ACTIVE_POLL_SECONDS")
         .ok()
@@ -187,52 +155,6 @@ fn scheduler_config() -> Option<SchedulerConfig> {
         poll_interval: Duration::from_secs(poll_seconds),
         retry_interval: Duration::from_secs(retry_seconds.max(1)),
     })
-}
-
-fn passive_region_scheduler_config() -> Option<PassiveRegionSchedulerConfig> {
-    if !passive_region_scheduler_enabled() {
-        return None;
-    }
-
-    let poll_seconds = env::var("SSS_PASSIVE_REGION_POLL_SECONDS")
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .unwrap_or(0);
-    if poll_seconds == 0 {
-        return None;
-    }
-
-    let retry_seconds = env::var("SSS_PASSIVE_REGION_RETRY_SECONDS")
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .unwrap_or(300);
-    let window_hours = env::var("SSS_PASSIVE_REGION_WINDOW_HOURS")
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .unwrap_or(24)
-        .clamp(1, 168);
-
-    Some(PassiveRegionSchedulerConfig {
-        poll_interval: Duration::from_secs(poll_seconds.max(1)),
-        retry_interval: Duration::from_secs(retry_seconds.max(1)),
-        window_hours,
-        max_regions_per_cycle: env::var("SSS_PASSIVE_REGION_MAX_REGIONS_PER_CYCLE")
-            .ok()
-            .and_then(|value| value.parse::<usize>().ok())
-            .unwrap_or(2)
-            .clamp(1, 50),
-        feeds: PassiveRegionFeedConfig {
-            include_adsb: bool_env("SSS_PASSIVE_REGION_INCLUDE_ADSB", true),
-            include_weather: bool_env("SSS_PASSIVE_REGION_INCLUDE_WEATHER", true),
-            include_fire_smoke: bool_env("SSS_PASSIVE_REGION_INCLUDE_FIRE_SMOKE", true),
-        },
-        force_discovery: bool_env("SSS_PASSIVE_REGION_FORCE_DISCOVERY", false),
-        dry_run: bool_env("SSS_PASSIVE_REGION_DRY_RUN", false),
-    })
-}
-
-fn passive_region_scheduler_enabled() -> bool {
-    bool_env("SSS_API_ENABLE_PASSIVE_REGION_SCHEDULER", false)
 }
 
 fn passive_region_scheduler_requested() -> bool {
@@ -311,102 +233,6 @@ async fn run_celestrak_scheduler(state: AppState, config: SchedulerConfig) {
             }
         }
     }
-}
-
-async fn run_passive_region_scheduler(state: AppState, config: PassiveRegionSchedulerConfig) {
-    let mut delay = Duration::from_secs(0);
-
-    loop {
-        if !delay.is_zero() {
-            tokio::time::sleep(delay).await;
-        }
-
-        let region_ids =
-            select_passive_scheduler_region_batch(&state, config.max_regions_per_cycle);
-        if region_ids.is_empty() {
-            tracing::info!(
-                max_regions_per_cycle = config.max_regions_per_cycle,
-                "passive region scheduler found no enabled regions to process"
-            );
-            delay = config.poll_interval;
-            continue;
-        }
-
-        let request_id = format!("scheduler-passive-regions-{}", unix_seconds_now());
-        let request = PassiveRegionRunRequest {
-            region_ids: Some(region_ids.clone()),
-            force_discovery: Some(config.force_discovery),
-            dry_run: Some(config.dry_run),
-            window_hours: Some(config.window_hours),
-            include_adsb: Some(config.feeds.include_adsb),
-            include_weather: Some(config.feeds.include_weather),
-            include_fire_smoke: Some(config.feeds.include_fire_smoke),
-        };
-
-        match state.run_passive_regions(&request_id, &request).await {
-            Ok(response) => {
-                tracing::info!(
-                    %request_id,
-                    region_batch = region_ids.len(),
-                    evaluated_regions = response.evaluated_region_count,
-                    discovered_regions = response.discovered_region_count,
-                    skipped_regions = response.skipped_region_count,
-                    discovered_seeds = response.discovered_seed_count,
-                    scheduler_selected_seeds = response
-                        .scheduler
-                        .as_ref()
-                        .map_or(0, |scheduler| scheduler.selected_seed_count),
-                    "scheduled passive region run completed"
-                );
-                delay = config.poll_interval;
-            }
-            Err(error) => {
-                tracing::warn!(
-                    %request_id,
-                    region_batch = region_ids.len(),
-                    retry_seconds = config.retry_interval.as_secs(),
-                    error = %error,
-                    "scheduled passive region run failed"
-                );
-                delay = config.retry_interval;
-            }
-        }
-    }
-}
-
-fn select_passive_scheduler_region_batch(
-    state: &AppState,
-    max_regions_per_cycle: usize,
-) -> Vec<String> {
-    let mut regions = match state.passive_region_targets(1_000, true) {
-        Ok(regions) => regions,
-        Err(error) => {
-            tracing::warn!(%error, "failed to load passive regions for scheduler batch selection");
-            return Vec::new();
-        }
-    };
-    regions.sort_by(|left, right| {
-        let left_key = (
-            left.last_scheduler_run_at_unix_seconds.is_some(),
-            left.last_discovered_at_unix_seconds.is_some(),
-            left.last_scheduler_run_at_unix_seconds.unwrap_or(i64::MIN),
-            left.last_discovered_at_unix_seconds.unwrap_or(i64::MIN),
-            left.updated_at_unix_seconds,
-        );
-        let right_key = (
-            right.last_scheduler_run_at_unix_seconds.is_some(),
-            right.last_discovered_at_unix_seconds.is_some(),
-            right.last_scheduler_run_at_unix_seconds.unwrap_or(i64::MIN),
-            right.last_discovered_at_unix_seconds.unwrap_or(i64::MIN),
-            right.updated_at_unix_seconds,
-        );
-        left_key.cmp(&right_key)
-    });
-    regions
-        .into_iter()
-        .take(max_regions_per_cycle.max(1))
-        .map(|region| region.region_id)
-        .collect()
 }
 
 /// Seed the two default Portugal monitoring regions on startup if none exist.

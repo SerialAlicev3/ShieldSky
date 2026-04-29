@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::env;
 
 use crate::canonical_views::CanonicalEventStatus;
 use crate::dashboard_views::{
@@ -267,19 +266,7 @@ fn build_source_readiness_actions(
     state: &AppState,
     region_id: Option<&str>,
 ) -> Result<Vec<PassiveCommandCenterAction>, AppError> {
-    let scheduler_enabled = env::var("SSS_API_ENABLE_PASSIVE_REGION_SCHEDULER")
-        .ok()
-        .is_some_and(|value| {
-            matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "1" | "true" | "yes" | "on"
-            )
-        })
-        && env::var("SSS_PASSIVE_REGION_POLL_SECONDS")
-            .ok()
-            .and_then(|value| value.parse::<u64>().ok())
-            .unwrap_or(0)
-            > 0;
+    let scheduler_enabled = false;
     let total_default_regions = default_passive_region_requests().len();
     let configured_region_count = state.passive_region_targets(1_000, false)?.len();
     let missing_region_count = total_default_regions.saturating_sub(configured_region_count);
