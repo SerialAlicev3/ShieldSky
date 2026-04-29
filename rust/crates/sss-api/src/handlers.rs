@@ -4814,63 +4814,109 @@ async function refreshNarrative() {
 // regions: [{ name, state: 'healthy'|'pressured'|'degraded'|'failing' }]
 async function refreshSourceHealth() {
   try {
-    const data    = await API.get('/v1/passive/command-center/summary');
     const grid    = document.getElementById('source-health-list');
     const cnt     = document.getElementById('source-count');
     const sysEl   = document.getElementById('sys-sources');
     if (!grid) return;
-    const sources = (data.dashboard && data.dashboard.source_health) || [];
-    if (!sources.length) {
-      const readiness = await API.get('/v1/passive/source-health/readiness');
-      const readySources = (readiness.sources || []).filter(function(source) {
-        return String(source.readiness || '').toLowerCase() === 'ready';
-      });
-      const scheduler = readiness.scheduler || {};
-      if (cnt) cnt.textContent = readySources.length + ' / ' + (readiness.sources || []).length;
-      if (sysEl) {
-        sysEl.textContent = scheduler.enabled
-          ? readySources.length + ' / ' + (readiness.sources || []).length + ' ready'
-          : 'scheduler off';
+    const [readiness, samplePayload] = await Promise.all([
+      API.get('/v1/passive/source-health/readiness'),
+      API.get('/v1/passive/source-health/samples?limit=250').catch(function() { return []; }),
+    ]);
+    const readinessSources = Array.isArray(readiness.sources) ? readiness.sources : [];
+    const samples = Array.isArray(samplePayload) ? samplePayload : [];
+    const scheduler = readiness.scheduler || {};
+    const readinessById = {};
+    readinessSources.forEach(function(source) {
+      readinessById[String(source.source_id || '').toLowerCase()] = source;
+    });
+    const sourceIdForKind = {
+      weather: 'open_meteo',
+      firesmoke: 'firms',
+      adsb: 'opensky',
+    };
+    const groupedSamples = {};
+    samples.forEach(function(sample) {
+      const rawKind = String(sample.source_kind || '').toLowerCase();
+      const sourceId = sourceIdForKind[rawKind];
+      if (!sourceId) return;
+      if (!groupedSamples[sourceId]) {
+        groupedSamples[sourceId] = {
+          sampleCount: 0,
+          successCount: 0,
+          failureCount: 0,
+          latestGeneratedAt: null,
+          lastDetail: '',
+        };
       }
-      grid.innerHTML = (readiness.sources || []).slice(0, 6).map(function(source) {
-        const readinessState = String(source.readiness || 'awaiting_data').toLowerCase();
-        const scoreByReadiness = { ready: 94, awaiting_data: 56, needs_config: 18, degraded: 28 };
-        const classByReadiness = { ready: 'healthy', awaiting_data: 'degraded', needs_config: 'failing', degraded: 'failing' };
-        const hint = source.reason || 'No readiness detail yet.';
-        const nm = String(source.label || source.source_id || 'SOURCE').toUpperCase().substring(0, 14);
-        return '<div class="source-row">'
-          + '<div class="source-name">' + nm + '</div>'
-          + '<div class="source-bar"><div class="source-bar-fill ' + (classByReadiness[readinessState] || 'degraded') + '" style="width:' + (scoreByReadiness[readinessState] || 40) + '%"></div></div>'
-          + '<div class="source-value">' + (scoreByReadiness[readinessState] || 40) + '</div>'
-          + '<div style="grid-column: 1 / span 3; font-family:var(--font-mono);font-size:9px;color:var(--text-tertiary);letter-spacing:0.08em;margin-top:4px;">'
-          + escapeHtml(readinessState.replace(/_/g, ' '))
-          + (source.sample_count ? ' · ' + source.sample_count + ' samples' : '')
-          + '</div>'
-          + '<div style="grid-column: 1 / span 3; font-size:10px;color:var(--text-secondary);margin-top:4px;line-height:1.5;">' + escapeHtml(hint) + '</div>'
-          + '</div>';
-      }).join('');
-      return;
-    }
-    const scoreByStatus = { healthy: 97, watch: 72, degraded: 38, stale: 16 };
+      const bucket = groupedSamples[sourceId];
+      bucket.sampleCount += 1;
+      if (sample.fetched) bucket.successCount += 1;
+      else bucket.failureCount += 1;
+      if (!bucket.latestGeneratedAt || Number(sample.generated_at_unix_seconds || 0) > bucket.latestGeneratedAt) {
+        bucket.latestGeneratedAt = Number(sample.generated_at_unix_seconds || 0);
+        bucket.lastDetail = String(sample.detail || '');
+      }
+    });
+
+    const scoreByReadiness = { ready: 94, awaiting_data: 46, needs_config: 12, degraded: 24 };
+    const classByReadiness = { ready: 'healthy', awaiting_data: 'degraded', needs_config: 'failing', degraded: 'failing' };
+    const scoreByStatus = { healthy: 97, watch: 74, degraded: 38, stale: 16 };
     const classByStatus = { healthy: 'healthy', watch: 'degraded', degraded: 'degraded', stale: 'failing' };
-    const healthyCount = sources.filter(function(source) { return String(source.health_status || '').toLowerCase() === 'healthy'; }).length;
-    if (cnt) cnt.textContent = healthyCount + ' / ' + sources.length;
-    if (sysEl) sysEl.textContent = healthyCount + ' / ' + sources.length + ' feeds';
-    grid.innerHTML = sources.slice(0, 6).map(function(source) {
-      const status = String(source.health_status || 'degraded').toLowerCase();
-      const sc = scoreByStatus[status] || Math.round(Number(source.reliability_score || 0.5) * 100);
-      const cl = classByStatus[status] || 'degraded';
-      const nm = String(source.source || 'SOURCE').toUpperCase().substring(0, 14);
-      const hint = source.staleness_seconds
-        ? Math.floor(Number(source.staleness_seconds || 0) / 60) + 'm stale'
-        : (Number(source.consecutive_failure_count || 0) > 0
-          ? Number(source.consecutive_failure_count || 0) + ' failures'
-          : 'live');
+    const nowUnix = Math.floor(Date.now() / 1000);
+
+    const rows = readinessSources.map(function(source) {
+      const sourceId = String(source.source_id || '').toLowerCase();
+      const sampleStats = groupedSamples[sourceId];
+      const readinessState = String(source.readiness || 'awaiting_data').toLowerCase();
+      let sc = scoreByReadiness[readinessState] || 40;
+      let cl = classByReadiness[readinessState] || 'degraded';
+      let meta = readinessState.replace(/_/g, ' ');
+      let hint = source.reason || 'No readiness detail yet.';
+
+      if (sampleStats && sampleStats.sampleCount > 0) {
+        const successRate = sampleStats.successCount / Math.max(sampleStats.sampleCount, 1);
+        const latestAgeSeconds = sampleStats.latestGeneratedAt ? nowUnix - sampleStats.latestGeneratedAt : null;
+        let status = 'healthy';
+        if (latestAgeSeconds != null && latestAgeSeconds > 21600) status = 'stale';
+        else if (sampleStats.failureCount > 0 || successRate < 0.8) status = 'degraded';
+        else if (successRate < 0.95) status = 'watch';
+        sc = scoreByStatus[status] || Math.round(successRate * 100);
+        cl = classByStatus[status] || 'degraded';
+        meta = status + ' · ' + sampleStats.sampleCount + ' samples';
+        hint = latestAgeSeconds != null
+          ? Math.floor(latestAgeSeconds / 60) + 'm since latest sample'
+          : (sampleStats.lastDetail || hint);
+        if (sampleStats.failureCount > 0 && sampleStats.lastDetail) {
+          hint += ' · ' + sampleStats.failureCount + ' failures';
+        }
+      } else if (String(source.source_id || '') === 'nasa_briefings') {
+        meta = 'briefings only';
+      }
+
+      return {
+        name: String(source.label || source.source_id || 'SOURCE').toUpperCase().substring(0, 16),
+        score: sc,
+        klass: cl,
+        meta: meta,
+        hint: hint,
+        ready: readinessState === 'ready'
+      };
+    });
+
+    const readyCount = rows.filter(function(row) { return row.ready; }).length;
+    if (cnt) cnt.textContent = readyCount + ' / ' + rows.length;
+    if (sysEl) {
+      sysEl.textContent = scheduler.enabled
+        ? readyCount + ' / ' + rows.length + ' feeds'
+        : 'scheduler off';
+    }
+    grid.innerHTML = rows.slice(0, 6).map(function(row) {
       return '<div class="source-row">'
-        + '<div class="source-name">' + nm + '</div>'
-        + '<div class="source-bar"><div class="source-bar-fill ' + cl + '" style="width:' + sc + '%"></div></div>'
-        + '<div class="source-value">' + sc + '</div>'
-        + '<div style="grid-column: 1 / span 3; font-family:var(--font-mono);font-size:9px;color:var(--text-tertiary);letter-spacing:0.08em;margin-top:4px;">' + hint + '</div>'
+        + '<div class="source-name">' + escapeHtml(row.name) + '</div>'
+        + '<div class="source-bar"><div class="source-bar-fill ' + row.klass + '" style="width:' + row.score + '%"></div></div>'
+        + '<div class="source-value">' + row.score + '</div>'
+        + '<div style="grid-column: 1 / span 3; font-family:var(--font-mono);font-size:9px;color:var(--text-tertiary);letter-spacing:0.08em;margin-top:4px;">' + escapeHtml(row.meta.toUpperCase()) + '</div>'
+        + '<div style="grid-column: 1 / span 3; font-size:10px;color:var(--text-secondary);margin-top:4px;line-height:1.5;">' + escapeHtml(row.hint) + '</div>'
         + '</div>';
     }).join('');
   } catch (_) {
