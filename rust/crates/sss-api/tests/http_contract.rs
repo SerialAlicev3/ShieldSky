@@ -2412,6 +2412,12 @@ async fn passive_regions_persist_and_orchestrate_discovery_then_scheduler() {
         action["path"]
             .as_str()
             .unwrap_or_default()
+            .contains("/v1/passive/regions/bootstrap-defaults")
+    }));
+    assert!(suggested_actions.iter().any(|action| {
+        action["path"]
+            .as_str()
+            .unwrap_or_default()
             .contains("/v1/passive/source-health/readiness")
     }));
     assert!(suggested_actions
