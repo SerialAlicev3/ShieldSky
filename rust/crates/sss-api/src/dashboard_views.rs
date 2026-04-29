@@ -477,6 +477,7 @@ fn dashboard_focus(
             .then_with(|| right.critical_events.cmp(&left.critical_events))
             .then_with(|| right.recent_events.cmp(&left.recent_events))
             .then_with(|| right.seeds_elevated.cmp(&left.seeds_elevated))
+            .then_with(|| region_focus_rank(left).cmp(&region_focus_rank(right)))
     });
     top_regions.truncate(limit);
 
@@ -503,6 +504,24 @@ fn dashboard_focus(
     top_events.truncate(limit);
 
     Ok((top_regions, top_sites, top_events))
+}
+
+fn region_focus_rank(region: &RegionMapItem) -> u8 {
+    if region.country_code.as_deref() == Some("PT")
+        || region.region_id.contains("portugal")
+        || region.region_id.contains("alentejo")
+    {
+        0
+    } else if region.region_id.contains("iberia") {
+        1
+    } else if matches!(
+        region.country_code.as_deref(),
+        Some("ES" | "FR" | "IT" | "DE")
+    ) {
+        2
+    } else {
+        3
+    }
 }
 
 fn filtered_regions(

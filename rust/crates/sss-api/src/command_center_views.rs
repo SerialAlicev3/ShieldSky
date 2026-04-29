@@ -145,10 +145,7 @@ pub fn build_passive_command_center_summary(
     )?;
     let generated_at_unix_seconds = now_unix_seconds();
     let focus_region_id = query.region_id.clone().or_else(|| {
-        dashboard
-            .top_regions
-            .first()
-            .map(|region| region.region_id.clone())
+        preferred_focus_region(&dashboard.top_regions).map(|region| region.region_id.clone())
     });
     let maintenance = build_maintenance_projection(
         state,
@@ -183,6 +180,17 @@ pub fn build_passive_command_center_summary(
         dashboard,
         maintenance,
     })
+}
+
+fn preferred_focus_region(regions: &[RegionMapItem]) -> Option<&RegionMapItem> {
+    regions
+        .iter()
+        .find(|region| {
+            region.country_code.as_deref() == Some("PT")
+                || region.region_id.contains("portugal")
+                || region.region_id.contains("alentejo")
+        })
+        .or_else(|| regions.first())
 }
 
 fn build_maintenance_projection(
@@ -408,7 +416,7 @@ fn build_command_center_summary(
     maintenance: &PassiveCommandCenterMaintenance,
     focus_region_id: Option<&str>,
 ) -> String {
-    let top_region = dashboard.top_regions.first().map_or_else(
+    let top_region = preferred_focus_region(&dashboard.top_regions).map_or_else(
         || "no priority region".to_string(),
         |region| region.name.clone(),
     );
@@ -436,19 +444,17 @@ fn build_command_center_summary(
 fn build_command_center_highlights(
     dashboard: &PassiveDashboardSummary,
 ) -> PassiveCommandCenterHighlights {
-    let top_region =
-        dashboard
-            .top_regions
-            .first()
-            .map(|region| PassiveCommandCenterRegionHighlight {
-                region_id: region.region_id.clone(),
-                name: region.name.clone(),
-                operational_pressure_priority: region.operational_pressure_priority,
-                dominant_status: region.dominant_status,
-                risk_delta_classification: region.risk_delta_classification,
-                risk_delta_explanation: region.risk_delta_explanation.clone(),
-                narrative_summary: region.narrative_summary.clone(),
-            });
+    let top_region = preferred_focus_region(&dashboard.top_regions).map(|region| {
+        PassiveCommandCenterRegionHighlight {
+            region_id: region.region_id.clone(),
+            name: region.name.clone(),
+            operational_pressure_priority: region.operational_pressure_priority,
+            dominant_status: region.dominant_status,
+            risk_delta_classification: region.risk_delta_classification,
+            risk_delta_explanation: region.risk_delta_explanation.clone(),
+            narrative_summary: region.narrative_summary.clone(),
+        }
+    });
     let top_site = dashboard
         .top_sites
         .iter()
