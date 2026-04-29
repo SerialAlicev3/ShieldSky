@@ -2486,6 +2486,66 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
     text-transform: uppercase;
     color: var(--text-tertiary);
   }
+  .drawer {
+    position: fixed;
+    top: 60px;
+    right: 0;
+    width: min(520px, 92vw);
+    height: calc(100vh - 60px);
+    background: var(--bg-panel);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border-left: 1px solid var(--line-strong);
+    transform: translateX(100%);
+    transition: transform 0.22s ease;
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+  }
+  .drawer.visible { transform: translateX(0); }
+  .drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--line);
+  }
+  .drawer-title {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+  .drawer-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 18px;
+    cursor: pointer;
+  }
+  .drawer-path {
+    padding: 0 18px 12px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--text-tertiary);
+    letter-spacing: 0.08em;
+    word-break: break-all;
+  }
+  .drawer-body {
+    flex: 1;
+    overflow: auto;
+    padding: 14px 18px 20px;
+  }
+  .drawer-pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+  }
 
   .timeline-track {
     position: absolute;
@@ -2708,6 +2768,14 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
     gap: 8px;
     flex-wrap: wrap;
     margin-top: 8px;
+  }
+  .focus-state {
+    margin-top: 8px;
+    font-family: var(--font-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
   }
 
   /* Load animation — staggered reveals */
@@ -3063,6 +3131,7 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
         <button class="att-action" id="focus-primary-btn">Open &rarr;</button>
       </div>
       <div class="focus-links" id="focus-links"></div>
+      <div class="focus-state" id="focus-state"></div>
     </div>
 
   </main>
@@ -3187,6 +3256,17 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
     </div>
   </footer>
 
+</div>
+
+<div id="data-drawer" class="drawer">
+  <div class="drawer-header">
+    <div class="drawer-title" id="drawer-title">Operational Detail</div>
+    <button class="drawer-close" id="drawer-close-btn">&#215;</button>
+  </div>
+  <div class="drawer-path" id="drawer-path"></div>
+  <div class="drawer-body">
+    <pre class="drawer-pre" id="drawer-content">Select evidence, replay, or operational detail to inspect it here.</pre>
+  </div>
 </div>
 
 <script>
@@ -3334,12 +3414,14 @@ document.getElementById('focus-close-btn').addEventListener('click', () => {
   FOCUS_STATE.actionPath = null;
   FOCUS_STATE.narrativePath = null;
   FOCUS_STATE.lastRecommendation = null;
+  setFocusStateText('');
   refreshGlobalAnalytics().catch(() => {});
 });
+document.getElementById('drawer-close-btn').addEventListener('click', closeDrawer);
 
 document.getElementById('focus-primary-btn').addEventListener('click', () => {
   if (FOCUS_STATE.actionPath) {
-    window.open(FOCUS_STATE.actionPath, '_blank', 'noopener');
+    openDrawerFromPath('Primary Focus', FOCUS_STATE.actionPath).catch(() => {});
   } else if (_focusCoords.lat != null) {
     focusOnGlobe(_focusCoords.lat, _focusCoords.lng, 180000);
   }
@@ -3348,6 +3430,7 @@ document.getElementById('focus-primary-btn').addEventListener('click', () => {
 // --- Globe data cache + focus system ---
 const GLOBE_DATA = { regions: [], sites: [], events: [] };
 let lastAttentionItems = [];
+let lastRecommendedActions = [];
 let _focusCoords = { lat: null, lng: null };
 const FOCUS_STATE = {
   kind: null,
@@ -3360,6 +3443,20 @@ const FOCUS_STATE = {
 };
 const PRESSURE_HISTORY = []; // circular buffer { t, score }
 const FORECAST_ENTITIES = [];
+const RECOMMENDATION_STATE_KEY = 'shieldsky:recommendation-state';
+const RECOMMENDATION_STATE = (() => {
+  try {
+    return JSON.parse(localStorage.getItem(RECOMMENDATION_STATE_KEY) || '{}');
+  } catch (_) {
+    return {};
+  }
+})();
+
+function persistRecommendationState() {
+  try {
+    localStorage.setItem(RECOMMENDATION_STATE_KEY, JSON.stringify(RECOMMENDATION_STATE));
+  } catch (_) { /* ignore */ }
+}
 
 function focusOnGlobe(lat, lng, altM) {
   viewer.camera.flyTo({
@@ -3389,6 +3486,40 @@ function setFocusPrimaryButton(label, path) {
   FOCUS_STATE.actionPath = path || null;
 }
 
+function setFocusStateText(text) {
+  const stateEl = document.getElementById('focus-state');
+  if (!stateEl) return;
+  stateEl.textContent = text || '';
+}
+
+function openDrawer(title, path, payload) {
+  const drawer = document.getElementById('data-drawer');
+  const titleEl = document.getElementById('drawer-title');
+  const pathEl = document.getElementById('drawer-path');
+  const contentEl = document.getElementById('drawer-content');
+  if (!drawer || !titleEl || !pathEl || !contentEl) return;
+  titleEl.textContent = title || 'Operational Detail';
+  pathEl.textContent = path || '';
+  contentEl.textContent = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
+  drawer.classList.add('visible');
+}
+
+async function openDrawerFromPath(title, path) {
+  if (!path) return;
+  try {
+    const payload = await API.get(path);
+    openDrawer(title, path, payload);
+  } catch (error) {
+    openDrawer(title, path, 'Failed to load operational detail: ' + String(error.message || error));
+  }
+}
+
+function closeDrawer() {
+  const drawer = document.getElementById('data-drawer');
+  if (!drawer) return;
+  drawer.classList.remove('visible');
+}
+
 function setFocusQuickLinks(links) {
   const container = document.getElementById('focus-links');
   if (!container) return;
@@ -3400,8 +3531,9 @@ function setFocusQuickLinks(links) {
   container.innerHTML = validLinks.map(function(link) {
     const cls = link.warn ? 'att-action warn' : 'att-action subtle';
     const label = String(link.label).replace(/</g, '&lt;');
-    const path = String(link.path).replace(/'/g, '');
-    return '<button class="' + cls + '" onclick="window.open(\'' + path + '\', \'_blank\', \'noopener\')">' + label + '</button>';
+    const safeTitle = label.replace(/'/g, '&#39;');
+    const path = String(link.path).replace(/'/g, '&#39;');
+    return '<button class="' + cls + '" onclick="openDrawerFromPath(\'' + safeTitle + '\', \'' + path + '\')">' + label + '</button>';
   }).join('');
 }
 
@@ -3436,8 +3568,7 @@ function clearForecastOverlay() {
   }
 }
 
-function renderForecastOverlay(siteId, lat, lng, points) {
-  clearForecastOverlay();
+function renderForecastOverlaySite(siteId, lat, lng, points, siteLabel) {
   if (lat == null || lng == null || !points || !points.length) return;
   const stressed = points
     .filter(function(point) {
@@ -3476,13 +3607,85 @@ function renderForecastOverlay(siteId, lat, lng, points) {
         kind: 'site',
         layer: 'forecast',
         site_id: siteId,
-        label: 'Forecast T+' + point.offset_hours + 'H',
+        label: (siteLabel ? siteLabel + ' · ' : '') + 'Forecast T+' + point.offset_hours + 'H',
         action_path: '/v1/forecast/sites/' + siteId + '/scenario?horizon_hours=24',
         reason: 'Reserve stress ' + (stress * 100).toFixed(0) + '% · price index ' + (price * 100).toFixed(0) + '%.',
       },
     });
     FORECAST_ENTITIES.push(entity);
   });
+}
+
+function renderForecastOverlay(siteId, lat, lng, points, siteLabel) {
+  clearForecastOverlay();
+  renderForecastOverlaySite(siteId, lat, lng, points, siteLabel);
+}
+
+async function renderRegionalForecastOverlay(regionId) {
+  clearForecastOverlay();
+  if (!regionId) return;
+  try {
+    const siteData = await API.get('/v1/passive/map/sites?region_id=' + encodeURIComponent(regionId));
+    const sites = (siteData.sites || [])
+      .filter(function(site) { return site.site_id && site.coordinates; })
+      .sort(function(left, right) { return Number(right.risk_score || 0) - Number(left.risk_score || 0); })
+      .slice(0, 3);
+    const scenarios = await Promise.all(sites.map(function(site) {
+      return API.get('/v1/forecast/sites/' + encodeURIComponent(site.site_id) + '/scenario?horizon_hours=24')
+        .then(function(scenario) { return { site, scenario }; })
+        .catch(function() { return null; });
+    }));
+    scenarios.filter(Boolean).forEach(function(entry) {
+      renderForecastOverlaySite(
+        entry.site.site_id,
+        entry.site.coordinates.lat,
+        entry.site.coordinates.lon,
+        entry.scenario.points || [],
+        entry.site.name || entry.site.seed_key || 'Site'
+      );
+    });
+  } catch (_) { /* leave */ }
+}
+
+function setRecommendationState(siteId, stateLabel) {
+  if (!siteId || !stateLabel) return;
+  RECOMMENDATION_STATE[siteId] = stateLabel;
+  persistRecommendationState();
+  setFocusStateText('RECOMMENDATION ' + String(stateLabel).toUpperCase());
+  if (FOCUS_STATE.siteId === siteId) {
+    refreshFocusedSiteAnalytics().catch(() => {});
+  }
+}
+
+async function executeRecommendedAction(action) {
+  if (!action || !action.path) return;
+  const list = document.getElementById('recommended-actions-list');
+  if (list) list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:6px 0;line-height:1.6;">Executing action…</div>';
+  let payload = {};
+  if (action.path.indexOf('/worker/heartbeats/prune') >= 0) {
+    payload = { older_than_seconds: 86400 };
+  } else if (action.path.indexOf('/source-health/samples/prune') >= 0) {
+    payload = { older_than_seconds: 2592000, dry_run: false };
+  }
+  try {
+    const result = await API.post(action.path, payload);
+    openDrawer(action.title || 'Action result', action.path, result);
+  } catch (error) {
+    openDrawer(action.title || 'Action failed', action.path, 'Failed to execute: ' + String(error.message || error));
+  }
+  await refreshAll();
+}
+
+async function executeRecommendedActionByIndex(index) {
+  const action = lastRecommendedActions[index];
+  if (!action) return;
+  await executeRecommendedAction(action);
+}
+
+function inspectRecommendedActionByIndex(index) {
+  const action = lastRecommendedActions[index];
+  if (!action) return;
+  openDrawer(action.title || 'Recommended action', action.path || '', action);
 }
 
 function pushPressureHistory(points) {
@@ -3548,11 +3751,18 @@ async function refreshGlobalAnalytics() {
     setTimelineSummary('Global timeline showing canonical event memory across the current command window.');
     setFocusPrimaryButton('Open →', null);
     setFocusQuickLinks([]);
+    setFocusStateText('');
   } catch (_) { /* leave */ }
 }
 
 async function refreshFocusedSiteAnalytics() {
   if (FOCUS_STATE.kind !== 'site' || !FOCUS_STATE.siteId) {
+    if (FOCUS_STATE.kind === 'region' && FOCUS_STATE.regionId) {
+      await refreshGlobalAnalytics();
+      await renderRegionalForecastOverlay(FOCUS_STATE.regionId);
+      setFocusStateText('REGION FORECAST OVERLAY ACTIVE');
+      return;
+    }
     await refreshGlobalAnalytics();
     return;
   }
@@ -3612,6 +3822,8 @@ async function refreshFocusedSiteAnalytics() {
         ? { label: 'Replay', path: '/v1/replay/' + provenance.manifest_hashes[0], warn: true }
         : null,
     ]);
+    const recommendationState = RECOMMENDATION_STATE[siteId];
+    setFocusStateText(recommendationState ? ('RECOMMENDATION ' + String(recommendationState).toUpperCase()) : 'RECOMMENDATION PENDING REVIEW');
 
     const riskTitleEl = document.getElementById('risk-trend-title');
     const riskWindowEl = document.getElementById('risk-trend-window');
@@ -3677,17 +3889,30 @@ async function refreshFocusedSiteAnalytics() {
       + ' · ' + forecastEntries.length + ' forecast window' + (forecastEntries.length === 1 ? '' : 's')
       + ' promoted into the next ' + (scenario.horizon_hours || 24) + 'h.'
     );
-    renderForecastOverlay(siteId, _focusCoords.lat, _focusCoords.lng, scenario.points || []);
+    renderForecastOverlay(
+      siteId,
+      _focusCoords.lat,
+      _focusCoords.lng,
+      scenario.points || [],
+      overview.site && overview.site.site ? overview.site.site.name : ''
+    );
 
     const recList = document.getElementById('recommended-actions-list');
     if (recList) {
       const decisionCount = Array.isArray(decisions) ? decisions.length : 0;
+      const reviewed = RECOMMENDATION_STATE[siteId];
       recList.innerHTML =
         '<div style="padding:11px 12px;background:var(--bg-elevated);border-left:2px solid var(--teal);border-radius:0 2px 2px 0;">'
         + '<div style="font-size:12px;color:var(--text-primary);line-height:1.4;">' + String(recommendation.action || 'monitor_only').replace(/_/g, ' ').toUpperCase() + '</div>'
         + '<div style="font-size:11px;color:var(--text-secondary);margin-top:3px;line-height:1.4;">' + recommendation.expected_benefit + '</div>'
         + '<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-tertiary);margin-top:6px;letter-spacing:0.08em;">'
         + 'CONFIDENCE ' + (Number(recommendation.confidence || 0) * 100).toFixed(0) + '% · DECISIONS ' + decisionCount
+        + (reviewed ? ' · STATE ' + String(reviewed).toUpperCase() : '')
+        + '</div>'
+        + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">'
+        + '<button class="att-action subtle" onclick="setRecommendationState(\'' + siteId + '\', \'reviewed\')">Review</button>'
+        + '<button class="att-action" onclick="setRecommendationState(\'' + siteId + '\', \'applied\')">Apply</button>'
+        + '<button class="att-action warn" onclick="setRecommendationState(\'' + siteId + '\', \'dismissed\')">Dismiss</button>'
         + '</div></div>';
     }
   } catch (_) { /* leave */ }
@@ -3720,6 +3945,7 @@ function openFocusPanel({ kind, title, reason, lat, lng, siteId, regionId, actio
   if (lat != null) focusOnGlobe(lat, lng);
   setFocusPrimaryButton(actionPath ? 'Open →' : 'Recenter →', actionPath || null);
   setFocusQuickLinks(narrativePath ? [{ label: 'Narrative', path: narrativePath }] : []);
+  setFocusStateText('');
   refreshFocusedSiteAnalytics().catch(() => {});
 }
 
@@ -4264,18 +4490,23 @@ async function refreshRecommendedActions() {
     const list    = document.getElementById('recommended-actions-list');
     if (!list) return;
     const actions = (data.maintenance || {}).suggested_actions || [];
+    lastRecommendedActions = actions.slice(0, 4);
     if (!actions.length) {
       list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:6px 0;line-height:1.6;">No operator actions required in the current window. Monitoring continues.</div>';
       return;
     }
     const colors = ['var(--coral)', 'var(--amber)', 'var(--teal)', 'var(--lime)'];
-    list.innerHTML = actions.slice(0, 4).map((a, i) => {
+    list.innerHTML = lastRecommendedActions.map((a, i) => {
       const color = colors[i % colors.length];
       return '<div style="padding:11px 12px;background:var(--bg-elevated);border-left:2px solid ' + color + ';border-radius:0 2px 2px 0;">'
         + '<div style="font-size:12px;color:var(--text-primary);line-height:1.4;">' + (a.title || 'Action required') + '</div>'
         + (a.reason ? '<div style="font-size:11px;color:var(--text-secondary);margin-top:3px;line-height:1.4;">' + a.reason + '</div>' : '')
         + '<div style="font-family:var(--font-mono);font-size:9px;color:var(--text-tertiary);margin-top:6px;letter-spacing:0.08em;">'
-        + (a.method || 'POST') + ' ' + (a.path || '') + '</div></div>';
+        + (a.method || 'POST') + ' ' + (a.path || '') + '</div>'
+        + '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">'
+        + '<button class="att-action subtle" onclick="inspectRecommendedActionByIndex(' + i + ')">Inspect</button>'
+        + '<button class="att-action" onclick="executeRecommendedActionByIndex(' + i + ')">Run</button>'
+        + '</div></div>';
     }).join('');
   } catch (_) { /* leave */ }
 }
