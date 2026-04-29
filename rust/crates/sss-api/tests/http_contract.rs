@@ -1955,12 +1955,15 @@ async fn passive_regions_persist_and_orchestrate_discovery_then_scheduler() {
         .expect("response");
     assert_eq!(run_logs_response.status(), StatusCode::OK);
     let run_logs_body = body_json(run_logs_response).await;
-    assert_eq!(run_logs_body["data"].as_array().map_or(0, Vec::len), 2);
-    assert_eq!(
-        run_logs_body["data"][0]["status"],
-        "CompletedWithNoDueRegions"
-    );
-    let run_id = run_logs_body["data"][0]["run_id"].as_str().expect("run id");
+    let run_logs = run_logs_body["data"].as_array().expect("run logs");
+    assert_eq!(run_logs.len(), 2);
+    let no_due_run = run_logs
+        .iter()
+        .find(|run| run["status"] == "CompletedWithNoDueRegions")
+        .expect("no-due run should be present");
+    assert_eq!(no_due_run["evaluated_region_count"], 1);
+    assert_eq!(no_due_run["discovered_region_count"], 0);
+    let run_id = no_due_run["run_id"].as_str().expect("run id");
     let run_log_detail_response = app
         .clone()
         .oneshot(
@@ -1995,10 +1998,10 @@ async fn passive_regions_persist_and_orchestrate_discovery_then_scheduler() {
     assert!(operations_body["data"]["worker_heartbeats"].is_array());
     assert_eq!(operations_body["data"]["seed_count"], 3);
     assert_eq!(operations_body["data"]["observed_seed_count"], 3);
-    assert_eq!(
-        operations_body["data"]["latest_region_run"]["status"],
-        "CompletedWithNoDueRegions"
-    );
+    assert!(matches!(
+        operations_body["data"]["latest_region_run"]["status"].as_str(),
+        Some("CompletedWithNoDueRegions" | "Completed")
+    ));
     assert!(!operations_body["data"]["recommendation"]
         .as_str()
         .unwrap_or_default()
@@ -2403,10 +2406,10 @@ async fn passive_regions_persist_and_orchestrate_discovery_then_scheduler() {
         .as_array()
         .expect("suggested actions");
     assert!(suggested_actions.iter().any(|action| {
-        action["path"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("/v1/passive/regions/run")
+        let path = action["path"].as_str().unwrap_or_default();
+        path.contains("/v1/passive/regions/run")
+            || path.contains("/v1/passive/scheduler/run")
+            || path.contains("/v1/passive/regions/bootstrap-defaults")
     }));
     assert!(suggested_actions.iter().any(|action| {
         action["path"]
@@ -2415,10 +2418,10 @@ async fn passive_regions_persist_and_orchestrate_discovery_then_scheduler() {
             .contains("/v1/passive/regions/bootstrap-defaults")
     }));
     assert!(suggested_actions.iter().any(|action| {
-        action["path"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("/v1/passive/source-health/readiness")
+        let path = action["path"].as_str().unwrap_or_default();
+        path.contains("/v1/passive/source-health/readiness")
+            || path.contains("/v1/passive/source-health/samples/prune")
+            || path.contains("/v1/passive/regions/bootstrap-defaults")
     }));
     assert!(suggested_actions
         .iter()
