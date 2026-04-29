@@ -5025,9 +5025,18 @@ async function refreshSourceHealth() {
     if (sysEl) {
       sysEl.textContent = scheduler.enabled
         ? readyCount + ' / ' + rows.length + ' feeds'
-        : 'scheduler off';
+        : readyCount + ' / ' + rows.length + ' feeds · manual mode';
     }
-    grid.innerHTML = rows.slice(0, 6).map(function(row) {
+    const schedulerNotice = scheduler.enabled
+      ? ''
+      : '<div class="source-row" style="border-left:2px solid var(--amber);padding-left:10px;">'
+        + '<div class="source-name">MANUAL MODE</div>'
+        + '<div class="source-bar"><div class="source-bar-fill degraded" style="width:' + Math.max(24, readyCount * 18) + '%"></div></div>'
+        + '<div class="source-value">' + readyCount + '</div>'
+        + '<div style="grid-column: 1 / span 3; font-family:var(--font-mono);font-size:9px;color:var(--text-tertiary);letter-spacing:0.08em;margin-top:4px;">SCHEDULER DISABLED</div>'
+        + '<div style="grid-column: 1 / span 3; font-size:10px;color:var(--text-secondary);margin-top:4px;line-height:1.5;">Automatic passive polling is off in this deploy. Use the recommended actions to bootstrap or run a manual cycle.</div>'
+        + '</div>';
+    grid.innerHTML = schedulerNotice + rows.slice(0, 6).map(function(row) {
       return '<div class="source-row">'
         + '<div class="source-name">' + escapeHtml(row.name) + '</div>'
         + '<div class="source-bar"><div class="source-bar-fill ' + row.klass + '" style="width:' + row.score + '%"></div></div>'
