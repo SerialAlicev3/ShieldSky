@@ -2994,23 +2994,42 @@ impl AppState {
                 continue;
             }
 
-            let discovery = self
+            match self
                 .discover_passive_infra_sites(
                     &format!("{request_id}:discover:{}", region.region_id),
                     &passive_region_discovery_request(&region),
                 )
-                .await?;
-            discovered_seed_count = discovered_seed_count.saturating_add(discovery.seeds.len());
-            discovered_region_count = discovered_region_count.saturating_add(1);
-            region.last_discovered_at_unix_seconds = Some(now);
-            region.updated_at_unix_seconds = now;
-            self.storage.store_passive_region_target(&region)?;
-            run_records.push(PassiveRegionRunRecord {
-                region,
-                due: true,
-                skipped_reason: None,
-                discovery: Some(discovery),
-            });
+                .await
+            {
+                Ok(discovery) => {
+                    discovered_seed_count =
+                        discovered_seed_count.saturating_add(discovery.seeds.len());
+                    discovered_region_count = discovered_region_count.saturating_add(1);
+                    region.last_discovered_at_unix_seconds = Some(now);
+                    region.updated_at_unix_seconds = now;
+                    self.storage.store_passive_region_target(&region)?;
+                    run_records.push(PassiveRegionRunRecord {
+                        region,
+                        due: true,
+                        skipped_reason: None,
+                        discovery: Some(discovery),
+                    });
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        %request_id,
+                        region_id = %region.region_id,
+                        error = %error,
+                        "passive region discovery failed; continuing with remaining regions"
+                    );
+                    run_records.push(PassiveRegionRunRecord {
+                        region,
+                        due: true,
+                        skipped_reason: Some(format!("discovery failed: {error}")),
+                        discovery: None,
+                    });
+                }
+            }
         }
 
         let scheduler = if scan_limit > 0 {
