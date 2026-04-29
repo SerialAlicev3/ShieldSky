@@ -3361,7 +3361,7 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
        ============================================================ -->
   <footer class="bottom-bar">
     <div class="time-label">
-      <span class="time-label-kicker">T &minus; 36h</span>
+      <span class="time-label-kicker" id="timeline-start-kicker">WINDOW START</span>
       <span class="time-label-time" id="timeline-start-time">&#8212;</span>
       <span class="time-label-date" id="timeline-start-date">&#8212;</span>
     </div>
@@ -3369,24 +3369,18 @@ const OPERATOR_CONSOLE_HTML: &str = r##"<!DOCTYPE html>
     <div class="timeline-container" id="timeline">
       <div class="timeline-summary" id="timeline-summary">Event memory and forecast windows will appear here.</div>
       <div class="timeline-track"></div>
-      <div class="future-window" style="left: 60%; right: 0;"></div>
+      <div class="future-window" id="timeline-future-window"></div>
 
-      <!-- Static ticks -->
-      <div class="timeline-tick" style="left: 16.6%"><div class="timeline-tick-label">-30H</div></div>
-      <div class="timeline-tick" style="left: 33.3%"><div class="timeline-tick-label">-24H</div></div>
-      <div class="timeline-tick" style="left: 50%"><div class="timeline-tick-label">-12H</div></div>
-      <div class="timeline-tick" style="left: 75%"><div class="timeline-tick-label">+12H</div></div>
-      <div class="timeline-tick" style="left: 91.6%"><div class="timeline-tick-label">+24H</div></div>
+      <div id="timeline-ticks"></div>
 
       <!-- Events populated by JS -->
       <div id="timeline-events"></div>
 
-      <!-- Now marker at 60% -->
-      <div class="now-marker" style="left: 60%"></div>
+      <div class="now-marker" id="timeline-now-marker"></div>
     </div>
 
     <div class="time-label right">
-      <span class="time-label-kicker">T + 36h</span>
+      <span class="time-label-kicker" id="timeline-end-kicker">WINDOW END</span>
       <span class="time-label-time" id="timeline-end-time">&#8212;</span>
       <span class="time-label-date" id="timeline-end-date">&#8212;</span>
     </div>
@@ -3618,6 +3612,51 @@ function setFocusStateText(text) {
   const stateEl = document.getElementById('focus-state');
   if (!stateEl) return;
   stateEl.textContent = text || '';
+}
+
+function currentTimelineWindowHours() {
+  const mapping = { '24h': 24, '72h': 72, '7d': 24 * 7, '30d': 24 * 30 };
+  return mapping[CONSOLE_STATE.window] || 72;
+}
+
+function currentTimelineRangeMs() {
+  const totalHours = currentTimelineWindowHours();
+  const halfWindowMs = (totalHours * 3600 * 1000) / 2;
+  const nowMs = Date.now();
+  return {
+    nowMs: nowMs,
+    startMs: nowMs - halfWindowMs,
+    endMs: nowMs + halfWindowMs,
+    totalMs: totalHours * 3600 * 1000,
+    halfHours: totalHours / 2,
+  };
+}
+
+function renderTimelineScale() {
+  const ticksEl = document.getElementById('timeline-ticks');
+  const futureWindowEl = document.getElementById('timeline-future-window');
+  const nowMarkerEl = document.getElementById('timeline-now-marker');
+  const startKickerEl = document.getElementById('timeline-start-kicker');
+  const endKickerEl = document.getElementById('timeline-end-kicker');
+  if (!ticksEl || !futureWindowEl || !nowMarkerEl) return;
+
+  const range = currentTimelineRangeMs();
+  const half = range.halfHours;
+  const tickOffsets = [-0.66, -0.33, 0.33, 0.66];
+
+  ticksEl.innerHTML = tickOffsets.map(function(multiplier) {
+    const offsetHours = Math.round(half * multiplier);
+    const pct = 50 + (multiplier * 50);
+    const label = (offsetHours > 0 ? '+' : '') + offsetHours + 'H';
+    return '<div class="timeline-tick" style="left:' + pct.toFixed(1) + '%"><div class="timeline-tick-label">' + label + '</div></div>';
+  }).join('');
+
+  futureWindowEl.style.left = '50%';
+  futureWindowEl.style.right = '0';
+  nowMarkerEl.style.left = '50%';
+
+  if (startKickerEl) startKickerEl.textContent = 'WINDOW START · T-' + half + 'h';
+  if (endKickerEl) endKickerEl.textContent = 'WINDOW END · T+' + half + 'h';
 }
 
 function formatReviewHistoryPayload(payload) {
@@ -3939,9 +3978,9 @@ function renderTimelineEntries(entries) {
     strip.innerHTML = '';
     return;
   }
-  const now = Date.now();
-  const start = now - 36 * 3600 * 1000;
-  const total = 72 * 3600 * 1000;
+  const range = currentTimelineRangeMs();
+  const start = range.startMs;
+  const total = range.totalMs;
   strip.innerHTML = entries
     .map(function(entry) {
       const ts = (entry.target_epoch_unix_seconds || entry.last_observed_at_unix_seconds || 0) * 1000;
@@ -5084,14 +5123,15 @@ function refreshSysStatus() {
 
 // --- Timeline labels ---
 function updateTimelineLabels() {
-  const now   = new Date();
-  const start = new Date(now.getTime() - 36 * 3600 * 1000);
-  const end   = new Date(now.getTime() + 36 * 3600 * 1000);
+  const range = currentTimelineRangeMs();
+  const start = new Date(range.startMs);
+  const end   = new Date(range.endMs);
   const pad   = n => String(n).padStart(2, '0');
   const fmtTime = d => pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + ' UTC';
   const months  = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const fmtDate = d => months[d.getUTCMonth()] + ' ' + d.getUTCDate() + ', ' + d.getUTCFullYear();
   const el = id => document.getElementById(id);
+  renderTimelineScale();
   if (el('timeline-start-time')) el('timeline-start-time').textContent = fmtTime(start);
   if (el('timeline-start-date')) el('timeline-start-date').textContent = fmtDate(start);
   if (el('timeline-end-time'))   el('timeline-end-time').textContent   = fmtTime(end);
