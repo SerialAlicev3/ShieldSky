@@ -2529,6 +2529,7 @@ async fn operator_console_is_served() {
     assert!(html.contains("/v1/passive/operational-visibility"));
     assert!(html.contains("/v1/passive/map/regions"));
     assert!(html.contains("/v1/ingest/batches"));
+    assert!(html.contains("/v1/passive/source-health/readiness"));
     // Key data fields consumed from API responses
     assert!(html.contains("attention_queue"));
     assert!(html.contains("suggested_actions"));
@@ -2545,6 +2546,8 @@ async fn operator_console_is_served() {
     // Polling infrastructure
     assert!(html.contains("refreshAll"));
     assert!(html.contains("setInterval(refreshAll, 30000)"));
+    assert!(html.contains("formatReadinessPayload"));
+    assert!(html.contains("Run Replay"));
 }
 
 #[tokio::test]

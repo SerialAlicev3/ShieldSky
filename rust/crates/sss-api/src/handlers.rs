@@ -3741,43 +3741,102 @@ function formatReviewHistoryPayload(payload) {
   }).join('\n\n');
 }
 
+function formatReadinessPayload(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const scheduler = payload.scheduler || {};
+  const sources = Array.isArray(payload.sources) ? payload.sources : [];
+  const ready = sources.filter(function(source) {
+    return String(source.readiness || '').toLowerCase() === 'ready';
+  }).length;
+  const lines = [
+    'SCHEDULER   ' + (scheduler.enabled ? 'ENABLED' : 'DISABLED'),
+    scheduler.poll_seconds ? 'POLL        ' + scheduler.poll_seconds + 's' : '',
+    scheduler.retry_seconds ? 'RETRY       ' + scheduler.retry_seconds + 's' : '',
+    scheduler.window_hours ? 'WINDOW      ' + scheduler.window_hours + 'h' : '',
+    'READY       ' + ready + ' / ' + sources.length,
+    scheduler.force_discovery ? 'DISCOVERY   forced' : 'DISCOVERY   scheduled',
+    scheduler.startup_discovery_enabled ? 'BOOT        startup discovery on' : 'BOOT        startup discovery off',
+  ].filter(Boolean);
+  if (!sources.length) return lines.join('\n');
+  const sourceLines = sources.map(function(source) {
+    const name = String(source.label || source.source_id || 'source').toUpperCase();
+    const state = String(source.readiness || 'awaiting_data').replace(/_/g, ' ').toUpperCase();
+    const reason = source.reason ? ' · ' + source.reason : '';
+    const sampleText = source.sample_count ? ' · ' + source.sample_count + ' samples' : '';
+    return name + ' · ' + state + sampleText + reason;
+  });
+  return lines.join('\n') + '\n\n' + sourceLines.join('\n');
+}
+
 function formatEvidencePayload(payload) {
   if (!payload || typeof payload !== 'object') return null;
-  const finding = payload.finding || payload.summary || payload.description || 'Evidence bundle loaded.';
-  const assessment = payload.assessment || payload.risk_summary || '';
+  const finding = payload.finding || payload.summary || payload.description || ('Evidence bundle for ' + (payload.object_id || 'object') + '.');
   const confidence = payload.confidence != null ? ('CONFIDENCE  ' + Math.round(Number(payload.confidence) * 100) + '%') : '';
   const bundleHash = payload.bundle_hash ? ('BUNDLE      ' + payload.bundle_hash) : '';
-  const sources = Array.isArray(payload.evidence)
-    ? ('EVIDENCE    ' + payload.evidence.length + ' captured item' + (payload.evidence.length === 1 ? '' : 's'))
+  const objectId = payload.object_id ? ('OBJECT      ' + payload.object_id) : '';
+  const events = Array.isArray(payload.events) ? ('EVENTS      ' + payload.events.length) : '';
+  const observations = Array.isArray(payload.observations) ? ('OBSERVED    ' + payload.observations.length) : '';
+  const sources = Array.isArray(payload.sources) ? ('SOURCES     ' + payload.sources.length) : '';
+  const signals = Array.isArray(payload.signals) && payload.signals.length
+    ? ('SIGNALS     ' + payload.signals.slice(0, 3).map(function(signal) {
+        return signal.name || signal.signal_type || signal.reason || 'signal';
+      }).join(' · '))
+    : '';
+  const contributors = Array.isArray(payload.confidence_contributors) && payload.confidence_contributors.length
+    ? ('DRIVERS     ' + payload.confidence_contributors.slice(0, 2).map(function(entry) {
+        return (entry.name || 'factor') + ' ' + Math.round(Number(entry.weight || 0) * 100) + '%';
+      }).join(' · '))
     : '';
   return [
     'FINDING     ' + finding,
-    assessment ? 'ASSESSMENT  ' + assessment : '',
     confidence,
+    objectId,
     bundleHash,
+    events,
+    observations,
     sources,
+    signals,
+    contributors,
   ].filter(Boolean).join('\n');
 }
 
 function formatReplayPayload(payload) {
   if (!payload || typeof payload !== 'object') return null;
-  const executionId = payload.execution_id || payload.manifest_hash || payload.replay_manifest_hash || '';
-  const status = payload.status || payload.result || 'ready';
+  const manifest = payload.manifest || payload;
+  const executionId = payload.execution_id || manifest.manifest_hash || payload.replay_manifest_hash || '';
+  const status = payload.status || payload.result || (payload.drift_detected != null ? 'executed' : 'ready');
   const requestId = payload.request_id || '';
-  const steps = Array.isArray(payload.steps)
-    ? ('STEPS       ' + payload.steps.length)
-    : (Array.isArray(payload.inputs) ? 'INPUTS      ' + payload.inputs.length : '');
-  const summary = payload.summary || payload.description || payload.outcome || 'Replay artifact loaded.';
+  const summary = payload.summary || payload.description || payload.outcome || (payload.drift_detected != null ? 'Replay execution loaded.' : 'Replay artifact loaded.');
+  const drift = payload.drift_detected == null ? '' : ('DRIFT       ' + (payload.drift_detected ? 'detected' : 'no drift'));
+  const assessmentDelta = payload.diff && payload.diff.assessment
+    ? ('ASSESSMENT  Δconf ' + Number(payload.diff.assessment.confidence_delta || 0).toFixed(2)
+      + ' · Δpred ' + Number(payload.diff.assessment.prediction_probability_delta || 0).toFixed(2))
+    : '';
+  const decisionDelta = payload.diff && payload.diff.decision
+    ? ('DECISION    Δrisk ' + Number(payload.diff.decision.risk_score_delta || 0).toFixed(2))
+    : '';
+  const changedFields = payload.diff && payload.diff.assessment && Array.isArray(payload.diff.assessment.changed_fields) && payload.diff.assessment.changed_fields.length
+    ? ('FIELDS      ' + payload.diff.assessment.changed_fields.join(', '))
+    : '';
   return [
     executionId ? 'REPLAY      ' + executionId : 'REPLAY      ready',
     'STATUS      ' + status,
     requestId ? 'REQUEST     ' + requestId : '',
-    steps,
+    manifest.object_id ? 'OBJECT      ' + manifest.object_id : '',
+    Array.isArray(manifest.event_ids) ? 'EVENTS      ' + manifest.event_ids.length : '',
+    drift,
+    assessmentDelta,
+    decisionDelta,
+    changedFields,
     'SUMMARY     ' + summary,
   ].filter(Boolean).join('\n');
 }
 
 function formatDrawerPayload(path, payload) {
+  if (path && path.indexOf('/source-health/readiness') >= 0) {
+    const formattedReadiness = formatReadinessPayload(payload);
+    if (formattedReadiness) return formattedReadiness;
+  }
   if (path && path.indexOf('/reviews') >= 0) {
     const formattedReviews = formatReviewHistoryPayload(payload);
     if (formattedReviews) return formattedReviews;
@@ -4458,6 +4517,9 @@ function openFocusPanel({ kind, title, reason, lat, lng, siteId, regionId, actio
     narrativePath ? { label: 'Narrative', path: narrativePath } : null,
     evidencePath ? { label: 'Evidence', path: evidencePath, warn: true } : null,
     replayPath ? { label: 'Replay', path: replayPath, warn: true } : null,
+    replayPath && replayPath.indexOf('/replay/') >= 0 && replayPath.indexOf('/execute') < 0
+      ? { label: 'Run Replay', path: replayPath + '/execute', warn: true }
+      : null,
   ].filter(Boolean));
   setFocusStateText(operatorState ? ('RECOMMENDATION ' + String(operatorState).replace(/_/g, ' ').toUpperCase()) : '');
   refreshFocusedSiteAnalytics().catch(() => {});
