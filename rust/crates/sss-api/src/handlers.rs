@@ -384,8 +384,21 @@ pub async fn get_neows_feed(
     Ok(Json(ApiEnvelope::new(request_id, feed)))
 }
 
-pub async fn operator_console() -> Html<&'static str> {
-    Html(OPERATOR_CONSOLE_HTML)
+pub async fn operator_console() -> Html<String> {
+    let boot = serde_json::json!({
+        "webRunsPassiveScheduler": false,
+        "passiveSchedulerRequested": env_u64("SSS_PASSIVE_REGION_POLL_SECONDS").unwrap_or(0) > 0,
+        "passiveWindowHours": env_u64("SSS_PASSIVE_REGION_WINDOW_HOURS"),
+        "passivePollSeconds": env_u64("SSS_PASSIVE_REGION_POLL_SECONDS"),
+        "passiveRetrySeconds": env_u64("SSS_PASSIVE_REGION_RETRY_SECONDS"),
+        "passiveMaxRegionsPerCycle": env_u64("SSS_PASSIVE_REGION_MAX_REGIONS_PER_CYCLE"),
+        "includeWeather": env_bool("SSS_PASSIVE_REGION_INCLUDE_WEATHER", true),
+        "includeFireSmoke": env_bool("SSS_PASSIVE_REGION_INCLUDE_FIRE_SMOKE", true),
+        "includeAdsb": env_bool("SSS_PASSIVE_REGION_INCLUDE_ADSB", true),
+        "forceDiscovery": env_bool("SSS_PASSIVE_REGION_FORCE_DISCOVERY", false),
+        "dryRun": env_bool("SSS_PASSIVE_REGION_DRY_RUN", false),
+    });
+    Html(OPERATOR_CONSOLE_HTML.replace("__CONSOLE_BOOT__", &boot.to_string()))
 }
 
 pub async fn landing_page() -> Html<&'static str> {
@@ -3657,6 +3670,23 @@ const FOCUS_STATE = {
 const PRESSURE_HISTORY = []; // circular buffer { t, score }
 const FORECAST_ENTITIES = [];
 const RECOMMENDATION_STATE = {};
+const CONSOLE_BOOT = __CONSOLE_BOOT__;
+
+function passiveWorkerHint() {
+  if (!CONSOLE_BOOT || !CONSOLE_BOOT.passiveSchedulerRequested) {
+    return 'Passive ingestion is not configured for this deploy yet.';
+  }
+  return 'This web console is healthy, but continuous passive ingestion now belongs to sss-passive-worker.';
+}
+
+function passiveRetryHint() {
+  if (!CONSOLE_BOOT || !CONSOLE_BOOT.passiveSchedulerRequested) {
+    return 'Configure the passive worker or run a manual cycle to seed this command surface.';
+  }
+  const cadence = CONSOLE_BOOT.passivePollSeconds ? (' Poll ' + CONSOLE_BOOT.passivePollSeconds + 's') : '';
+  const batch = CONSOLE_BOOT.passiveMaxRegionsPerCycle ? (' batch ' + CONSOLE_BOOT.passiveMaxRegionsPerCycle) : '';
+  return 'Deploy sss-passive-worker for continuous ingestion, or run a manual passive cycle.' + cadence + batch + '.';
+}
 
 function focusOnGlobe(lat, lng, altM) {
   viewer.camera.flyTo({
@@ -4312,7 +4342,7 @@ async function refreshGlobalAnalytics() {
     const narEl = document.getElementById('narrative-text');
     const metaEl = document.getElementById('narrative-meta');
     if (narEl) {
-      narEl.textContent = 'Operational narrative unavailable. Waiting for command-center summary to recover.';
+      narEl.textContent = passiveWorkerHint() + ' Waiting for the command surface summary to recover.';
       narEl.style.color = 'var(--text-tertiary)';
     }
     if (metaEl) {
@@ -4644,7 +4674,7 @@ async function refreshFocusedSiteAnalytics() {
     }
   } catch (_) {
     const list = document.getElementById('recommended-actions-list');
-    if (list) list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:6px 0;line-height:1.6;">Recommended actions unavailable while the command surface reconnects.</div>';
+    if (list) list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:6px 0;line-height:1.6;">' + escapeHtml(passiveRetryHint()) + '</div>';
   }
 }
 
@@ -4943,7 +4973,10 @@ async function refreshWhatChanged() {
         + '<div class="change-title">' + text + '</div>'
         + '</div></div>';
     }).join('');
-  } catch (_) { /* leave */ }
+  } catch (_) {
+    const list = document.getElementById('provenance-list');
+    if (list) list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;line-height:1.6;">' + escapeHtml(passiveWorkerHint()) + ' Provenance entries will appear after the first successful passive cycle.</div>';
+  }
 }
 
 // --- Narrative ---
@@ -5123,9 +5156,9 @@ async function refreshSourceHealth() {
     const grid = document.getElementById('source-health-list');
     const cnt = document.getElementById('source-count');
     const sysEl = document.getElementById('sys-sources');
-    if (grid) grid.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">Source health unavailable.</div>';
+    if (grid) grid.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;line-height:1.6;">' + escapeHtml(passiveWorkerHint()) + ' Source health will populate once readiness or worker samples land.</div>';
     if (cnt) cnt.textContent = '—';
-    if (sysEl) sysEl.textContent = 'degraded';
+    if (sysEl) sysEl.textContent = 'manual mode';
   }
 }
 
@@ -5323,7 +5356,7 @@ async function refreshOpPicture() {
     const opR = document.getElementById('op-regions');
     const opS = document.getElementById('op-sites');
     const opE = document.getElementById('op-events');
-    if (opMsg) opMsg.innerHTML = 'Operational feed error — retrying…';
+      if (opMsg) opMsg.innerHTML = escapeHtml(passiveRetryHint());
     if (opR) opR.textContent = '—';
     if (opS) opS.textContent = '—';
     if (opE) opE.textContent = '—';
@@ -5390,7 +5423,7 @@ async function refreshAttentionQueue() {
   } catch (_) {
     const list = document.getElementById('attention-queue-list');
     const cnt = document.getElementById('attention-count');
-    if (list) list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;">Attention queue unavailable. Retrying automatically.</div>';
+    if (list) list.innerHTML = '<div style="font-family:var(--font-mono);font-size:10px;color:var(--text-tertiary);padding:8px 0;line-height:1.6;">' + escapeHtml(passiveRetryHint()) + '</div>';
     if (cnt) cnt.textContent = '!';
   }
 }
